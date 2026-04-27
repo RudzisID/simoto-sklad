@@ -25,9 +25,7 @@ if errorlevel 1 (
 )
 
 echo [i] Checking for changes...
-git status --porcelain > temp_changes.txt
-set count=0
-for /f %%a in ('type temp_changes.txt ^| find /c /v ""') do set count=%%a
+for /f %%a in ('git status --porcelain ^| find /c /v ""') do set count=%%a
 
 if !count! equ 0 (
     echo [!] No changes found
@@ -35,7 +33,6 @@ if !count! equ 0 (
     echo Make some edits to files first
     echo Then run github-push.bat again
     echo.
-    del temp_changes.txt 2>nul
     pause
     exit /b 0
 )
@@ -66,7 +63,7 @@ powershell -NoProfile -Command "(Get-Content 'package.json' -Raw) -replace '\"ve
 for /f "delims=" %%a in ('node -e "console.log(require('./package.json').version)"') do set checkver=%%a
 if not "!checkver!"=="!newver!" (
     echo [!] Version update failed!
-    del temp_changes.txt 2>nul
+    
     pause
     exit /b 1
 )
@@ -74,11 +71,11 @@ echo [OK] Version updated to !newver!
 
 :: Add files (except .env and temp files)
 echo [i] Committing...
-git add -A -- ':!.env' -- ':!temp_changes.txt'
+git add -A -- ':!.env'
 git commit -m "release: v!newver!" >nul 2>&1
 if errorlevel 1 (
     echo [!] Already up to date or nothing to commit
-    del temp_changes.txt 2>nul
+    
     pause
     exit /b 0
 )
@@ -90,7 +87,7 @@ git push origin main
 if errorlevel 1 (
     echo [X] Push failed! Check your internet connection and credentials.
     echo [i] Make sure GH_TOKEN is set in .env
-    del temp_changes.txt 2>nul
+    
     pause
     exit /b 1
 )
@@ -114,5 +111,5 @@ echo.
 echo Opening GitHub Releases...
 start https://github.com/RudzisID/simoto-sklad/releases/new\?activeTab\=tags
 
-del temp_changes.txt 2>nul
+
 pause
