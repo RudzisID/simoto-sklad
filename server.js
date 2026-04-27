@@ -14,6 +14,7 @@ const { createReturn } = require('./lib/return');
 const { cancelOrder } = require('./lib/cancel');
 const wbOzonSync = require('./integrations/wb_ozon_sync');
 
+// Незначительное изменение для проверки функции :)
 // In-memory store for abort signals
 const abortSignals = new Map();
 

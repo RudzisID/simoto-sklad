@@ -105,7 +105,10 @@ function getChanges() {
     const result = gitExec(['status', '--porcelain']);
     if (!result.success) return { files: [], description: 'Ошибка определения изменений' };
     
-    const files = result.output.split('\n').filter(line => line.trim());
+    const files = result.output.split('\n')
+        .filter(line => line.trim())
+        .filter(line => !line.includes('.env')); // Исключаем .env
+    
     if (files.length === 0) {
         return { files: [], description: 'Нет изменений для коммита' };
     }
@@ -304,7 +307,8 @@ async function autoPush(bumpType = 'patch', options = {}) {
     console.log('\n📦 Создание коммита...');
     const commitMessage = `release: v${version} - ${description.substring(0, 50)}`;
     
-    gitExec(['add', '-A']);
+    // Добавляем все файлы кроме .env
+    gitExec(['add', '-A', '--', ':!.env']);
     const commitResult = gitExec(['commit', '-m', commitMessage]);
     
     if (!commitResult.success) {
