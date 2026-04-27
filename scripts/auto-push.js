@@ -307,8 +307,8 @@ async function autoPush(bumpType = 'patch', options = {}) {
     console.log('\n📦 Создание коммита...');
     const commitMessage = `release: v${version} - ${description.substring(0, 50)}`;
     
-    // Добавляем все файлы кроме .env
-    gitExec(['add', '-A', '--', ':!.env']);
+    // Добавляем все файлы (gitignore исключит .env)
+    gitExec(['add', '-A']);
     const commitResult = gitExec(['commit', '-m', commitMessage]);
     
     if (!commitResult.success) {

@@ -40,11 +40,11 @@ if !count! equ 0 (
 echo [OK] Files changed: !count!
 echo.
 
-:: Get current version using Node.js (more reliable)
-for /f "delims=" %%a in ('node -e "try{console.log(require('./package.json').version)}catch(e){console.log('0.0.0')}"') do set ver=%%a
+:: Get current version
+for /f %%a in ('node -e "try{console.log(require('./package.json').version)}catch(e){console.log('0.0.0')}"') do set ver=%%a
 echo [i] Current version: !ver!
 
-:: Bump version (patch)
+:: Bump version
 for /f "tokens=1,2,3 delims=." %%a in ("!ver!") do (
     set major=%%a
     set minor=%%b
@@ -56,60 +56,62 @@ set newver=!major!.!minor!.!patch!
 echo [i] New version: !newver!
 echo.
 
-:: Update package.json using PowerShell (more reliable cross-version)
+:: Update package.json
 powershell -NoProfile -Command "(Get-Content 'package.json' -Raw) -replace '\"version\": \"!ver!\"', '\"version\": \"!newver!\"' | Set-Content 'package.json'"
 
-:: Verify update worked
-for /f "delims=" %%a in ('node -e "console.log(require('./package.json').version)"') do set checkver=%%a
+:: Verify
+for /f %%a in ('node -e "console.log(require('./package.json').version)"') do set checkver=%%a
 if not "!checkver!"=="!newver!" (
     echo [!] Version update failed!
-    
     pause
     exit /b 1
 )
 echo [OK] Version updated to !newver!
 
-:: Add files (rely on .gitignore for exclusions like .env)
+:: Commit
 echo [i] Committing...
 git add -A
 git commit -m "release: v!newver!" >nul 2>&1
 if errorlevel 1 (
-    echo [!] Already up to date or nothing to commit
-    
+    echo [!] Already up to date
     pause
     exit /b 0
 )
+echo [OK] Commit: v!newver!
 
-echo [OK] Commit created: v!newver!
-echo.
+:: Push
 echo [i] Pushing to GitHub...
 git push origin main
 if errorlevel 1 (
-    echo [X] Push failed! Check your internet connection and credentials.
-    echo [i] Make sure GH_TOKEN is set in .env
-    
+    echo [X] Push failed!
     pause
     exit /b 1
 )
+echo [OK] Pushed
 
-echo [OK] Pushed to GitHub
-echo.
+:: Tag
 echo [i] Creating tag...
-git tag -a v!newver! -m "Version !newver!"
+git tag -a v!newver! -m "!newver!"
 git push origin v!newver!
-if errorlevel 1 (
-    echo [!] Tag push failed (tag may already exist)
-) else (
-    echo [OK] Tag created and pushed
-)
+echo [OK] Tag: v!newver!
+
+:: Create Release via Node.js
+echo [i] Creating release...
+node -e "
+const fs=require('fs');
+const https=require('https');
+const tok=(fs.readFileSync('.env','utf8')||'').match(/GH_TOKEN=(.+)/);
+if(!tok){console.log('No GH_TOKEN');return;}
+const data=''+JSON.stringify({tag_name:'v!newver!',name:'SiMOTO v!newver!',draft:false});
+https.request({hostname:'api.github.com',path:'/repos/RudzisID/simoto-sklad/releases',method:'POST',headers:{'Authorization':'token '+tok[1],'Content-Type':'application/json','User-Agent':'SiMOTO'}},r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>console.log(r.statusCode<300?'OK':'Failed'))}).on('error',e=>console.log('Error')).end(data);
+"
 
 echo.
 echo ===============================================
 echo    DONE! Version: v!newver!
 echo ===============================================
 echo.
-echo Opening GitHub Releases...
-start https://github.com/RudzisID/simoto-sklad/releases/new\?activeTab\=tags
-
+echo Opening GitHub...
+start https://github.com/RudzisID/simoto-sklad/releases
 
 pause
