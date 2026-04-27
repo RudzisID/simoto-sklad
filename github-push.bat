@@ -31,7 +31,8 @@ for /f %%a in ('type temp_changes.txt ^| find /c /v ""') do set count=%%a
 if %count% equ 0 (
     echo [!] No changes found
     echo.
-    echo Make some edits to files first, then run github-push.bat
+    echo Make some edits to files first
+    echo Then run github-push.bat again
     echo.
     pause
     del temp_changes.txt 2>nul
@@ -47,7 +48,7 @@ set ver=%ver: "=%
 set ver=%ver: =%
 echo [i] Current version: %ver%
 
-:: Bump version
+:: Bump version (patch)
 for /f "tokens=1,2,3 delims=." %%a in ("%ver%") do (
     set a=%%a
     set b=%%b
@@ -62,12 +63,14 @@ echo.
 :: Update package.json
 powershell -Command "(Get-Content package.json) -replace '\"version\": \"%ver%\"', '\"version\": \"%newver%\"' | Set-Content package.json"
 
+:: Add files (except .env)
 echo [i] Committing...
-git add -A
+git add -A -- :!*.env :!*.env
 git commit -m "release: v%newver%" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [!] Nothing to commit (no changes)
+    echo [!] Already up to date
     del temp_changes.txt 2>nul
+    pause
     exit
 )
 
