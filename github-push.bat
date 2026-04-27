@@ -95,16 +95,9 @@ git tag -a v!newver! -m "!newver!"
 git push origin v!newver!
 echo [OK] Tag: v!newver!
 
-:: Create Release via Node.js
+:: Create Release
 echo [i] Creating release...
-node -e "
-const fs=require('fs');
-const https=require('https');
-const tok=(fs.readFileSync('.env','utf8')||'').match(/GH_TOKEN=(.+)/);
-if(!tok){console.log('No GH_TOKEN');return;}
-const data=''+JSON.stringify({tag_name:'v!newver!',name:'SiMOTO v!newver!',draft:false});
-https.request({hostname:'api.github.com',path:'/repos/RudzisID/simoto-sklad/releases',method:'POST',headers:{'Authorization':'token '+tok[1],'Content-Type':'application/json','User-Agent':'SiMOTO'}},r=>{let d='',data2='';r.on('data',c=>d+=c);r.on('end',()=>{console.log(r.statusCode<300?'OK':'Failed');if(r.statusCode===201){const rel=JSON.parse(d);if(rel&&rel.id){console.log('Updating latest...');const p=''+JSON.stringify({draft:false});https.request({hostname:'api.github.com',path:'/repos/RudzisID/simoto-sklad/releases/'+rel.id,method:'PATCH',headers:{'Authorization':'token '+tok[1],'Content-Type':'application/json','User-Agent':'SiMOTO'}},r2=>{let d2='';r2.on('data',c=>d2+=c);r2.on('end',()=>console.log(r2.statusCode?'Latest updated':'Error updating'))}).on('error',e=>{}).end(p);}});}}).on('error',e=>console.log('Error')).end(data);
-"
+node create-release.js !newver!
 
 echo.
 echo ===============================================
