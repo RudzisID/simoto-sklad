@@ -4,4 +4,4 @@ logs/
 *.log
 temp_*.txt
 update.zip
-simoto-sklad-main/
+simoto-sklad-main/logs/
