@@ -63,7 +63,7 @@ powershell -Command "(Get-Content package.json) -replace '\"version\": \"%ver%\"
 
 :: Add files (except .env)
 echo [i] Committing...
-git add -A -- :!*.env :!*.env
+git add -A -- ':!.env'
 git commit -m "release: v%newver%" >nul 2>&1
 if %errorlevel% neq 0 (
     echo [!] Already up to date
@@ -94,8 +94,8 @@ echo ===============================================
 echo    DONE! Version: v%newver%
 echo ===============================================
 echo.
-echo Check: https://github.com/RudzisID/simoto-sklad/releases
-echo.
+echo Opening GitHubReleases...
+start https://github.com/RudzisID/simoto-sklad/releases
 
 del temp_changes.txt 2>nul
 pause
