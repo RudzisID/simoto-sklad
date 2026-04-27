@@ -1,133 +1,327 @@
 @echo off
 chcp 65001 >nul 2>&1
-title GitHub Push - SiMOTO-Sklad
-
-:: ============================================
-:: GitHub Push - Upload to GitHub
-:: ============================================
-
 setlocal enabledelayedexpansion
 
-:: --- CONFIG ---
-set "REPO_OWNER="
+title SiMOTO GitHub Auto-Push
+
+:: ============================================
+:: GitHub Auto-Push Script
+:: Автоматический пуш на GitHub с версионированием
+:: ============================================
+
+echo.
+echo ╔═══════════════════════════════════════════════════════════╗
+echo ║         SiMOTO GitHub Auto-Push v1.0.0                     ║
+echo ╚═══════════════════════════════════════════════════════════╝
+echo.
+
+:: --- КОНФИГУРАЦИЯ ---
+set "REPO_OWNER=RudzisID"
 set "REPO_NAME=simoto-sklad"
 
-:: ============================================
-:: FUNCTIONS
-:: ============================================
+:: Переключатели
+set "BUMP_TYPE=patch"
+set "AUTO_MODE=0"
+set "DRY_RUN=0"
+
+:: Парсинг аргументов
+:parse_args
+if "%~1"=="" goto :args_done
+if /i "%~1"=="major" set "BUMP_TYPE=major" & shift & goto :parse_args
+if /i "%~1"=="minor" set "BUMP_TYPE=minor" & shift & goto :parse_args
+if /i "%~1"=="patch" set "BUMP_TYPE=patch" & shift & goto :parse_args
+if /i "%~1"=="auto" set "BUMP_TYPE=auto" & shift & goto :parse_args
+if /i "%~1"=="--auto" set "AUTO_MODE=1" & shift & goto :parse_args
+if /i "%~1"=="--dry-run" set "DRY_RUN=1" & shift & goto :parse_args
+if /i "%~1"=="-y" set "AUTO_MODE=1" & shift & goto :parse_args
+if /i "%~1"=="-n" set "DRY_RUN=1" & shift & goto :parse_args
+if /i "%~1"=="--help" goto :show_help
+if /i "%~1"=="-h" goto :show_help
+shift
+goto :parse_args
+
+:args_done
+
+:: --- ФУНКЦИИ ---
 
 :check_git
-echo.
-echo [i] Checking Git...
+echo [i] Проверка git...
 where git >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [X] Git not found!
-    echo Download Git: https://git-scm.com
-    pause >nul
+    echo [X] Git не найден! Установите Git
+    pause
     exit /b 1
 )
-echo [OK] Git is installed
+
+:: Проверка что мы в git репозитории
+git rev-parse --git-dir >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [X] Это не git репозиторий!
+    pause
+    exit /b 1
+)
+echo [OK] Git готов
 exit /b 0
 
-:check_repo_url
+:check_token
 echo.
-echo [i] Checking repository URL...
+echo [i] Проверка токена...
 
-git remote get origin >nul 2>&1
-if %errorlevel% equ 0 (
-    git remote get origin > temp_remote.txt
-    set /p REMOTE_URL=<temp_remote.txt
-    del temp_remote.txt
-
-    echo [OK] Repository already configured:
-    echo   %REMOTE_URL%
-
-    set /p ANSWER="Use current repository? (Y/N): "
-    if /i "%ANSWER%"=="Y" (
-        goto :prepare_push
+:: Проверяем GH_TOKEN из .env
+if exist ".env" (
+    findstr /C:"GH_TOKEN" ".env" >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo [OK] GH_TOKEN найден в .env
+        set "HAS_TOKEN=1"
+    ) else (
+        set "HAS_TOKEN=0"
     )
-)
-echo.
-echo Enter repository URL from GitHub:
-echo Example: https://github.com/YOUR_NICK/simoto-sklad.git
-echo.
-set /p REPO_URL="URL: "
-
-if "%REPO_URL%"=="" (
-    echo [X] URL not entered!
-    exit /b 1
-)
-
-git remote remove origin >nul 2>&1
-git remote add origin %REPO_URL%
-
-echo [OK] Repository configured
-
-:prepare_push
-echo.
-echo [i] Enter commit message:
-set /p COMMIT_MSG="Message: "
-
-if "%COMMIT_MSG%"=="" (
-    set COMMIT_MSG=Update
-)
-
-echo.
-echo [i] Adding files...
-git add -A
-
-git diff --cached --quiet 2>nul
-if %errorlevel% equ 0 (
-    echo [!] Nothing to commit. Files are already up to date.
-    goto :push
-)
-
-echo.
-echo [i] Creating commit...
-git commit -m "%COMMIT_MSG%"
-
-if %errorlevel% neq 0 (
-    echo [X] Commit error!
-    exit /b 1
-)
-
-echo [OK] Commit created
-
-:push
-echo.
-echo [i] Pushing to GitHub...
-
-git branch > temp_branch.txt
-set /p BRANCH=<temp_branch.txt
-del temp_branch.txt
-
-echo.
-echo Which branch? (default: main):
-set /p TARGET_BRANCH="> "
-
-if "%TARGET_BRANCH%"=="" (
-    set TARGET_BRANCH=main
-)
-
-git push -u origin %TARGET_BRANCH%
-
-if %errorlevel% equ 0 (
-    echo.
-    echo [OK][OK][OK] Successfully pushed to GitHub! [OK][OK][OK]
-    echo.
-    echo Now create Release:
-    echo 1. Go to your repository on GitHub
-    echo 2. Click 'Releases' ^> 'Draft a new release'
-    echo 3. Enter version (e.g. v1.0.0)
-    echo 4. Click 'Publish release'
 ) else (
-    echo [X] Push error!
-    echo Check:
-    echo - Internet connection
-    echo - Correct repository URL
-    echo - You are logged in to Git
+    set "HAS_TOKEN=0"
 )
 
+:: Проверяем из переменной окружения
+if defined GH_TOKEN set "HAS_TOKEN=1"
+if defined GITHUB_TOKEN set "HAS_TOKEN=1"
+
+if "%HAS_TOKEN%"=="0" (
+    echo [!] GitHub токен не найден
+    echo.
+    echo Для работы нужен Personal Access Token:
+    echo   1. Перейдите на https://github.com/settings/tokens
+    echo   2. Создайте токен с правами: repo
+    echo   3. Добавьте в .env файл:
+    echo      GH_TOKEN=ваш_токен
+    echo.
+    set /p CREATE_ENV="Создать .env файл? (Y/N): "
+    if /i "!CREATE_ENV!"=="Y" (
+        (
+            echo # GitHub Personal Access Token
+            echo GH_TOKEN=
+            echo.
+            echo # MoySklad API Token
+            echo MOYSKLAD_TOKEN=your_token_here
+        ) > .env
+        echo [OK] Создан .env.template
+        echo [!] Отредактируйте .env и добавьте ваш GH_TOKEN
+        notepad .env
+    )
+    exit /b 1
+)
+exit /b 0
+
+:get_changes
 echo.
+echo [i] Анализ изменений...
+git status --porcelain > temp_changes.txt
+set /a CHANGES_COUNT=0
+for /f %%a in ('type temp_changes.txt ^| find /c /v ""') do set CHANGES_COUNT=%%a
+
+if %CHANGES_COUNT% equ 0 (
+    echo [!] Нет изменений для коммита
+    del temp_changes.txt 2>nul
+    exit /b 1
+)
+
+echo [OK] Изменено файлов: %CHANGES_COUNT%
+exit /b 0
+
+:get_current_version
+if exist "package.json" (
+    for /f "tokens=2 delims=:," %%a in ('findstr /C:"version" package.json') do set "CURRENT_VERSION=%%a"
+    set "CURRENT_VERSION=%CURRENT_VERSION:"=%"
+    set "CURRENT_VERSION=%CURRENT_VERSION: =%"
+)
+exit /b 0
+
+:bump_version
+:: Semver bump
+call :get_current_version
+
+for /f "tokens=1,2,3 delims=." %%a in ("%CURRENT_VERSION%") do (
+    set "MAJOR=%%a"
+    set "MINOR=%%b"
+    set "PATCH=%%c"
+)
+
+if "%BUMP_TYPE%"=="major" (
+    set /a MAJOR+=1
+    set "MINOR=0"
+    set "PATCH=0"
+) else if "%BUMP_TYPE%"=="minor" (
+    set /a MINOR+=1
+    set "PATCH=0"
+) else (
+    set /a PATCH+=1
+)
+
+set "NEW_VERSION=%MAJOR%.%MINOR%.%PATCH%"
+
+:: Обновляем package.json
+powershell -Command "(Get-Content package.json) -replace '\"version\": \"%CURRENT_VERSION%\"', '\"version\": \"%NEW_VERSION%\"' | Set-Content package.json"
+
+echo [OK] Версия: %CURRENT_VERSION% ^> %NEW_VERSION%
+exit /b 0
+
+:confirm_push
+if "%AUTO_MODE%"=="1" exit /b 0
+
+echo.
+echo ═════════════════════════════════════════
+echo   Версия будет обновлена до %NEW_VERSION%
+echo   Тип: %BUMP_TYPE%
+echo ═════════════════════════════════════════
+echo.
+set /p CONFIRM="Продолжить пуш на GitHub? (Y/N): "
+if /i not "!CONFIRM!"=="Y" (
+    echo [i] Отменено пользователем
+    :: Откат версии в package.json
+    powershell -Command "(Get-Content package.json) -replace '\"version\": \"%NEW_VERSION%\"', '\"version\": \"%CURRENT_VERSION%\"' | Set-Content package.json"
+    exit /b 1
+)
+exit /b 0
+
+:commit_and_push
+echo.
+echo [i] Создание коммита...
+git add -A
+git commit -m "release: v%NEW_VERSION%" 2>nul
+if %errorlevel% neq 0 (
+    echo [X] Ошибка коммита (возможно нет изменений)
+    exit /b 1
+)
+echo [OK] Коммит создан
+
+echo.
+echo [i] Пуш на GitHub...
+git push origin main
+if %errorlevel% neq 0 (
+    echo [X] Ошибка пуша
+    git reset --soft HEAD~1
+    exit /b 1
+)
+echo [OK] Пуш выполнен
+exit /b 0
+
+:create_tag
+echo.
+echo [i] Создание тега...
+
+:: Удаляем старый тег локально и на remote
+git tag -d v%NEW_VERSION% 2>nul
+git push origin :refs/tags/v%NEW_VERSION% 2>nul
+
+:: Создаём новый тег
+git tag -a v%NEW_VERSION% -m "Version %NEW_VERSION%"
+git push origin v%NEW_VERSION%
+if %errorlevel% equ 0 (
+    echo [OK] Тег v%NEW_VERSION% создан и запушен
+) else (
+    echo [!] Тег создан локально, но пуш не удался
+)
+exit /b 0
+
+:create_release
+echo.
+echo [i] Создание GitHub Release...
+
+:: Проверяем есть ли токен
+call :check_token
+if %errorlevel% neq 0 (
+    echo [!] Нет токена - Release не будет создан
+    exit /b 0
+)
+
+:: Используем Node.js скрипт для создания Release
+node scripts\auto-push.js %BUMP_TYPE% --auto
+exit /b 0
+
+:show_help
+echo.
+echo SiMOTO GitHub Auto-Push
+echo.
+echo Использование:
+echo   github-push.bat              - пуш с patch версией (1.0.0 -^> 1.0.1)
+echo   github-push.bat minor        - пуш с minor версией (1.0.0 -^> 1.1.0)
+echo   github-push.bat major        - пуш с major версией (1.0.0 -^> 2.0.0)
+echo   github-push.bat --auto       - автоматический режим без подтверждения
+echo   github-push.bat --dry-run    - тестовый прогон
+echo   github-push.bat --help       - эта справка
+echo.
+echo Примеры:
+echo   github-push.bat patch        - исправления багов
+echo   github-push.bat minor        - новые функции
+echo   github-push.bat major        - API изменения
+echo.
+pause
+exit /b 0
+
+:success
+echo.
+echo ╔═══════════════════════════════════════════════════════════╗
+echo ║  ✅ GitHub Auto-Push завершён!                            ║
+echo ╚═══════════════════════════════════════════════════════════╝
+echo.
+echo    Версия:   %NEW_VERSION%
+echo    Репозиторий: https://github.com/%REPO_OWNER%/%REPO_NAME%
+echo.
+del temp_changes.txt 2>nul
+exit /b 0
+
+:: ============================================
+:: ОСНОВНАЯ ПРОГРАММА
+:: ============================================
+
+:: Проверка Node.js
+where node >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [X] Node.js не найден!
+    exit /b 1
+)
+
+:: Проверка git
+call :check_git
+if %errorlevel% neq 0 exit /b 1
+
+:: Анализ изменений
+call :get_changes
+if %errorlevel% neq 0 (
+    echo [i] Завершение работы
+    del temp_changes.txt 2>nul
+    exit /b 0
+)
+
+:: Обновление версии
+call :bump_version
+
+:: Подтверждение
+if "%DRY_RUN%"=="1" (
+    echo.
+    echo [i] DRY RUN - пуш не будет выполнен
+    echo [i] Новая версия уже в package.json
+    pause
+    exit /b 0
+)
+
+call :confirm_push
+if %errorlevel% neq 0 exit /b 0
+
+:: Коммит и пуш
+call :commit_and_push
+if %errorlevel% neq 0 (
+    echo [X] Ошибка пуша
+    pause
+    exit /b 1
+)
+
+:: Создание тега
+call :create_tag
+
+:: Создание Release через Node.js
+call :create_release
+
+:: Успех
+call :success
+
 pause >nul
 endlocal

@@ -7,6 +7,10 @@
     "start": "node server.js",
     "test": "jest",
     "docs": "node scripts/docs-generator.js",
+    "push": "node scripts/auto-push.js",
+    "push:minor": "node scripts/auto-push.js minor",
+    "push:major": "node scripts/auto-push.js major",
+    "push:auto": "node scripts/auto-push.js auto",
     "precommit": "npm run docs && npm test",
     "prepublishOnly": "npm run precommit"
   },

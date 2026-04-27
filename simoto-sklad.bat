@@ -12,12 +12,11 @@ setlocal enabledelayedexpansion
 :: --- CONFIG ---
 set "REPO_OWNER=RudzisID"
 set "REPO_NAME=simoto-sklad"
-set "VERSION_URL=https://api.github.com/repos/%REPO_OWNER%/%REPO_NAME%/releases/latest"
-set "DOWNLOAD_URL=https://github.com/%REPO_OWNER%/%REPO_NAME%/archive/refs/heads/main.zip"
+set "GITHUB_API=https://api.github.com/repos/%REPO_OWNER%/%REPO_NAME%"
+set "VERSION_URL=%GITHUB_API%/releases/latest"
+set "DOWNLOAD_URL=%GITHUB_API%/archive/refs/tags"
 
-:: ============================================
-:: FUNCTIONS
-:: ============================================
+:: --- FUNCTIONS ---
 
 :check_node
 echo.
@@ -77,46 +76,69 @@ exit /b 0
 echo.
 echo [i] Checking for updates...
 
-:: Try to get version from GitHub
-curl -s -L "%VERSION_URL%" 2>nul | findstr /C:"tag_name" >temp_version.txt 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=2 delims=^" %%a in (temp_version.txt) do set "LATEST_VERSION=%%a"
-    set "LATEST_VERSION=%LATEST_VERSION:~1,-1%"
-    set "LATEST_VERSION=%LATEST_VERSION: =%"
+:: Try to get version from GitHub API
+curl -s -L "%VERSION_URL%" 2>nul > temp_release.json 2>&1
+if exist temp_release.json (
+    :: Извлекаем tag_name и zipball_url
+    findstr /C:"tag_name" temp_release.json >temp_version.txt 2>&1
+    findstr /C:"zipball_url" temp_release.json >temp_download.txt 2>&1
+    
+    if %errorlevel% equ 0 (
+        for /f "tokens=2 delims=^" %%a in (temp_version.txt) do set "LATEST_VERSION=%%a"
+        set "LATEST_VERSION=%LATEST_VERSION:~1,-1%"
+        set "LATEST_VERSION=%LATEST_VERSION: =%"
+        
+        for /f "tokens=2 delims=^" %%a in (temp_download.txt) do set "ZIPBALL_URL=%%a"
+        set "ZIPBALL_URL=%ZIPBALL_URL:~1,-1%"
+        
+        echo Current version: %CURRENT_VERSION%
+        echo Latest version:  %LATEST_VERSION%
 
-    echo Current version: %CURRENT_VERSION%
-    echo Latest version:  %LATEST_VERSION%
-
-    if "%CURRENT_VERSION%" neq "%LATEST_VERSION%" (
-        echo.
-        echo [!] New version available: %LATEST_VERSION%
-        echo Downloading update...
-
-        curl -s -L "%DOWNLOAD_URL%" -o update.zip
-        if exist "update.zip" (
-            powershell -Command "Expand-Archive -Force update.zip ."
-            del update.zip 2>nul
-
-            :: Copy files (except node_modules and logs)
-            xcopy /e /y /q "simoto-sklad-main\lib\*" "lib\" 2>nul
-            xcopy /e /y /q "simoto-sklad-main\*.js" ". " 2>nul
-            xcopy /e /y /q "simoto-sklad-main\*.json" ". " 2>nul
-            xcopy /e /y /q "simoto-sklad-main\*.md" ". " 2>nul
-            xcopy /e /y /q "simoto-sklad-main\public\*" "public\" 2>nul
-
-            rmdir /s /q "simoto-sklad-main" 2>nul
-
-            echo [OK] Update installed!
-            set UPDATED=1
+        if "%CURRENT_VERSION%" neq "%LATEST_VERSION%" (
+            echo.
+            echo [!] New version available: %LATEST_VERSION%
+            
+            set /p UPDATE_NOW="Download and install update? (Y/N): "
+            if /i "!UPDATE_NOW!"=="Y" (
+                echo Downloading update...
+                
+                :: Скачиваем архив релиза
+                curl -s -L "%ZIPBALL_URL%" -o update.zip
+                if exist "update.zip" (
+                    :: Распаковываем
+                    powershell -Command "Expand-Archive -Force update.zip ."
+                    
+                    :: Находим распакованную директорию
+                    for /d %%d in (simoto-sklad-*) do (
+                        echo Updating files from %%d...
+                        xcopy /e /y /q "%%d\lib\*" "lib\" 2>nul
+                        xcopy /e /y /q "%%d\*.js" ". " 2>nul
+                        xcopy /e /y /q "%%d\*.json" ". " 2>nul
+                        xcopy /e /y /q "%%d\*.md" ". " 2>nul
+                        xcopy /e /y /q "%%d\public\*" "public\" 2>nul
+                        xcopy /e /y /q "%%d\scripts\*" "scripts\" 2>nul
+                        rmdir /s /q "%%d" 2>nul
+                    )
+                    
+                    del update.zip 2>nul
+                    echo [OK] Update installed!
+                    set UPDATED=1
+                )
+            )
+        ) else (
+            echo [OK] You have the latest version
         )
     ) else (
-        echo [OK] You have the latest version
+        echo [!] Could not parse release info
+        echo Continuing...
     )
 ) else (
     echo [!] Could not check updates (no internet?)
     echo Continuing...
 )
 del temp_version.txt 2>nul
+del temp_download.txt 2>nul
+del temp_release.json 2>nul
 exit /b 0
 
 :create_logs
@@ -134,9 +156,13 @@ exit /b 0
 :: MAIN PROGRAM
 :: ============================================
 
+:: Get version first
+call :get_current_version
+if not defined CURRENT_VERSION set "CURRENT_VERSION=1.0.0"
+
 echo.
 echo ============================================
-echo   SiMOTO-Sklad v1.0.0
+echo   SiMOTO-Sklad v%CURRENT_VERSION%
 echo   Payment Automation Module
 echo ============================================
 echo.
