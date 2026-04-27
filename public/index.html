@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SiMOTO</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left column -->
+        <div class="left-column">
+            <!-- Header over input -->
+            <div class="header-box">
+                <div class="header-top">
+                    <h1>SiMOTO</h1>
+                </div>
+                <div class="status">
+                    <span id="statusDot" class="status-dot"></span>
+                    <span id="statusText">Готов</span>
+                </div>
+                <div class="progress-container" id="progressContainer">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+            </div>
+
+            <!-- Input block -->
+            <div class="input-panel">
+                <p class="hint">Токен API (сохраняется в браузере)</p>
+                <div class="token-row">
+                    <input type="text" id="tokenInput" placeholder="Введите токен МойСклад">
+                    <button onclick="saveToken()" class="save-token-btn" title="Сохранить токен">
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                            <polyline points="17 21 17 13 7 13 7 21"/>
+                            <polyline points="7 3 7 8 15 8"/>
+                        </svg>
+                    </button>
+                </div>
+                <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
+                <div class="button-row">
+                    <button onclick="checkNumbers()">Сканировать</button>
+                    <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display: none;">✕</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center column: Table -->
+        <div class="center-column">
+            <div class="table-panel">
+                <div id="tableContainer">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:30px"><input type="checkbox" id="selectAll" onchange="toggleAll(this.checked)" checked></th>
+                                <th class="sortable" onclick="sortTable('shipmentNum')">№</th>
+                                <th class="sortable order-header" onclick="sortTable('orderName')">Заказ</th>
+                                <th class="sortable" onclick="sortTable('sum')">Сумма</th>
+                                <th>Опл.</th>
+                                <th class="sortable" onclick="sortTable('hasDemand')">Отгрузка</th>
+                                <th class="sortable" onclick="sortTable('hasPayment')">Платёж</th>
+                                <th class="sortable" onclick="sortTable('hasReturn')">Возврат</th>
+                                <th class="sortable" onclick="sortTable('isCancelled')">Статус</th>
+                                <th>Кнопки</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr><td colspan="10" class="empty">Введите номера и нажмите "Проверить"</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right column: Stats -->
+        <div class="right-column">
+            <!-- Bulk actions moved to right column -->
+            <div class="bulk-actions">
+                <button onclick="createAllDemands()" class="bulk-btn demand">Отгрузка</button>
+                <button onclick="createAllPayments()" class="bulk-btn payment">Платёж</button>
+                <button onclick="batchAction('return')" class="bulk-btn return">Возврат</button>
+                <button onclick="batchAction('cancel')" class="bulk-btn cancel">Отмена</button>
+            </div>
+            
+            <!-- Current stats (60%) -->
+            <div class="stats-panel stats-current">
+                <div class="stats-header">Текущее состояние</div>
+                <div id="statsOutput" class="stats-output"></div>
+            </div>
+            
+            <!-- After action stats (40%) -->
+            <div class="stats-panel stats-final">
+                <div class="stats-header" id="statsFinalHeader" style="display: none;">После действий</div>
+                <div id="statsFinalOutput" class="stats-output idle">
+                    <div class="terminal-message">Ожидание массовой операции</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

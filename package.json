@@ -1,0 +1,27 @@
+{
+  "name": "payment-module",
+  "version": "1.0.0",
+  "description": "Модуль создания входящих платежей для МойСклад",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "jest",
+    "docs": "node scripts/docs-generator.js",
+    "precommit": "npm run docs && npm test",
+    "prepublishOnly": "npm run precommit"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "moysklad": "^0.21.1",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  },
+  "simoto": {
+    "autoDocs": true,
+    "docsDir": "docs",
+    "autoUpdate": "oncommit",
+    "modules": "lib"
+  }
+}
