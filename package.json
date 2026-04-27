@@ -1,6 +1,6 @@
 {
   "name": "payment-module",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Модуль создания входящих платежей для МойСклад",
   "main": "server.js",
   "scripts": {
@@ -29,5 +29,6 @@
     "modules": "lib"
   }
 }
+
 
 

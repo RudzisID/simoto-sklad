@@ -69,9 +69,9 @@ if not "!checkver!"=="!newver!" (
 )
 echo [OK] Version updated to !newver!
 
-:: Add files (except .env and temp files)
+:: Add files (rely on .gitignore for exclusions like .env)
 echo [i] Committing...
-git add -A -- ':!.env'
+git add -A
 git commit -m "release: v!newver!" >nul 2>&1
 if errorlevel 1 (
     echo [!] Already up to date or nothing to commit

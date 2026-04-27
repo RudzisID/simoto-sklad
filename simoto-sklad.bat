@@ -47,7 +47,7 @@ echo [i] Current version: !curver!
 :: Check for updates
 echo.
 echo [i] Checking for updates...
-node -e "https.get('https://api.github.com/repos/RudzisID/simoto-sklad/releases/latest',{headers:{'User-Agent':'SiMOTO'}},r=>{var d='';r.on('data',c=>d+=c);r.on('end',()=>{try{var j=JSON.parse(d);console.log('Latest: '+j.tag_name);if('!curver!'!=j.tag_name.replace('v','')){console.log('New version available!');}else{console.log('You have latest');}}catch(e){console.log('Error');}}).on('error',e=>console.log('No network'))"
+node check-update.js !curver!
 
 :: Start server
 echo.
