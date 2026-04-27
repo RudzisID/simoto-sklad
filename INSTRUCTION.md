@@ -1,294 +1,281 @@
-# Модуль создания входящих платежей
+# Инструкция разработчика SiMOTO-sklad
 
-## Общее описание
+Техническая документация для работы с модулем автоматизации МойСклад.
 
-Модуль для автоматизации создания входящих платежей в МойСклад по номерам отправлений Ozon.
+## Обзор
 
-### Возможности
+SiMOTO-sklad — модуль для автоматизации создания платежей, отгрузок, возвратов и отмены заказов в МойСклад по номерам отправлений.
 
-- Загрузка списка номеров отправлений из буфера обмена
-- Проверка каждого заказа: сумма, статус, оплата
-- Отображение дублей в списке
-- Редактирование перед созданием платежей
-- Изменение статуса заказа ("На отправке с отсрочкой" → "Отгружен")
-- Создание платежей с правильными данными
-- Создание отгрузок (demand)
-- Создание возвратов покупателей (salesreturn)
-- Отмена заказов (сброс резерва в 0, статус "Отменен")
-- Логирование всех действий
-- Сохранение отчёта
-
----
-
-## Документация МойСклад API
-
-Официальная документация: `../ms-api-doc/md/documents/`
-
-Основные разделы:
-- Заказы покупателей: `_customerOrder.md`
-- Отгрузки: `_demand.md`
-- Возвраты покупателей: `_sales_return.md`
-- Входящие платежи: `_payment_in.md`
-
----
-
-## Установка
-
-### Примечание по переопорежению структуры
-- В рамках стратегии rename/core-app сейчас платежный модуль остаётся автономным, но проект переориентируется на единый главный вход core-app. Текущие файлы payment-module продолжают работать и используются как внутренняя реализация, однако планируется постепенный перенос под core-app.
-
-
-### 1. Установка зависимостей
-
-```bash
-cd payment-module
-npm install
-```
-
-### 2. Настройка токена
-
-Открыть файл `.env` и указать токен:
+## Архитектура
 
 ```
-MOYSKLAD_TOKEN=7b8cf2762052cfb9b87e6c0b525a462090b43ad2
+server.js (Express)
+  ├── lib/moysklad.js (баррел)
+  │     ├── lib/order.js      — поиск заказов
+  │     ├── lib/check.js     — проверка статусов
+  │     ├── lib/batch.js    — пакетная обработка + SSE
+  │     ├── lib/payment.js  — создание платежей
+  │     ├── lib/demand.js   — создани�� отгрузок
+  │     ├── lib/return.js  — создание возвратов
+  │     ├── lib/cancel.js — отмена заказов
+  │     ├── lib/api-utils.js — утилиты API
+  │     └── lib/constants.js — UUID статусов
+  │
+  └── integrations/wb_ozon_sync.js (скелет)
 ```
-
----
 
 ## Запуск
 
+### Windows Launcher
 ```bash
-cd payment-module
+simoto-sklad.bat
+```
+Автоматически:
+- Проверяет Node.js
+- Устанавливает зависимости (если нужно)
+- Проверяет .env
+- Создаёт logs/
+- Проверяет обновления на GitHub
+- Запускает server.js
+
+### Ручной запуск
+```bash
+npm start
+# или
 node server.js
 ```
 
-Открыть в браузере: http://localhost:3000
+### GitHub Push
+```bash
+github-push.bat
+```
+Автоматически:
+- Проверяет изменения
+- Bump версии
+- Коммитит
+- Пушит
+- Создаёт тег
+- Создаёт GitHub release
 
----
+## API Token
 
-## Использование
-
-### Экран 1: Ввод номеров
-
-1. Скопировать номера из Excel (столбиком)
-2. Вставить в левое поле
-3. Нажать "Проверить"
-
-### Экран 2: Проверка и редактирование
-
-**Таблица с данными:**
-- № - номер отправления
-- Заказ - номер заказа в МойСклад
-- Сумма - сумма отгрузки
-- Оплачено - сколько уже оплачено
-- Статус - текущий статус заказа
-- Действие - создавать/пропустить/ошибка
-
-**Функции редактирования:**
-- [Исключить] - не создавать платеж для этого номера
-- [Изменить сумму] - редактировать сумму вручную
-
-**Итоги:**
-- Всего позиций
-- К созданию
-- Пропущено (уже оплачено)
-- Общая сумма
-
-### Экран 3: Подтверждение и выполнение
-
-1. Нажать "Создать платежи"
-2. Модуль выполняет:
-   - Изменяет статусы ("На отправке с отсрочкой" → "Отгружен")
-   - Создаёт платежи с привязкой к заказу
-3. Показывает результаты
-
-### Экран 4: Результаты
-
-- Создано платежей
-- Пропущено
-- Ошибки
-- Кнопка "Сохранить отчёт"
-
----
-
-## Логика работы
-
-###获取订单
-
-Для каждого номера находим заказ в МойСклад:
-
-```javascript
-const orders = await API.GET('entity/customerorder?limit=10&filter=description~' + shipmentNum);
-const order = orders.rows.find(o => o.description && o.description.includes(shipmentNum));
+Токен передаётся в заголовке:
+```
+X-API-TOKEN: ваш_токен
 ```
 
-获取完整数据:
-
-```javascript
-const orderFull = await API.GET('entity/customerorder/' + order.id, {
-    expand: 'demands,salesChannel,agent,organization,state'
-});
+Или через query (для SSE):
+```
+/api/process/stream?token=ваш_токен&numbers=...
 ```
 
-获取отгрузку:
+## Константы (lib/constants.js)
 
 ```javascript
-const demand = await API.GET('entity/demand/' + demandId, {
-    expand: 'salesChannel'
-});
-```
+ORDER_STATUS = {
+  SHIPPED: 'e98e02bb-b1c2-11ed-0a80-004e000a8440',
+  DELAYED: '91cb9364-d7c5-11ed-0a80-05b5003aa5c4',
+  RETURN: '444c3246-91e8-11f0-0a80-11be007306ce',
+  CANCELLED: 'fb56e2b4-2e58-11e6-8a84-bae50000006f'
+}
 
-### Проверка статуса
+DEMAND_STATUS = {
+  CANCELLED: 'b1de4f91-a3ca-11ee-0a80-1547000a8e4c'
+}
 
-| Текущий статус | ID | Действие |
-|----------------|-----|----------|
-| На отправке с отсрочкой платежа | 91cb9364-d7c5-11ed-0a80-05b5003aa5c4 | Изменить на "Отгружен" → создать платёж |
-| Отгружен | e98e02bb-b1c2-11ed-0a80-004e000a8440 | Создать платёж |
-| Другой | - | Пропустить, сообщить |
-
-### Проверка оплаты
-
-```javascript
-if (demand.payedSum >= demand.sum) {
-    // Уже оплачен - пропустить
+ATTRIBUTES = {
+  DEMAND_CHANNEL: 'eff314b1-d222-11ed-0a80-01240038ac64',
+  ORDER_CHANNEL: 'ec686189-d214-11ed-0a80-0d7d00353a4e'
 }
 ```
 
-### Изменение статуса
+##业务流程
+
+### 1. Проверка заказов
 
 ```javascript
-if (currentStateId === STATUS_DELAYED_ID) {
-    await API.PUT('entity/customerorder/' + order.id, {
-        state: {
-            meta: {
-                href: '.../metadata/states/' + STATUS_SHIPPED_ID,
-                type: 'state'
-            }
-        },
-        salesChannel: orderFull.salesChannel,
-        attributes: orderFull.attributes
-    });
-}
-```
-
-### Создание платежа
-
-```javascript
-const payment = await API.POST('entity/paymentin', {
-    agent: { meta: orderFull.agent.meta },
-    organization: { meta: orderFull.organization.meta },
-    sum: demand.sum,                              // Сумма
-    vatSum: demand.vatSum,                       // НДС из отгрузки
-    salesChannel: { meta: demand.salesChannel.meta }, // Канал продаж
-    operations: [{
-        meta: {
-            href: 'https://api.moysklad.ru/api/remap/1.2/entity/customerorder/' + order.id,
-            type: 'customerorder',
-            mediaType: 'application/json'
-        },
-        linkedSum: demand.sum
-    }],
-    description: orderFull.description,
-    organizationAccount: { meta: orderFull.organizationAccount.meta }
-});
-```
-
----
-
-## Константы
-
-| Параметр | ID |
-|----------|-----|
-| Токен API | 7b8cf2762052cfb9b87e6c0b525a462090b43ad2 |
-| Статус "Отгружен" | e98e02bb-b1c2-11ed-0a80-004e000a8440 |
-| Статус "На отправке с отсрочкой" | 91cb9364-d7c5-11ed-0a80-05b5003aa5c4 |
-| Статус "Возврат" | 444c3246-91e8-11f0-0a80-11be007306ce |
-| Статус "Отменен" | fb56e2b4-2e58-11e6-8a84-bae50000006f |
-| Статус отгрузки "Отменён" | b1de4f91-a3ca-11ee-0a80-1547000a8e4c |
-| Атрибут "Канал продаж" (demand) | eff314b1-d222-11ed-0a80-01240038ac64 |
-| Атрибут "Канал продаж" (order) | ec686189-d214-11ed-0a80-0d7d00353a4e |
-
----
-
-## Важные правила
-
-1. **НЕ создавать дубли!** - проверять `demand.payedSum >= demand.sum`
-2. **Копировать данные:**
-   - `organizationAccount` - из заказа
-   - `vatSum` - из отгрузки
-   - `salesChannel` - из отгрузки
-3. **Изменять статус** - только если "На отправке с отсрочкой"
-4. **Привязывать к заказу** - через operations с linkedSum
-
----
-
-## Структура файлов
-
-```
-payment-module/
-├── INSTRUCTION.md          # Эта инструкция
-├── package.json           # Зависимости
-├── server.js              # Главный сервер
-├── start.bat              # Запуск (Windows)
-├── .env                  # Токен API (создать вручную)
-├── lib/
-│   ├── moysklad.js         # Работа с API МойСклад
-│   └── payment.js           # Логика создания платежей
-├── public/
-│   ├── index.html           # Главная страница
-│   ├── app.js              # Frontend логика
-│   └── styles.css          # Стили (dark theme, bento)
-└── logs/
-    └── .gitkeep            # Папка для логов
-```
-
----
-
-## Зависимости (package.json)
-
-```json
+POST /api/process
 {
-  "name": "payment-module",
-  "version": "1.0.0",
-  "description": "Модуль создания входящих платежей",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "moysklad": "^1.0.0",
-    "dotenv": "^16.3.1"
+  "numbers": ["12345678-IL", "87654321-IL"]
+}
+// Returns: массив {shipmentNum, orderId, orderName, sum, status, ...}
+```
+
+```javascript
+GET /api/process/stream?token=X&numbers=123,456
+// SSE events:
+// {type: 'progress', index, total, order: {...}}
+// {type: 'done', orders: [...]}
+// {type: 'aborted', processed: N}
+```
+
+### 2. Пакетная операция
+
+```javascript
+POST /api/batch
+{
+  "numbers": ["12345678-IL"],
+  "action": "payment" // | "demand" | "return" | "cancel"
+}
+```
+
+```javascript
+GET /api/batch/stream?token=X&numbers=123&action=payment
+// SSE events:
+// {type: 'progress', index, total, result: {...}, stats: {...}}
+// {type: 'done', stats: {...}}
+```
+
+### 3. Создание платежа
+
+```javascript
+POST /api/create-payment
+{
+  "shipmentNum": "12345678-IL"
+}
+// Returns: {success: true, paymentName: "Входящий платеж ..."}
+```
+
+**Логика:**
+1. Найти заказ по shipmentNum
+2. Проверить статус
+3. Если "На отправке с отсрочкой" → изменить на "Отгружен"
+4. Создать платёж с привязкой к заказу
+
+### 4. Создание отгрузки
+
+```javascript
+POST /api/create-demand
+{
+  "shipmentNum": "12345678-IL"
+}
+// Returns: {success: true, demandName: "Отгрузка ..."}
+```
+
+### 5. Создание возврата
+
+```javascript
+POST /api/create-return
+{
+  "shipmentNum": "12345678-IL"
+}
+// Returns: {success: true, returnName: "Возврат ..."}
+```
+
+**Требования:**
+- Заказ должен иметь отгрузку (demand)
+
+### 6. Отмена заказа
+
+```javascript
+POST /api/cancel-order
+{
+  "shipmentNum": "12345678-IL"
+}
+// Returns: {success: true, ...}
+```
+
+**Логика:**
+- Изменить статус на "Отменён"
+- Если есть demand → изменить его статус на "Отменён"
+- Сбросить резерв
+
+## Состояние заказов
+
+Состояние сохраняется в `logs/orders_state.json`:
+
+```javascript
+{
+  "12345678-IL": {
+    "orderName": "Заказ покупателя №123",
+    "sum": 1500.00,
+    "paid": 0,
+    "status": "shipped",
+    "canCreate": true,
+    "orderId": "abc123",
+    "orderUrl": "https://online.moysklad.ru/app/#customerorder/abc123",
+    "lastAction": "payment_created",
+    "lastResult": "Входящий платеж ...",
+    "history": [
+      {"action": "check", "result": "ok", "time": "2024-..."}
+    ]
   }
 }
 ```
 
----
+### Эндпойнты состояния
+
+```javascript
+GET /api/orders-state   // Получить всё
+POST /api/orders-state // Сохранить
+DELETE /api/orders-state // Очистить
+```
+
+## SSE Streaming
+
+SSE (Server-Sent Events) для realtime обновлений:
+
+### Проверка (process/stream)
+```
+GET /api/process/stream?token=X&numbers=123,456
+```
+
+### Batch (batch/stream)
+```
+GET /api/batch/stream?token=X&numbers=123&action=payment
+```
+
+### Abort (отмена)
+```
+POST /api/abort
+{"abortId": "abc123"}
+```
+
+При disconnect клиента автоматически устанавливается abort flag.
+
+## Логирование
+
+Логи в `logs/payments_YYYY-MM-DD.log`:
+
+```
+[2024-04-27 10:30:00] === Начало check ===
+[2024-04-27 10:30:01] Количество: 10
+[2024-04-27 10:30:02] Заказ найден: 12345678-IL
+```
 
 ## Тестирование
 
-Для тестирования использовать команду:
-
 ```bash
-node payment-module/server.js
+npm test
 ```
 
-Открыть http://localhost:3000
+## Документация API
 
----
+Генерируется автоматически:
+```bash
+npm run docs
+```
+
+Выход: `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/lib/*.md`
+
+## Важные правила
+
+1. **Не создавать дубли платежей** — проверять `payedSum >= sum`
+2. **Копировать данные** — organizationAccount, vatSum, salesChannel из source
+3. **Менять статус** — только если "На отправке с отсрочкой"
+4. **Привязывать платёж** — через operations с linkedSum
+5. **Обрабатывать ошибки** — все API вызовы в try/catch
 
 ## Возможные ошибки
 
-| Ошибка | Причина | Решение |
-|-------|---------|---------|
-| 401 Unauthorized | Неверный токен | Проверить .env |
-| Заказ не найден | Номер не в МойСклад | Проверить номер |
-| Нет доступа | Нужны права | Обратиться к админу |
+| Код | Сообщение | Решение |
+|------|----------|---------|
+| 401 | Unauthorized | Проверить токен |
+| 404 | Заказ не найден | Проверить номер |
+| 409 | Уже существует | Пропустить |
+| 422 | Невозможно создать | Проверить статус заказа |
 
----
+## Ссылки
 
-## Текущие рабочие скрипты
-
-Скопированы из оригиналов:
-- `tmp/create_payments_batch.js` → `lib/payment.js` (нужна адаптация)
-- Скилл `Skills/moysklad-payment-in.md` → в эту инструкцию
+- МойСклад API: https://api.moysklad.ru/api/remap/1.2/
+- Репозиторий: https://github.com/RudzisID/simoto-sklad

@@ -97,7 +97,7 @@ echo [OK] Tag: v!newver!
 
 :: Create Release
 echo [i] Creating release...
-node create-release.js !newver!
+node scripts/create-release.js !newver!
 
 echo.
 echo ===============================================

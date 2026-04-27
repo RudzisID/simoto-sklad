@@ -1,1 +1,0 @@
-cd /d C:\distr\!OpenCode\sklad\SiMOTO-sklad && cmd /c github-push.bat

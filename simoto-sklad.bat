@@ -47,7 +47,7 @@ echo [i] Current version: !curver!
 :: Check for updates
 echo.
 echo [i] Checking for updates...
-node check-update.js !curver!
+node scripts/check-update.js !curver!
 
 :: Start server
 echo.

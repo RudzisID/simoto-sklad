@@ -1,91 +1,175 @@
-# План каталога и функций payment-module
+# План проекта SiMOTO-sklad
 
-Этот документ предназначен для быстрого понимания структуры и назначения ключевых файлов payment-module. План является живым документом и должен дополняться по мере доработок.
+Структура, архитектура и план доработок модуля автоматизации для МойСклад.
 
 ## Общее описание
-- Модуль реализует сбор, проверку и создание платежей в MoySklad по номерам отправлений. Он запакован в минимальный HTTP API на Express и предоставляет возможности для пакетной обработки, создания отгрузок (demand), возвратов и отмен.
+
+Модуль автоматизации платежей и управления заказами. Работает с API МойСклад:
+- Поиск заказов по номеру отправления
+- Проверка статусов, сумм, оплат
+- Создание платежей, отгрузок, возвратов
+- Отмена заказов
+- Пакетная обработка с SSE streaming
 
 ## Структура проекта
-- payment-module/
-  - INSTRUCTION.md — исходная спецификация и руководство по использованию модуля.
-  - package.json — зависимости и скрипты сборки/запуска.
-  - server.js — главный сервер Express. Обработчики API (/api/...). Логирование и управление состоянием заказов сохраняются в файлах в logs/.
-  - start.bat — скрипт запуска под Windows.
-  - .env — переменные окружения (в примере: MOYSKLAD_TOKEN и т.д.).
-  - logs/ — директория логов (лог-файлы payments_YYYY-MM-DD.log).
-  - public/ — статика для фронтенда (index.html, app.js, styles.css).
-  - lib/
-    - moysklad.js — обертка над MoySklad API. Основные функции: инициализация API, поиск заказов, получение полной информации заказов и demanded, создание платежей, создание отгрузок, возвратов, отмена и пр.
-    - payment.js — бизнес-логика платежей: проверка номера, создание платежей, пакетная обработка и прочие вспомогательные операции.
-  - lib/constants.js — константы для MoySklad API (ID статусов, атрибутов и т.д.).
-  - README.md (если есть) — обзор модуля и инструкции.
-  
-## Основные модули и функции
 
-1) server.js
-- Назначение: точка входа в платежный модуль. Настройка Express, маршруты API, логирование, очистка старых логов.
-- Важные эндпойнты:
-  - GET /api/health — базовый health-check.
-  - POST /api/process — пакетная обработка номеров отправлений (numbers) сActions (check/create).
-  - POST /api/save-report — сохранение отчета по результатам.
-  - POST /api/create-single — создание одного платежа по shipmentNum.
-  - POST /api/create-demand — создание отгрузки (demand).
-  - POST /api/create-return — создание возврата.
-  - POST /api/cancel-order — отмена заказа.
-  - GET/POST /api/orders-state — чтение/запись состояния заказов.
-  - /api/logs, /api/status, /api/start, /api/restart — вспомогательные/диагностические операции.
-- Важные детали: логика обновления состояния заказа сохраняется в файл orders_state.json.
+```
+SiMOTO-sklad/
+├── simoto-sklad.bat        # Launcher (Windows)
+├── github-push.bat       # Push to GitHub (Windows)
+├── package.json          # Зависимости
+├── server.js            # Express сервер (точка входа)
+├── .env                # Токены (в gitignore)
+│
+├── scripts/            # Автоматизация
+│   ├── auto-push.js    # Автопуш с версионированием
+│   ├── docs-generator.js # Генератор документации
+│   ├── check-update.js   # Проверка обновлений
+│   └── create-release.js # GitHub release API
+│
+├── lib/                # Бизнес-логика
+│   ├── moysklad.js     # Баррел
+│   ├── batch.js       # Пакетная обработка + SSE
+│   ├── order.js      # Поиск заказов
+│   ├── check.js     # Проверка статусов
+│   ├── payment.js   # Платежи
+│   ├── demand.js   # Отгрузки
+│   ├── return.js   # Возвраты
+│   ├── cancel.js  # Отмена
+│   ├── api-utils.js # Утилиты
+│   └── constants.js # UUID статусов
+│
+├── integrations/        # Интеграции
+│   └── wb_ozon_sync.js # WB/Ozon (скелет)
+│
+├── public/             # Фронтенд
+├── logs/              # Логи и состояния
+├── docs/              # Автодокументация
+└── test/             # Тесты
+```
 
-2) lib/moysklad.js
-- Назначение: клиент MoySklad API и бизнес-логика для заказов/отгрузок/платежей/возвратов.
-- Основные экспортируемые функции:
-  - initApi(token) / getApi() — инициализация и доступ к API MoySklad.
-  - findOrderByShipmentNum(shipmentNum, log) — поиск заказа по номеру отправления.
-  - getOrderFull(orderId) — получение полной информации заказа.
-  - getDemand(demandId) — получение информации об отгрузке.
-  - getOrderUrl(orderFull) — ссылка на заказ в MoySklad.
-  - changeOrderStatus(orderId, orderFull) — переключение статуса заказа при определённых условиях.
-  - createPayment(orderFull, demand) — создание платежа.
-  - createDemand(orderFull) — создание отгрузки.
-  - createReturn(orderId, orderFull, demandId) — создание возврата.
-  - cancelOrder(orderId, orderFull, demandId) — отмена заказа и связанных сущностей.
-  - Константы: ATTR_ORDER_CHANNEL, ATTR_DEMAND_CHANNEL, STATUS_ID и т.д. (для статусов и атрибутов MoySklad).
-- Важные моменты: файл содержит логику обновления и привязки статусов и каналов продаж к заказам/отгрузкам.
+## Основные модули
 
-3) lib/payment.js
-- Назначение: бизнес-логика платежей (проверка номера, создание платежа, пакетная обработка).
-- Основные экспортируемые функции:
-  - initApi, checkNumber, processNumber, processBatch, createDemand, createReturn, cancelOrder, findOrderByShipmentNum, getOrderFull, getDemand.
-- Включает логику проверки заказа по номеру отправления, расчёт сумм и статусов, а также логику создания платежей и связанной документации.
+### server.js
+- Назначение: точка входа, Express сервер
+- Эндпойнты: `/api/process`, `/api/batch`, `/api/create-*`, `/api/cancel-order`
+- SSE: `/api/process/stream`, `/api/batch/stream`
+- Состояние: `logs/orders_state.json`
 
-4) lib/constants.js
-- Назначение: хранение констант MoySklad (статусы, атрибуты и т.д.) в одном месте.
-- Примеры: ORDER_STATUS, DEMAND_STATUS, ATTRIBUTES.
+### lib/moysklad.js
+- Назначение: баррел — экспорт всех модулей lib
+- Экспортирует все функции из sub-modules
 
-5) INSTRUCTION.md
-- Гайды по использованию и текущие возможности модуля. Источник информации для планирования доработок.
+### lib/batch.js
+- Назначение: пакетная обработка + SSE streaming
+- Функции: `processBatch(numbers, action, log, onProgress, options)`
+- Поддержка abort signals
 
-6) public/
-- Фронтенд-часть: index.html, app.js, styles.css. Используется для удобного ввода номеров, показа статусов и запуска процессов.
+### lib/order.js
+- Назначение: поиск и работа с заказами
+- Функции: `findOrderByShipmentNum`, `getOrderFull`, `getDemand`, `changeOrderStatus`
+
+### lib/payment.js
+- Назначение: создание платежей
+- Функции: `createPayment(orderFull, demand)`
+
+### lib/demand.js
+- Назначение: создание отгрузок
+- Функции: `createDemand(orderFull)`
+
+### lib/return.js
+- Назначение: создание возвратов
+- Функции: `createReturn(orderId, orderFull, demandId)`
+
+### lib/cancel.js
+- Назначение: отмена заказов
+- Функции: `cancelOrder(orderId, orderFull, demandId)`
+
+### lib/constants.js
+- Назначение: UUID статусов и атрибутов МойСклад
+- Константы: `ORDER_STATUS`, `DEMAND_STATUS`, `ATTRIBUTES`
+
+### integrations/wb_ozon_sync.js
+- Назначение: синхронизация товаров WB/Ozon
+- Статус: скелет (mock данные)
 
 ## Архитектура взаимодействия
-- Клиентские запросы приходят в Express (server.js) и проходят через бизнес-логику в lib/payment.js.
-- lib/moysklad.js отвечает за общение с MoySklad API и манипуляции в рамках заказов/отгрузок/платежей.
-- Логи ведутся в файлы в logs/; старые логи удаляются по расписанию при старте.
-- Состояние заказов сохраняется в logs/orders_state.json и может быть прочитано через /api/orders-state.
 
-## План доработок (V1. MVP -> V2)
-- Реализация и тесты для новых API-эндпойнтов и их валидация.
-- Укрепление безопасности: валидация входящих данных, ограничение по токену, обработка ошибок.
-- Добавление модульных тестов (Jest или аналог) для lib и API-слоя.
-- Рефакторинг кода: приведение к единым интерфейсам, уменьшение дублирования, тестируемые точки входа.
-- Обновление документации: краткие примеры использования и описание новых функций.
-- Добавление CI/CD для авто-тестов и сборки.
-- Миграция фронтенда в более строгую архитектуру (модульность, разделение логики API и UI).
+```
+Client (Browser) --HTTP--> server.js ---> lib/batch.js ---> lib/*.js ---> MoySklad API
+                                        |
+                                        +--> logs/*.log
+                                        +--> logs/orders_state.json
+```
 
-## Как дополнять план
-- Вносите новые задачи в раздел "План доработок" с описанием цели и критериев завершения.
-- Когда задача закрывается, помечайте её как выполненную и добавляйте ссылку на коммит/PR.
-- При изменении структуры проекта обновляйте раздел "Структура проекта".
-## Примечания по миграции в core-app (rename)
-- В рамках стратегии перехода на единый главный вход, платежный модуль может быть использован как внутренняя часть core-app. Соответствующие шаги описаны в DEVELOPMENT_PLAN.md и MIGRATION_GUIDE.md. Это поможет обеспечить плавный переход без разрушения имеющегося функционала.
+```
+Client (SSE) --SSE--> server.js ---> lib/batch.js (with callbacks)
+```
+
+## API эндпойнты (детали)
+
+### Проверка заказов
+- `POST /api/process` — проверка массива номеров
+- `GET /api/process/stream` — SSE realtime проверка
+
+### Пакетные операции
+- `POST /api/batch` — batch с action (demand/payment/return/cancel)
+- `GET /api/batch/stream` — SSE realtime batch
+
+### Создание документов
+- `POST /api/create-payment` — платёж
+- `POST /api/create-demand` — отгрузка
+- `POST /api/create-return` — возврат
+- `POST /api/cancel-order` — отмена
+
+### Состояние
+- `GET /api/orders-state` — получить состояние
+- `POST /api/orders-state` — сохранить состояние
+- `DELETE /api/orders-state` — очистить
+
+## План доработок
+
+### V1 (текущая)
+- [x] Базовый функционал платежей
+- [x] Пакетная обработка
+- [x] SSE streaming
+- [x] Web интерфейс
+
+### V2 (planned)
+- [ ] Тесты для lib/*
+- [ ] Валидация входящих данных
+- [ ] Rate limiting
+- [ ] Очередь операций
+
+### V3 (future)
+- [ ] CI/CD
+- [ ] Мониторинг (Prometheus)
+- [ ] API документация (Swagger)
+- [ ] Интеграция WB полная
+- [ ] Интеграция Ozon полная
+
+## Конфигурация
+
+### package.json (scripts)
+```json
+{
+  "start": "node server.js",
+  "test": "jest",
+  "docs": "node scripts/docs-generator.js",
+  "push": "node scripts/auto-push.js"
+}
+```
+
+### .env (пример)
+```
+MOYSKLAD_TOKEN=токен_api_мойсклад
+PORT=3000
+GH_TOKEN=токен_github
+```
+
+## Как использовать этот план
+
+1. Добавляйте задачи в раздел "План доработок"
+2. При закрытии задачи — отмечайте выполненной с коммитом
+3. При изменении структуры — обновляйте этот файл
+4. Подробности в INSTRUCTION.md

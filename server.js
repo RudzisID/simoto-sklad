@@ -605,7 +605,7 @@ app.post('/api/restart', (req, res) => {
         const pid = process.pid;
 
         if (isWindows) {
-            const startBatPath = path.join(appRoot, 'start.bat');
+            const startBatPath = path.join(appRoot, 'simoto-sklad.bat');
             spawn('cmd.exe', ['/c', 'start "" "' + startBatPath + '"'], {
                 cwd: appRoot,
                 detached: true,

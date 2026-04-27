@@ -1,7 +1,7 @@
 {
-  "name": "payment-module",
-  "version": "1.1.4",
-  "description": "Модуль создания входящих платежей для МойСклад",
+  "name": "simoto-sklad",
+  "version": "1.1.5",
+  "description": "Модуль автоматизации платежей и управления заказами для МойСклад",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -29,6 +29,7 @@
     "modules": "lib"
   }
 }
+
 
 
 
