@@ -1,0 +1,7 @@
+node_modules/
+.env
+logs/
+*.log
+temp_*.txt
+update.zip
+simoto-sklad-main/
