@@ -4,78 +4,70 @@ title SiMOTO-Sklad
 
 :: ============================================
 :: SiMOTO-Sklad Launcher
-:: Автоматическая проверка, обновление и запуск
+:: Auto check, update and launch
 :: ============================================
 
 setlocal enabledelayedexpansion
 
-:: --- КОНФИГУРАЦИЯ ---
-set "REPO_OWNER=ВАШ_НИК"
+:: --- CONFIG ---
+set "REPO_OWNER=RudzisID"
 set "REPO_NAME=simoto-sklad"
 set "VERSION_URL=https://api.github.com/repos/%REPO_OWNER%/%REPO_NAME%/releases/latest"
 set "DOWNLOAD_URL=https://github.com/%REPO_OWNER%/%REPO_NAME%/archive/refs/heads/main.zip"
 
-:: Цвета
-set "RED=[91m"
-set "GREEN=[92m"
-set "YELLOW=[93m"
-set "BLUE=[94m"
-set "NC=[0m"
-
 :: ============================================
-:: ФУНКЦИИ
+:: FUNCTIONS
 :: ============================================
 
 :check_node
 echo.
-echo %BLUE%📋 Проверка Node.js...%NC%
+echo [i] Checking Node.js...
 where node >nul 2>&1
 if %errorlevel% neq 0 (
-    echo %RED%✖ Node.js не найден! Установите с https://nodejs.org%NC%
-    echo Нажмите любую клавишу для выхода...
+    echo [X] Node.js not found! Install from https://nodejs.org
     pause >nul
     exit /b 1
 )
 for /f "tokens=*" %%i in ('node -v') do set NODE_VERSION=%%i
-echo %GREEN%✓ Node.js: %NODE_VERSION%%NC%
+echo [OK] Node.js: %NODE_VERSION%
 exit /b 0
 
 :check_dependencies
 echo.
-echo %BLUE%📦 Проверка зависимостей...%NC%
+echo [i] Checking dependencies...
 if not exist "node_modules" (
-    echo %YELLOW%⚠ node_modules не найдены. Установка...%NC%
+    echo [!] node_modules not found. Installing...
     call npm install
     if %errorlevel% neq 0 (
-        echo %RED%✖ Ошибка установки зависимостей!%NC%
+        echo [X] Dependency install error!
         exit /b 1
     )
-    echo %GREEN%✓ Зависимости установлены%NC%
+    echo [OK] Dependencies installed
 ) else (
-    echo %GREEN%✓ Зависимости уже установлены%NC%
+    echo [OK] Dependencies already installed
 )
 exit /b 0
 
 :check_env
 echo.
-echo %BLUE%🔐 Проверка .env...%NC%
+echo [i] Checking .env...
 if not exist ".env" (
-    echo %YELLOW%⚠ Файл .env не найден. Создаю...%NC%
+    echo [!] .env not found. Creating...
     (
-        echo # API Token МойСклад
+        echo # API Token for MoySklad
         echo MOYSKLAD_TOKEN=your_token_here
     ) > .env
-    echo %GREEN%✓ Создан файл .env%NC%
-    echo %YELLOW%⚠ ВАЖНО: Отредактируйте .env и добавьте ваш токен API!%NC%
+    echo [OK] Created .env
+    echo [!] IMPORTANT: Edit .env and add your API token!
     timeout /t 5 /nobreak >nul
 ) else (
-    echo %GREEN%✓ Файл .env найден%NC%
+    echo [OK] .env found
 )
 exit /b 0
 
 :get_current_version
 if exist "package.json" (
-    for /f "tokens=2 delims=:, " %%a in ('findstr /C:"version" package.json') do set CURRENT_VERSION=%%a
+    for /f "tokens=2 delims=:," %%a in ('findstr /C:"version" package.json') do set CURRENT_VERSION=%%a
     set "CURRENT_VERSION=%CURRENT_VERSION:"=%"
     set "CURRENT_VERSION=%CURRENT_VERSION: =%"
 )
@@ -83,29 +75,29 @@ exit /b 0
 
 :check_updates
 echo.
-echo %BLUE%🔄 Проверка обновлений...%NC%
+echo [i] Checking for updates...
 
-:: Попытка получить версию с GitHub
+:: Try to get version from GitHub
 curl -s -L "%VERSION_URL%" 2>nul | findstr /C:"tag_name" >temp_version.txt 2>&1
 if %errorlevel% equ 0 (
     for /f "tokens=2 delims=^" %%a in (temp_version.txt) do set "LATEST_VERSION=%%a"
     set "LATEST_VERSION=%LATEST_VERSION:~1,-1%"
     set "LATEST_VERSION=%LATEST_VERSION: =%"
 
-    echo Текущая версия: %CURRENT_VERSION%
-    echo Последняя версия:  %LATEST_VERSION%
+    echo Current version: %CURRENT_VERSION%
+    echo Latest version:  %LATEST_VERSION%
 
     if "%CURRENT_VERSION%" neq "%LATEST_VERSION%" (
         echo.
-        echo %YELLOW%⚠ Доступна новая версия: %LATEST_VERSION%%NC%
-        echo Загружаю обновление...
+        echo [!] New version available: %LATEST_VERSION%
+        echo Downloading update...
 
         curl -s -L "%DOWNLOAD_URL%" -o update.zip
         if exist "update.zip" (
             powershell -Command "Expand-Archive -Force update.zip ."
             del update.zip 2>nul
 
-            :: Копирование файлов (кроме node_modules и лог��в)
+            :: Copy files (except node_modules and logs)
             xcopy /e /y /q "simoto-sklad-main\lib\*" "lib\" 2>nul
             xcopy /e /y /q "simoto-sklad-main\*.js" ". " 2>nul
             xcopy /e /y /q "simoto-sklad-main\*.json" ". " 2>nul
@@ -114,15 +106,15 @@ if %errorlevel% equ 0 (
 
             rmdir /s /q "simoto-sklad-main" 2>nul
 
-            echo %GREEN%✓ Обновление установлено!%NC%
+            echo [OK] Update installed!
             set UPDATED=1
         )
     ) else (
-        echo %GREEN%✓ У вас последняя версия%NC%
+        echo [OK] You have the latest version
     )
 ) else (
-    echo %YELLOW%⚠ Не удалось проверить обновления (нет интернета?)%NC%
-    echo Продолжаю запуск...
+    echo [!] Could not check updates (no internet?)
+    echo Continuing...
 )
 del temp_version.txt 2>nul
 exit /b 0
@@ -133,46 +125,46 @@ exit /b 0
 
 :start_server
 echo.
-echo %BLUE%🚀 Запуск сервера...%NC%
+echo [i] Starting server...
 start http://localhost:3000
 node server.js
 exit /b 0
 
 :: ============================================
-:: ОСНОВНАЯ ПРОГРАММА
+:: MAIN PROGRAM
 :: ============================================
 
 echo.
 echo ============================================
 echo   SiMOTO-Sklad v1.0.0
-echo   Модуль автоматизации платежей
+echo   Payment Automation Module
 echo ============================================
 echo.
 
-:: Проверка Node.js
+:: Check Node.js
 call :check_node
 if %errorlevel% neq 0 exit /b 1
 
-:: Проверка зависимостей
+:: Check dependencies
 call :check_dependencies
 if %errorlevel% neq 0 exit /b 1
 
-:: Проверка .env
+:: Check .env
 call :check_env
 
-:: Получение версии
+:: Get version
 call :get_current_version
 
-:: Проверка обновлений (только если есть интернет)
+:: Check updates (if internet available)
 call :check_updates
 
-:: Создание директории логов
+:: Create logs directory
 call :create_logs
 
-:: Запуск сервера
+:: Start server
 call :start_server
 
 echo.
-echo %GREEN%✓ Сервер остановлен%NC%
+echo [OK] Server stopped
 pause >nul
 endlocal
