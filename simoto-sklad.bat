@@ -11,7 +11,6 @@ echo.
 where node >nul 2>&1
 if errorlevel 1 (
     echo [X] Node.js not found!
-    echo Install from: https://nodejs.org
     pause
     exit
 )
@@ -28,45 +27,41 @@ if not exist "node_modules" (
 
 :: Check .env
 if not exist ".env" (
-    echo [!] Creating .env file...
     (
-        echo # GitHub Token (optional)
         echo GH_TOKEN=
-        echo.
-        echo # MoySklad Token - enter in browser
     ) > .env
     echo [OK] Created .env
-) else (
-    echo [OK] .env ready
 )
 
 :: Create logs dir
 if not exist "logs" mkdir logs
 
-:: Check for updates
+:: Get current version via Node.js
+for /f %%a in ('node -e "console.log(require('./package.json').version)"') do set curver=%%a
+echo [i] Current version: %curver%
+
+:: Check for updates via Node.js
 echo.
 echo [i] Checking for updates...
-curl -s https://api.github.com/repos/RudzisID/simoto-sklad/releases/latest > temp_release.json 2>&1
-findstr /C:"tag_name" temp_release.json >nul 2>&1
-if errorlevel 1 (
-    echo [!] Could not check updates
-) else (
-    for /f "tokens=2 delims=:" %%a in ('findstr /C:"tag_name" temp_release.json') do set newver=%%a
-    set newver=%newver:~1,-1%
-    for /f "tokens=2 delims=," %%a in ('findstr /C:"version" package.json') do set curver=%%a
-    set curver=%curver:"=%
-    set curver=%curver: =%
-
-    echo Current: %curver%
-    echo Latest:  %newver%
-
-    if not "%curver%"=="%newver%" (
-        echo [!] New version available!
-    ) else (
-        echo [OK] You have latest version
-    )
-)
-del temp_release.json 2>nul
+node -e "
+const https=require('https');
+https.get('https://api.github.com/repos/RudzisID/simoto-sklad/releases/latest',{
+headers:{'User-Agent':'SiMOTO'}
+}).on('response',r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>{
+try{
+const j=JSON.parse(d);
+console.log('Latest version:',j.tag_name);
+const v='%curver%';
+const lv=j.tag_name.replace('v','');
+if(v!==lv){
+console.log('New version available!');
+console.log('Run github-push.bat to update');
+}else{
+console.log('You have latest version');
+}
+}catch(e){console.log('Error:',e.message);}
+});}).on('error',e=>console.log('Network error'));
+"
 
 :: Start server
 echo.
