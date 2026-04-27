@@ -42,10 +42,8 @@ if %count% equ 0 (
 echo [OK] Files changed: %count%
 echo.
 
-:: Get current version
-for /f "tokens=2 delims=," %%a in ('findstr /C:"version" package.json') do set ver=%%a
-set ver=%ver: "=%
-set ver=%ver: =%
+:: Get current version using Node.js (more reliable)
+for /f %%a in ('node -e "console.log(require('./package.json').version)"') do set ver=%%a
 echo [i] Current version: %ver%
 
 :: Bump version (patch)

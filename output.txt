@@ -1,0 +1,10 @@
+
+===============================================
+   SiMOTO GitHub Auto-Push
+===============================================
+
+[i] Checking for changes...
+[OK] Files changed: 3
+
+[i] Current version: "=
+The syntax of the command is incorrect.
