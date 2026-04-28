@@ -5,3 +5,6 @@ logs/
 temp_*.txt
 update.zip
 simoto-sklad-main/logs/
+
+# Планы выполнения (для автовызова)
+.opencode/context/plans/
