@@ -5,6 +5,11 @@ logs/
 temp_*.txt
 update.zip
 simoto-sklad-main/logs/
+.opencode/
+tmp/
+
+# API Documentation (external libraries)
+.opencode/api-docs/
 
 # Планы выполнения (для автовызова)
 .opencode/context/plans/

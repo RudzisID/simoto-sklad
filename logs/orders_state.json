@@ -1,132 +1,44 @@
 {
-  "0146090935-0481-1": {
-    "orderName": "68722",
-    "sum": 500,
-    "paid": 500,
-    "status": "other",
-    "statusName": "Отгружен",
-    "orderId": "6214cc5b-2381-11f1-0a80-1ca20102142e",
-    "hasDemand": true,
-    "hasPayment": true,
-    "hasReturn": false,
-    "isCancelled": false,
-    "demandName": "65400",
-    "paymentName": "63818",
-    "returnName": null,
-    "savedAt": "2026-04-27T13:37:51.189Z",
-    "orderPositions": [
-      {
-        "article": "0180-081006",
-        "name": "Прокладка корпуса помпы",
-        "quantity": 1,
-        "price": 500,
-        "sum": 500
-      }
-    ],
-    "demandPositions": []
-  },
-  "0125091453-0044-1": {
-    "orderName": "67094",
-    "sum": 1530,
-    "paid": 1530,
-    "status": "other",
-    "statusName": "Отгружен",
-    "orderId": "f0211b24-1789-11f1-0a80-081b002ac49e",
-    "hasDemand": true,
-    "hasPayment": true,
-    "hasReturn": false,
-    "isCancelled": false,
-    "demandName": "63776",
-    "paymentName": "63820",
-    "returnName": null,
-    "savedAt": "2026-04-27T13:37:51.189Z",
-    "orderPositions": [
-      {
-        "article": "5190-120510",
-        "name": "Кран топливный",
-        "quantity": 1,
-        "price": 1530,
-        "sum": 1530
-      }
-    ],
-    "demandPositions": []
-  },
-  "0126453926-0212-1": {
-    "orderName": "68776",
-    "sum": 5400,
+  "4904045468": {
+    "orderName": "72732",
+    "sum": 7650,
     "paid": 0,
     "status": "other",
-    "statusName": "Отменен",
-    "orderId": "f0abb797-23ba-11f1-0a80-0e0e00013045",
+    "statusName": "На отправку с отсрочкой платежа",
+    "orderId": "46f21401-35ad-11f1-0a80-0c06027c8a35",
     "hasDemand": true,
     "hasPayment": false,
-    "hasReturn": true,
-    "isCancelled": true,
-    "demandName": "65396",
+    "hasReturn": false,
+    "isCancelled": false,
+    "demandName": "69018",
     "paymentName": null,
-    "returnName": "03318",
-    "savedAt": "2026-04-27T13:37:51.189Z",
+    "returnName": "03851",
+    "savedAt": "2026-04-28T16:03:18.632Z",
     "orderPositions": [
       {
-        "article": "SM-01163",
-        "name": "Катушка возбуждения Polaris SM-01163",
+        "article": "9010-060600",
+        "name": "Амортизатор задний",
         "quantity": 1,
-        "price": 5400,
-        "sum": 5400
+        "price": 7650,
+        "sum": 7650
       }
     ],
-    "demandPositions": []
-  },
-  "0115262264-0578-1": {
-    "orderName": "68249",
-    "sum": 1500,
-    "paid": 1500,
-    "status": "other",
-    "statusName": "Отгружен",
-    "orderId": "48e5a5dd-211b-11f1-0a80-117d01162b07",
-    "hasDemand": true,
-    "hasPayment": true,
-    "hasReturn": false,
-    "isCancelled": false,
-    "demandName": "64854",
-    "paymentName": "63824",
-    "returnName": null,
-    "savedAt": "2026-04-27T13:37:51.189Z",
-    "orderPositions": [
+    "demandPositions": [],
+    "history": [
       {
-        "article": "09-B030-1",
-        "name": "Игольчатый подшипник Polaris 800 RMK, 800 IQ 09-B030-1",
-        "quantity": 1,
-        "price": 1500,
-        "sum": 1500
-      }
-    ],
-    "demandPositions": []
-  },
-  "67123733-0171-1": {
-    "orderName": "68123",
-    "sum": 4460,
-    "paid": 4460,
-    "status": "other",
-    "statusName": "Отгружен",
-    "orderId": "8ab1a621-2074-11f1-0a80-15fd03af8bae",
-    "hasDemand": true,
-    "hasPayment": true,
-    "hasReturn": false,
-    "isCancelled": false,
-    "demandName": "64676",
-    "paymentName": "63825",
-    "returnName": null,
-    "savedAt": "2026-04-27T13:37:51.189Z",
-    "orderPositions": [
+        "action": "return_created",
+        "result": "03851",
+        "time": "2026-04-28T16:03:22.483Z"
+      },
       {
-        "article": "30411-03080SIMOTO",
-        "name": "Подшипник ступицы CFORCE (SIMOTO) S&F U1000, Z1000, X10, X8 HO (задний), BRP CAN AM",
-        "quantity": 1,
-        "price": 4460,
-        "sum": 4460
+        "action": "return_created",
+        "result": "03851",
+        "time": "2026-04-28T16:03:22.489Z"
       }
     ],
-    "demandPositions": []
+    "lastAction": "return_created",
+    "lastResult": "03851",
+    "lastUpdate": "2026-04-28T16:03:22.489Z",
+    "orderUrl": "https://online.moysklad.ru/app/#customerorder/46f21401-35ad-11f1-0a80-0c06027c8a35"
   }
 }

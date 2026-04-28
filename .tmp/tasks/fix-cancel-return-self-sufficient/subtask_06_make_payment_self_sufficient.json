@@ -1,0 +1,29 @@
+{
+  "id": "fix-cancel-return-self-sufficient-06",
+  "seq": "06",
+  "title": "Make createPayment self-sufficient",
+  "status": "completed",
+  "agent_id": "coder-agent",
+  "started_at": "2026-04-28T22:00:00Z",
+  "completed_at": "2026-04-28T22:30:00Z",
+  "depends_on": [],
+  "parallel": true,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\lib\\constants.js",
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\lib\\api-utils.js"
+  ],
+  "reference_files": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\lib\\payment.js",
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\lib\\order.js"
+  ],
+  "acceptance_criteria": [
+    "createPayment принимает orderId (string) или orderFull (object)",
+    "При передаче orderId функция вызывает getOrderFullForCreate() внутри",
+    "Сохранена обратная совместимость с batch.js (передача orderFull)"
+  ],
+  "deliverables": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\lib\\payment.js"
+  ],
+  "description": "Сделать createPayment самодостаточной: принимать orderId или orderFull, получать данные через getOrderFullForCreate()"
+}

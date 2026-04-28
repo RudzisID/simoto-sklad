@@ -1,0 +1,77 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-04-28T12:00:00Z",
+  "libraries": {
+    "tanstack-query": {
+      "files": [
+        {
+          "filename": "nextjs-ssr-hydration.md",
+          "topic": "SSR hydration",
+          "tech_stack": "Next.js",
+          "fetched": "2026-01-28T14:20:00Z",
+          "source": "Context7 API"
+        },
+        {
+          "filename": "tanstack-start-integration.md",
+          "topic": "server functions integration",
+          "tech_stack": "TanStack Start",
+          "fetched": "2026-01-30T10:15:00Z",
+          "source": "Official docs"
+        }
+      ]
+    },
+    "moysklad-api-1.2": {
+      "files": [
+        {
+          "filename": "salesreturn-create.md",
+          "topic": "sales return creation",
+          "fetched": "2026-04-28T10:00:00Z",
+          "source": "Context7 API"
+        },
+        {
+          "filename": "demand-create.md",
+          "topic": "demand creation",
+          "fetched": "2026-04-28T10:00:00Z",
+          "source": "Context7 API"
+        },
+        {
+          "filename": "customerorder-cancel.md",
+          "topic": "customer order cancel",
+          "fetched": "2026-04-28T10:00:00Z",
+          "source": "Context7 API"
+        },
+        {
+          "filename": "paymentin-create.md",
+          "topic": "payment in creation",
+          "fetched": "2026-04-28T10:00:00Z",
+          "source": "Context7 API"
+        },
+        {
+          "filename": "sales-channel.md",
+          "topic": "sales channel",
+          "fetched": "2026-04-28T10:00:00Z",
+          "source": "Context7 API"
+        },
+        {
+          "filename": "error-handling.md",
+          "topic": "error handling",
+          "fetched": "2026-04-28T10:00:00Z",
+          "source": "Context7 API"
+        },
+        {
+          "filename": "attributes-update.md",
+          "topic": "attributes update",
+          "fetched": "2026-04-28T10:00:00Z",
+          "source": "Context7 API"
+        },
+        {
+          "filename": "sticker-printing.md",
+          "topic": "sticker label printing",
+          "tech_stack": "MoySklad",
+          "fetched": "2026-04-28T12:00:00Z",
+          "source": "Web Search + Official Documentation"
+        }
+      ]
+    }
+  }
+}

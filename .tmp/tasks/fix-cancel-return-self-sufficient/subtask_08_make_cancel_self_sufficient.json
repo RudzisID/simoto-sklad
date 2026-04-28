@@ -1,0 +1,31 @@
+{
+  "id": "fix-cancel-return-self-sufficient-08",
+  "seq": "08",
+  "title": "Make cancelOrder self-sufficient",
+  "status": "completed",
+  "agent_id": "coder-agent",
+  "started_at": "2026-04-28T00:00:00Z",
+  "completed_at": "2026-04-28T00:01:00Z",
+  "depends_on": ["fix-cancel-return-self-sufficient-02"],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\lib\\constants.js",
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\lib\\api-utils.js"
+  ],
+  "reference_files": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\lib\\cancel.js",
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\lib\\order.js"
+  ],
+  "acceptance_criteria": [
+    "cancelOrder принимает orderId (string) или orderFull (object)",
+    "При передаче orderId функция вызывает getOrderFullForCreate() внутри",
+    "Сохранена обратная совместимость с batch.js (передача orderFull)",
+    "Сохранена проверка на demandId (отмена невозможна при наличии отгрузки)",
+    "Используются исправленные константы и attributes из cancel.js"
+  ],
+  "deliverables": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\lib\\cancel.js"
+  ],
+  "description": "Сделать cancelOrder самодостаточной: принимать orderId или orderFull, получать данные через getOrderFullForCreate()"
+}
