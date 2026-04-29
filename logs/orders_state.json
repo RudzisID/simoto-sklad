@@ -1,44 +1,80 @@
 {
-  "4904045468": {
-    "orderName": "72732",
-    "sum": 7650,
-    "paid": 0,
+  "0125091453-0044-1": {
+    "orderName": "67094",
+    "sum": 1530,
+    "paid": 1530,
     "status": "other",
-    "statusName": "На отправку с отсрочкой платежа",
-    "orderId": "46f21401-35ad-11f1-0a80-0c06027c8a35",
+    "statusName": "Отгружен",
+    "orderId": "f0211b24-1789-11f1-0a80-081b002ac49e",
     "hasDemand": true,
-    "hasPayment": false,
+    "hasPayment": true,
     "hasReturn": false,
     "isCancelled": false,
-    "demandName": "69018",
-    "paymentName": null,
-    "returnName": "03851",
-    "savedAt": "2026-04-28T16:03:18.632Z",
+    "demandName": "63776",
+    "paymentName": "63820",
+    "returnName": null,
+    "savedAt": "2026-04-29T14:42:05.163Z",
     "orderPositions": [
       {
-        "article": "9010-060600",
-        "name": "Амортизатор задний",
+        "article": "5190-120510",
+        "name": "Кран топливный",
         "quantity": 1,
-        "price": 7650,
-        "sum": 7650
+        "price": 1530,
+        "sum": 1530
       }
     ],
-    "demandPositions": [],
-    "history": [
+    "demandPositions": []
+  },
+  "0126453926-0212-1": {
+    "orderName": "68776",
+    "sum": 5400,
+    "paid": 0,
+    "status": "other",
+    "statusName": "Отменен",
+    "orderId": "f0abb797-23ba-11f1-0a80-0e0e00013045",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": true,
+    "demandName": "65396",
+    "paymentName": null,
+    "returnName": "03318",
+    "savedAt": "2026-04-29T14:42:05.163Z",
+    "orderPositions": [
       {
-        "action": "return_created",
-        "result": "03851",
-        "time": "2026-04-28T16:03:22.483Z"
-      },
-      {
-        "action": "return_created",
-        "result": "03851",
-        "time": "2026-04-28T16:03:22.489Z"
+        "article": "SM-01163",
+        "name": "Катушка возбуждения Polaris SM-01163",
+        "quantity": 1,
+        "price": 5400,
+        "sum": 5400
       }
     ],
-    "lastAction": "return_created",
-    "lastResult": "03851",
-    "lastUpdate": "2026-04-28T16:03:22.489Z",
-    "orderUrl": "https://online.moysklad.ru/app/#customerorder/46f21401-35ad-11f1-0a80-0c06027c8a35"
+    "demandPositions": []
+  },
+  "0146090935-0481-1": {
+    "orderName": "68722",
+    "sum": 500,
+    "paid": 500,
+    "status": "other",
+    "statusName": "Отгружен",
+    "orderId": "6214cc5b-2381-11f1-0a80-1ca20102142e",
+    "hasDemand": true,
+    "hasPayment": true,
+    "hasReturn": false,
+    "isCancelled": false,
+    "demandName": "65400",
+    "paymentName": "63818",
+    "returnName": null,
+    "savedAt": "2026-04-29T14:42:05.163Z",
+    "orderPositions": [
+      {
+        "article": "0180-081006",
+        "name": "Прокладка корпуса помпы",
+        "quantity": 1,
+        "price": 500,
+        "sum": 500
+      }
+    ],
+    "demandPositions": []
   }
 }

@@ -32,6 +32,9 @@ function generateAbortId() {
 const app = express()
 const PORT = process.env.PORT || 3000
 
+// Track SSE connections for proper shutdown
+const sseConnections = new Set()
+
 // Middleware для парсинга JSON
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
@@ -165,6 +168,12 @@ app.get('/api/process/stream', (req, res) => {
   res.setHeader('Connection', 'keep-alive')
   res.setHeader('X-Accel-Buffering', 'no') // Отключаем nginx буферизацию
 
+  // Track SSE connection
+  sseConnections.add(res)
+  res.on('close', () => {
+    sseConnections.delete(res)
+  })
+
   log(`=== SSE: start check ${numbers.length} orders ===`)
 
   // Инициализируем API с токеном
@@ -290,6 +299,12 @@ app.get('/api/batch/stream', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
   res.setHeader('X-Accel-Buffering', 'no')
+
+  // Track SSE connection
+  sseConnections.add(res)
+  res.on('close', () => {
+    sseConnections.delete(res)
+  })
 
   log(`=== SSE: batch ${action} for ${numbers.length} orders ===`)
 
@@ -616,14 +631,27 @@ app.post('/api/print-sticker', async (req, res) => {
 
     // 2. Export sticker PDF
     log(`Генерация PDF стикера для товара: ${product.id}`)
-    const pdfUrl = await exportStickerPdf(product.id, token)
+    const result = await exportStickerPdf(product.id, token)
 
-    if (!pdfUrl) {
-      throw new Error('Не удалось получить URL PDF')
+    if (!result) {
+      throw new Error('Не удалось получить PDF')
     }
 
-    log(`PDF сгенерирован: ${pdfUrl}`)
-    res.json({ success: true, pdfUrl })
+    // result может быть либо URL (303), либо путем к файлу (200)
+    if (result.startsWith('http')) {
+      // Это URL - возвращаем клиенту
+      log(`PDF URL: ${result}`)
+      res.json({ success: true, pdfUrl: result })
+    } else {
+      // Это путь к файлу - отправляем файл клиенту
+      log(`PDF файл: ${result}`)
+      res.sendFile(result, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'inline'
+        }
+      })
+    }
   } catch (e) {
     log(`Ошибка печати стикера: ${e.message}`)
     res.json({ error: e.message })
@@ -633,22 +661,64 @@ app.post('/api/print-sticker', async (req, res) => {
 // Graceful shutdown
 let isShuttingDown = false
 
-function gracefulShutdown(signal) {
+function gracefulShutdown(signal, shouldRestart = false) {
   if (isShuttingDown) return
   isShuttingDown = true
 
   log(`Получен сигнал ${signal}, завершаю работу...`)
   console.log(`\n[${signal}] Graceful shutdown...`)
 
+  // Close all active SSE connections
+  if (sseConnections.size > 0) {
+    log(`Закрываю ${sseConnections.size} активных SSE соединений...`)
+    for (const res of sseConnections) {
+      try {
+        res.write(`data: ${JSON.stringify({
+          type: 'shutdown',
+          message: 'Сервер завершает работу'
+        })}\n\n`)
+        res.end()
+      } catch (e) {
+        // Ignore errors
+      }
+    }
+    sseConnections.clear()
+  }
+
   server.close(() => {
     log('Сервер остановлен')
     console.log('[Shutdown] Server closed')
+
+    if (shouldRestart) {
+      // Start new instance after server is closed
+      const { spawn } = require('child_process')
+      const isWindows = process.platform === 'win32'
+
+      if (isWindows) {
+        const startBatPath = path.join(appRoot, 'simoto-sklad.bat')
+        spawn('cmd.exe', ['/c', 'start "" "' + startBatPath + '"'], {
+          cwd: appRoot,
+          detached: true,
+          stdio: 'ignore',
+          shell: true
+        }).unref()
+      } else {
+        spawn('node', [serverFile], {
+          cwd: appRoot,
+          detached: true,
+          stdio: 'ignore'
+        }).unref()
+      }
+
+      log('Новый экземпляр сервера запущен')
+    }
+
     process.exit(0)
   })
 
   // Force exit after 10 seconds
   setTimeout(() => {
-    log('Принудительная остановка')
+    log('Принудительная остановка - не все соединения закрыты')
     process.exit(1)
   }, 10000)
 }
@@ -665,36 +735,10 @@ app.post('/api/restart', (req, res) => {
   log('Запрошен перезапуск сервера')
   res.json({ success: true, message: 'Перезапуск сервера...' })
 
+  // Gracefully shutdown and restart
   setTimeout(() => {
-    const { spawn, exec } = require('child_process')
-    const isWindows = process.platform === 'win32'
-    const pid = process.pid
-
-    if (isWindows) {
-      const startBatPath = path.join(appRoot, 'simoto-sklad.bat')
-      spawn('cmd.exe', ['/c', 'start "" "' + startBatPath + '"'], {
-        cwd: appRoot,
-        detached: true,
-        stdio: 'ignore',
-        shell: true
-      }).unref()
-
-      // Ждём и убиваем текущий
-      setTimeout(() => {
-        exec('taskkill /PID ' + pid + ' /F', (err) => {
-          if (err) console.log('Kill error:', err)
-          else console.log('[Restart] Old process killed')
-        })
-      }, 2000)
-    } else {
-      spawn('node', [serverFile], {
-        cwd: appRoot,
-        detached: true,
-        stdio: 'ignore'
-      }).unref()
-      setTimeout(() => process.exit(0), 500)
-    }
-  }, 1500)
+    gracefulShutdown('RESTART', true)
+  }, 1000)
 })
 
 // Check if server is running
@@ -919,4 +963,17 @@ const server = app.listen(PORT, () => {
     keepLogsDays: LOG_DAYS_KEEP
   })
   console.log(`Откройте http://localhost:${PORT} в браузере`)
+})
+
+// Handle server errors (e.g., EADDRINUSE)
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    log(`[CRITICAL] Порт ${PORT} уже занят! Сервер не может запуститься.`)
+    console.error(`[CRITICAL] Порт ${PORT} уже занят! Проверьте, что другой экземпляр сервера не запущен.`)
+    console.error(`Выполните: taskkill /PID <PID> /F`)
+    process.exit(1)
+  } else {
+    log(`Ошибка сервера: ${err.message}`)
+    console.error('Ошибка сервера:', err)
+  }
 })

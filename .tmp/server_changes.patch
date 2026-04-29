@@ -1,0 +1,63 @@
+diff --git a/server.js b/server.js
+index 3922666..31fbe36 100644
+--- a/server.js
++++ b/server.js
+@@ -35,7 +35,7 @@ const PORT = process.env.PORT || 3000
+ // Middleware ╨┤╨╗╤П ╨┐╨░╤А╤Б╨╕╨╜╨│╨░ JSON
+ app.use(express.json())
+ app.use(express.urlencoded({ extended: true }))
+-const LOG_DIR = path.join(moduleRoot, 'logs')
++const LOG_DIR = path.join(moduleRoot, logs')
+ const LOG_DAYS_KEEP = 10
+ 
+ // ╨г╨┤╨░╨╗╨╡╨╜╨╕╨╡ ╤Б╤В╨░╤А╤Л╤Е ╨╗╨╛╨│╨╛╨▓ ╨┐╤А╨╕ ╨╖╨░╨┐╤Г╤Б╨║╨╡
+@@ -365,7 +365,7 @@ app.get('/api/batch/stream', (req, res) => {
+ app.post('/api/save-report', async (req, res) => {
+   const { ordersData, resultsData } = req.body
+   const dateStr = new Date().toISOString().split('T')[0]
+-  const reportFile = path.join(moduleRoot, 'logs', `report_${dateStr}.json`)
++  const reportFile = path.join(moduleRoot, logs', `report_${dateStr}.json`)
+ 
+   const report = {
+     generated: new Date().toISOString(),
+@@ -671,7 +671,7 @@ app.post('/api/restart', (req, res) => {
+     const pid = process.pid
+ 
+     if (isWindows) {
+-      const startBatPath = path.join(appRoot, 'simoto-sklad.bat')
++      const startBatPath = path.join(appRoot, simoto-sklad.bat')
+       spawn('cmd.exe', ['/c', 'start "" "' + startBatPath + '"'], {
+         cwd: appRoot,
+         detached: true,
+@@ -731,7 +731,7 @@ app.post('/api/start', (req, res) => {
+ // Get logs
+ app.get('/api/logs', (req, res) => {
+   const dateStr = new Date().toISOString().split('T')[0]
+-  const logFile = path.join(moduleRoot, 'logs', `payments_${dateStr}.log`)
++  const logFile = path.join(moduleRoot, logs', `payments_${dateStr}.log`)
+ 
+   try {
+     if (fs.existsSync(logFile)) {
+@@ -764,7 +764,7 @@ app.post('/api/sync-products', async (req, res) => {
+ })
+ 
+ // Save orders state
+-const STATE_FILE = path.join(moduleRoot, 'logs', 'orders_state.json')
++const STATE_FILE = path.join(moduleRoot, logs', 'orders_state.json')
+ 
+ function loadOrdersState() {
+   try {
+@@ -905,11 +905,11 @@ app.get('/api/debug-state', (req, res) => {
+ })
+ 
+ // Serve static files from public folder
+-app.use(express.static(path.join(moduleRoot, 'public')))
++app.use(express.static(path.join(moduleRoot, public')))
+ 
+ // Main page
+ app.get('/', (req, res) => {
+-  res.sendFile(path.join(moduleRoot, 'public', 'index.html'))
++  res.sendFile(path.join(moduleRoot, public', 'index.html'))
+ })
+ 
+ // Start server

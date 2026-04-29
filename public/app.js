@@ -734,6 +734,29 @@ function appendOrderRow(order) {
 
   // Добавляем строку в конец таблицы
   tbody.appendChild(tr)
+
+  // Дополнительная секция с деталями позиций заказа (для SSE режима)
+  const orderPos = order.orderPositions || []
+  const demandPos = order.demandPositions || []
+  const allPositions = [...orderPos, ...demandPos]
+
+  if (allPositions.length > 0) {
+    const posTr = document.createElement('tr')
+    posTr.className = 'positions-row'
+    const cells = '<td colspan="10" class="positions-cell">' +
+      allPositions.map(p => {
+        const article = p.article ? `[${p.article}] ` : ''
+        const name = p.name || 'Наименование'
+        const price = p.price != null ? p.price : 0
+        const qty = p.quantity != null ? p.quantity : 0
+        const sum = p.sum != null ? p.sum : (price * qty)
+        const printBtn = p.article ?
+          `<button class="print-btn" onclick="printSticker('${(p.article || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>` : ''
+        return `<div>${article}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`
+      }).join('') + '</td>'
+    posTr.innerHTML = cells
+    tbody.appendChild(posTr)
+  }
 }
 
 function renderPaginationInfo(total) {
@@ -996,27 +1019,126 @@ async function cancelOrderByNum(shipmentNum) {
 async function printSticker(article) {
   const token = document.getElementById('tokenInput').value.trim()
   
-  try {
-    const response = await fetch('/api/print-sticker', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Token': token
-      },
-      body: JSON.stringify({ article })
-    })
+  // Show timer in "After action stats" block
+  const statsOutput = document.getElementById('statsFinalOutput')
+  const statsFinal = document.querySelector('.stats-final')
+  if (statsOutput && statsFinal) {
+    statsFinal.classList.remove('idle')
+    statsOutput.innerHTML = `
+      <div class="terminal-line info">Генерация PDF стикера...</div>
+      <div class="terminal-line time-line">Время: <span id="pdfTimer">0:00</span></div>
+      <div class="terminal-status">
+        <div class="terminal-status-dot pulse"></div>
+        <span>Ожидание МойСклад</span>
+      </div>
+    `
     
-    const data = await response.json()
+    // Start timer
+    let seconds = 0
+    const timerInterval = setInterval(() => {
+      seconds++
+      const minutes = Math.floor(seconds / 60)
+      const secs = seconds % 60
+      const timerEl = document.getElementById('pdfTimer')
+      if (timerEl) {
+        timerEl.textContent = `${minutes}:${secs < 10 ? '0' : ''}${secs}`
+      }
+    }, 1000)
     
-    if (data.pdfUrl) {
-      // Open PDF in new tab - MoySklad generates and hosts the file
-      window.open(data.pdfUrl, '_blank')
-    } else {
-      console.error('Print error:', data.error)
+    try {
+      const response = await fetch('/api/print-sticker', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Token': token
+        },
+        body: JSON.stringify({ article })
+      })
+      
+      clearInterval(timerInterval)
+      
+      // Check response type
+      const contentType = response.headers.get('content-type') || ''
+      
+      if (contentType.includes('application/pdf')) {
+        // Server returned PDF directly - create blob URL and open
+        const blob = await response.blob()
+        const pdfUrl = URL.createObjectURL(blob)
+        window.open(pdfUrl, '_blank')
+        
+        // Clean up blob URL after some time
+        setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000)
+        
+        statsOutput.innerHTML = `
+          <div class="terminal-line success">PDF стикера готов</div>
+          <div class="terminal-line">Открыт в новом окне</div>
+        `
+        setTimeout(() => {
+          statsFinal.classList.add('idle')
+        }, 3000)
+      } else {
+        // Server returned JSON
+        const data = await response.json()
+        
+        if (data.pdfUrl) {
+          // Open PDF in new tab - MoySklad generates and hosts the file
+          window.open(data.pdfUrl, '_blank')
+          statsOutput.innerHTML = `
+            <div class="terminal-line success">PDF стикера готов</div>
+            <div class="terminal-line">Открыт в новом окне</div>
+          `
+          setTimeout(() => {
+            statsFinal.classList.add('idle')
+          }, 3000)
+        } else {
+          console.error('Print error:', data.error)
+          statsOutput.innerHTML = `
+            <div class="terminal-line error">Ошибка: ${data.error}</div>
+          `
+        }
+      }
+    } catch (e) {
+      clearInterval(timerInterval)
+      console.error('Network error printing sticker:', e.message)
+      statsOutput.innerHTML = `
+        <div class="terminal-line error">Сетевая ошибка: ${e.message}</div>
+      `
     }
-  } catch (e) {
-    console.error('Network error printing sticker:', e.message)
-  }
+    } else {
+      // Fallback if elements not found
+      try {
+        const response = await fetch('/api/print-sticker', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Token': token
+          },
+          body: JSON.stringify({ article })
+        })
+        
+        // Check response type
+        const contentType = response.headers.get('content-type') || ''
+        
+        if (contentType.includes('application/pdf')) {
+          // Server returned PDF directly
+          const blob = await response.blob()
+          const pdfUrl = URL.createObjectURL(blob)
+          window.open(pdfUrl, '_blank')
+          setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000)
+        } else {
+          // Server returned JSON
+          const data = await response.json()
+          
+          if (data.pdfUrl) {
+            window.open(data.pdfUrl, '_blank')
+          } else {
+            console.error('Print error:', data.error)
+          }
+        }
+      } catch (e) {
+        console.error('Network error printing sticker:', e.message)
+      }
+    }
 }
 
 async function createSingleAction(shipmentNum, actionType) {
