@@ -79,11 +79,24 @@ if errorlevel 1 (
 )
 echo [OK] Commit: v!newver!
 
+:: Sync with remote before push
+echo [i] Syncing with remote...
+git pull --rebase origin main
+if errorlevel 1 (
+    echo [X] Pull --rebase failed! Resolve conflicts manually.
+    echo     Run: git status
+    echo     Then: git push origin main
+    pause
+    exit /b 1
+)
+
 :: Push
 echo [i] Pushing to GitHub...
 git push origin main
 if errorlevel 1 (
     echo [X] Push failed!
+    echo     Possible reason: remote has changes you don't have locally.
+    echo     Try: git pull --rebase origin main
     pause
     exit /b 1
 )
