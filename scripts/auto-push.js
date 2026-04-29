@@ -44,11 +44,11 @@ function getGitHubToken() {
 }
 
 /**
- * Выполняет команду git и возвращает результат
+ * Выполняет произвольную команду и возвращает результат
  */
-function gitExec(args, options = {}) {
+function execCommand(command, args = [], options = {}) {
   try {
-    const result = execSync(`git ${args.join(' ')}`, {
+    const result = execSync(`${command} ${args.join(' ')}`.trim(), {
       cwd: PROJECT_ROOT,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -56,8 +56,19 @@ function gitExec(args, options = {}) {
     })
     return { success: true, output: result.trim() }
   } catch (error) {
-    return { success: false, error: error.message, output: error.stdout }
+    return { 
+      success: false, 
+      error: error.message, 
+      output: error.stderr || error.stdout || '' 
+    }
   }
+}
+
+/**
+ * Выполняет команду git и возвращает результат
+ */
+function gitExec(args, options = {}) {
+  return execCommand('git', args, options)
 }
 
 /**
@@ -233,10 +244,11 @@ async function autoPush(bumpType = 'patch', options = {}) {
   const { dryRun = false, auto = false } = options
     
   console.log('╔═══════════════════════════════════════════════════════════╗')
-  console.log('║         SiMOTO Auto-Push v1.0.0                          ║')
+  const scriptVersion = getCurrentVersion()
+  console.log(`║         SiMOTO Auto-Push v${scriptVersion.padEnd(25)}║`)
   console.log('╚═══════════════════════════════════════════════════════════╝')
     
-  // 1. Проверка токена
+  // 1. Проверка токена (оставлено для совместимости)
   const token = getGitHubToken()
   if (!token && !dryRun) {
     console.log('\n❌ GitHub token не найден!')
@@ -303,9 +315,18 @@ async function autoPush(bumpType = 'patch', options = {}) {
     // Для автоматического режима продолжаем без подтверждения
   }
     
-  // 7. Создание коммита
+  // 7. Запуск тестов перед коммитом
+  console.log('\n🧪 Запуск тестов...')
+  const testResult = execCommand('npm', ['test'], { stdio: 'inherit' })
+  if (!testResult.success) {
+    console.log('❌ Тесты не прошли! Пуш отменён.')
+    return false
+  }
+  console.log('✅ Тесты пройдены')
+
+  // 8. Создание коммита
   console.log('\n📦 Создание коммита...')
-  const commitMessage = `release: v${version} - ${description.substring(0, 50)}`
+  const commitMessage = `release: v${version} - ${description.substring(0, 50).replace(/\n/g, ' ')}`
     
   // Добавляем все файлы (gitignore исключит .env)
   gitExec(['add', '-A'])
@@ -316,27 +337,77 @@ async function autoPush(bumpType = 'patch', options = {}) {
     return false
   }
   console.log('✅ Коммит создан')
-    
-  // 8. Пуш
+
+  // 9. Синхронизация и пуш
   console.log('\n🚀 Отправка на GitHub...')
+
+  // Проверяем синхронизацию с удалённым репозиторием
+  console.log('   Проверка синхронизации с origin...')
+  const fetchResult = gitExec(['fetch', 'origin'])
+  if (!fetchResult.success) {
+    console.log('⚠️  Не удалось выполнить fetch, продолжаем без проверки...')
+  } else {
+    // Проверяем, есть ли изменения в remote, которых нет локально
+    const logResult = gitExec(['log', 'HEAD..origin/main', '--oneline'])
+    if (logResult.success && logResult.output) {
+      console.log('⚠️  Обнаружены новые изменения в удалённом репозитории:')
+      console.log(logResult.output)
+      console.log('   Выполняется git pull --rebase origin main...')
+
+      const pullResult = gitExec(['pull', '--rebase', 'origin', 'main'])
+      if (!pullResult.success) {
+        console.log('❌ Ошибка при pull --rebase:', pullResult.error)
+        console.log('   Разрешите конфликты вручную и попробуйте снова.')
+        // Откат коммита перед выходом
+        gitExec(['reset', '--soft', 'HEAD~1'])
+        // Восстанавливаем package.json
+        const packageJson = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'))
+        packageJson.version = currentVersion
+        fs.writeFileSync(
+          path.join(PROJECT_ROOT, 'package.json'),
+          JSON.stringify(packageJson, null, 2) + '\n',
+          'utf8'
+        )
+        return false
+      }
+      console.log('✅ Изменения из удалённого репозитория успешно применены')
+    }
+  }
+
   const pushResult = gitExec(['push', 'origin', 'main'])
-    
+
   if (!pushResult.success) {
     console.log('❌ Ошибка пуша:', pushResult.error)
     // Откат коммита
     gitExec(['reset', '--soft', 'HEAD~1'])
-    gitExec(['checkout', '--', '.'])
+    // Восстанавливаем версию в package.json
+    const packageJson = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'))
+    packageJson.version = currentVersion
+    fs.writeFileSync(
+      path.join(PROJECT_ROOT, 'package.json'),
+      JSON.stringify(packageJson, null, 2) + '\n',
+      'utf8'
+    )
+    console.log(`⚠️  Версия в package.json возвращена на ${currentVersion}`)
     return false
   }
   console.log('✅ Пуш выполнен')
     
-  // 9. Создание тега
+  // 10. Создание тега
   console.log('\n🏷️  Создание тега...')
   const tagName = `v${version}`
-    
-  // Удаляем существующий тег если есть
-  gitExec(['tag', '-d', tagName]).success // игнорируем ошибку если тега нет
-  gitExec(['push', 'origin', ':refs/tags/', tagName]).success
+     
+  // Удаляем существующий тег если есть (локально)
+  const tagDeleteResult = gitExec(['tag', '-d', tagName])
+  if (!tagDeleteResult.success) {
+    console.log(`   Тег ${tagName} не найден локально (это нормально)`)
+  }
+     
+  // Удаляем тег в remote если есть
+  const remoteTagDeleteResult = gitExec(['push', 'origin', `:refs/tags/${tagName}`])
+  if (!remoteTagDeleteResult.success) {
+    console.log(`   Тег ${tagName} не найден в remote (это нормально)`)
+  }
     
   // Создаём новый тег
   const tagResult = gitExec(['tag', '-a', tagName, '-m', `Version ${version}`])
@@ -353,7 +424,7 @@ async function autoPush(bumpType = 'patch', options = {}) {
     console.log('✅ Тег запушен')
   }
     
-  // 10. Создание Release
+  // 11. Создание Release
   try {
     await createGitHubRelease(tagName, version, token)
   } catch (e) {
