@@ -18,6 +18,8 @@ const { createPayment } = require('./lib/payment')
 const { createDemand } = require('./lib/demand')
 const { createReturn } = require('./lib/return')
 const { cancelOrder } = require('./lib/cancel')
+const { findProductByArticle } = require('./lib/product')
+const { exportStickerPdf } = require('./lib/print')
 const wbOzonSync = require('./integrations/wb_ozon_sync')
 
 // In-memory store for abort signals
@@ -584,6 +586,46 @@ app.post('/api/cancel-order', async (req, res) => {
   } catch (e) {
     log(`Ошибка: ${e.message}`)
     updateOrderState(shipmentNum, 'cancel_error', e.message)
+    res.json({ error: e.message })
+  }
+})
+
+// Print sticker (печать этикетки)
+app.post('/api/print-sticker', async (req, res) => {
+  const { article } = req.body
+  const token = req.headers['x-api-token']
+
+  if (!token || !article) {
+    return res.json({ error: 'Требуется токен и артикул товара' })
+  }
+
+  initApi(token)
+  log(`Печать стикера: ${article}`, { token: token.slice(0, 8) + '...' })
+
+  try {
+    // 1. Find product by article
+    log(`Поиск товара по артикулу: ${article}`)
+    const product = await findProductByArticle(article)
+
+    if (!product || !product.id) {
+      log(`Товар не найден: ${article}`)
+      return res.json({ error: 'Товар не найден' })
+    }
+
+    log(`Товар найден: ${product.name}, ID: ${product.id}`)
+
+    // 2. Export sticker PDF
+    log(`Генерация PDF стикера для товара: ${product.id}`)
+    const pdfUrl = await exportStickerPdf(product.id, token)
+
+    if (!pdfUrl) {
+      throw new Error('Не удалось получить URL PDF')
+    }
+
+    log(`PDF сгенерирован: ${pdfUrl}`)
+    res.json({ success: true, pdfUrl })
+  } catch (e) {
+    log(`Ошибка печати стикера: ${e.message}`)
     res.json({ error: e.message })
   }
 })

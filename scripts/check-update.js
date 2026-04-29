@@ -9,12 +9,22 @@ const options = {
 }
 
 https.get(options, (res) => {
+  // Check for HTTP errors (404, 403, etc.)
+  if (res.statusCode !== 200) {
+    console.log('Update check failed: HTTP ' + res.statusCode)
+    return
+  }
+
   let data = ''
   res.on('data', (chunk) => { data += chunk })
   res.on('end', () => {
     try {
       const release = JSON.parse(data)
-      const latestVersion = release.tag_name ? release.tag_name.replace('v', '') : '0.0.0'
+      if (!release.tag_name) {
+        console.log('Update check failed: invalid response')
+        return
+      }
+      const latestVersion = release.tag_name.replace('v', '')
       console.log('Latest: ' + release.tag_name)
       if (currentVersion !== latestVersion) {
         console.log('New version available!')
@@ -22,9 +32,9 @@ https.get(options, (res) => {
         console.log('You have latest version')
       }
     } catch (e) {
-      console.log('Error checking updates')
+      console.log('Error checking updates: ' + e.message)
     }
   })
-}).on('error', () => {
-  console.log('No network connection')
+}).on('error', (err) => {
+  console.log('No network connection: ' + err.message)
 })

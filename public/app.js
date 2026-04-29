@@ -675,7 +675,9 @@ function renderTable() {
                   const price = p.price != null ? p.price : 0
                   const qty = p.quantity != null ? p.quantity : 0
                   const sum = p.sum != null ? p.sum : (price * qty)
-                  return `<div>${article}${name} — ${price} ₽ × ${qty} = ${sum} ₽</div>`
+                  const printBtn = p.article ?
+                    `<button class="print-btn" onclick="printSticker('${(p.article || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>` : ''
+                  return `<div>${article}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`
                 }).join('') + '</td>'
       posTr.innerHTML = cells
       tbody.appendChild(posTr)
@@ -988,6 +990,33 @@ async function createReturnByNum(shipmentNum) {
 
 async function cancelOrderByNum(shipmentNum) {
   await createSingleAction(shipmentNum, 'cancel')
+}
+
+// Print sticker for product by article
+async function printSticker(article) {
+  const token = document.getElementById('tokenInput').value.trim()
+  
+  try {
+    const response = await fetch('/api/print-sticker', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Token': token
+      },
+      body: JSON.stringify({ article })
+    })
+    
+    const data = await response.json()
+    
+    if (data.pdfUrl) {
+      // Open PDF in new tab - MoySklad generates and hosts the file
+      window.open(data.pdfUrl, '_blank')
+    } else {
+      console.error('Print error:', data.error)
+    }
+  } catch (e) {
+    console.error('Network error printing sticker:', e.message)
+  }
 }
 
 async function createSingleAction(shipmentNum, actionType) {

@@ -21,43 +21,43 @@ const MODULES_DOCS_DIR = path.join(DOCS_DIR, 'lib')
 const MODULE_PATTERNS = {
   'moysklad.md': {
     description: 'Баррел-файл модулей API МойСклад',
-    functions: ['initApi', 'getClient', 'createPayment', 'createDemand', 'createReturn', 'cancelOrder']
+    functions: ['initApi', 'getApi']
   },
   'batch.md': {
     description: 'Пакетная обработка с SSE стримингом',
-    functions: ['processBatch', 'processNumbers', 'chunkArray']
+    functions: ['processBatch']
   },
   'order.md': {
     description: 'Поиск и работа с заказами',
-    functions: ['searchOrders', 'getOrderByNumber', 'updateOrderState']
+    functions: ['findOrderByShipmentNum', 'getOrderFull', 'getOrderFullForCreate', 'findSalesReturns']
   },
   'check.md': {
     description: 'Проверка статусов заказов',
-    functions: ['checkNumber', 'getOrderStatus', 'canCreatePayment', 'canCreateDemand']
+    functions: ['checkOrder']
   },
   'payment.md': {
     description: 'Создание входящих платежей',
-    functions: ['createPayment', 'createPaymentByOrder']
+    functions: ['createPayment']
   },
   'demand.md': {
     description: 'Создание отгрузок',
-    functions: ['createDemand', 'createDemandByOrder']
+    functions: ['createDemand']
   },
   'return.md': {
     description: 'Создание возвратов',
-    functions: ['createReturn', 'createReturnByOrder']
+    functions: ['createReturn']
   },
   'cancel.md': {
     description: 'Отмена заказов',
-    functions: ['cancelOrder', 'cancelOrderByNumber']
+    functions: ['cancelOrder']
   },
   'api-utils.md': {
     description: 'Утилиты для работы с API МойСклад',
-    functions: ['initApiClient', 'makeRequest', 'handleResponse']
+    functions: ['initApi', 'getApi', 'getChannelAttrValue']
   },
   'constants.md': {
     description: 'Константы UUID статусов и атрибутов',
-    functions: ['STATUS_SHIPPED', 'STATUS_CANCELLED', 'SALES_CHANNEL', 'ATTRIBUTE_STATUS']
+    functions: ['ORDER_STATUS', 'DEMAND_STATUS', 'SALES_CHANNEL']
   }
 }
 

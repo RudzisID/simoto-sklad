@@ -806,6 +806,46 @@ td.order-name-cell, .table-panel th.order-header, .table-panel td.order-name-cel
     box-shadow: none;
 }
 
+/* === Print Button (Sticker) === */
+.print-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    font-size: 0.75rem;
+    margin: 0 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    border: 1px solid var(--text-muted);
+    background: var(--bg-dark);
+    color: var(--text-muted);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.print-btn:hover:not(:disabled) {
+    background: var(--text-muted);
+    border-color: var(--text-muted);
+    color: var(--bg-dark);
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(163, 163, 163, 0.2);
+}
+
+.print-btn:active:not(:disabled) {
+    transform: scale(0.95);
+}
+
+.print-btn:disabled {
+    opacity: 0.25;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    border-color: var(--border-light);
+    color: var(--text-muted);
+    background: var(--bg-dark);
+}
+
 /* === Checkbox === */
 input[type="checkbox"] {
     width: 18px;
