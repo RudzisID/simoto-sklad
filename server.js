@@ -420,14 +420,14 @@ app.post('/api/create-payment', async (req, res) => {
     }
 
     log(`Заказ найден, создаю платёж: ${shipmentNum}`)
-    const orderFull = await getOrderFullForCreate(checkResult.orderId)
-    await changeOrderStatus(checkResult.orderId, orderFull)
+    const payment = await createPayment(checkResult.orderId)
+    log(`Платёж создан: ${payment.name}`, { shipmentNum })
 
+    // Получаем данные для обновления состояния
+    const { getOrderFullForCreate, getDemand } = require('./lib/order')
+    const orderFull = await getOrderFullForCreate(checkResult.orderId)
     const demandId = orderFull.demands[0].meta.href.split('/').pop()
     const demand = await getDemand(demandId)
-
-    const payment = await createPayment(orderFull, demand)
-    log(`Платёж создан: ${payment.name}`, { shipmentNum })
 
     updateOrderState(shipmentNum, 'payment_created', payment.name, {
       orderName: orderFull.name,
@@ -466,29 +466,14 @@ app.post('/api/create-demand', async (req, res) => {
       return res.json({ error: 'Заказ не найден' })
     }
 
-    log(`Получаю данные заказа: ${order.id}`)
-    const orderFull = await getOrderFullForCreate(order.id)
-    if (!orderFull) {
-      log(`Ошибка получения данных заказа: ${shipmentNum}`, { orderId: order.id })
-      updateOrderState(shipmentNum, 'demand_check', 'error_getting_order')
-      return res.json({ error: 'Не удалось получить данные заказа' })
-    }
-
-    const hasDemand = orderFull.demands && orderFull.demands.length > 0
-    log(`Проверка отгрузки: ${shipmentNum}`, {
-      hasDemand,
-      demandsCount: orderFull.demands?.length || 0
-    })
-
-    if (hasDemand) {
-      log(`Отгрузка уже существует: ${shipmentNum}`)
-      updateOrderState(shipmentNum, 'demand_check', 'already_exists')
-      return res.json({ error: 'Отгрузка уже существует' })
-    }
-
-    log(`Создаю отгрузку: ${shipmentNum}`, { orderId: orderFull.id })
-    const demand = await createDemand(orderFull)
+    log(`Создаю отгрузку: ${shipmentNum}`, { orderId: order.id })
+    const demand = await createDemand(order.id)
     log(`Отгрузка создана: ${demand.name}`, { shipmentNum, demandId: demand.id })
+
+    // Получаем данные для обновления состояния
+    const { getOrderFullForCreate } = require('./lib/order')
+    const orderFull = await getOrderFullForCreate(order.id)
+
     updateOrderState(shipmentNum, 'demand_created', demand.name, {
       orderName: orderFull.name,
       orderId: orderFull.id,
@@ -523,27 +508,14 @@ app.post('/api/create-return', async (req, res) => {
       return res.json({ error: 'Заказ не найден' })
     }
 
-    log(`Получаю данные заказа для возврата: ${order.id}`)
-    const orderFull = await getOrderFullForCreate(order.id)
-    if (!orderFull) {
-      log(`Ошибка получения данных заказа для возврата: ${shipmentNum}`)
-      updateOrderState(shipmentNum, 'return_check', 'error_getting_order')
-      return res.json({ error: 'Не удалось получить данные заказа' })
-    }
-
-    const hasDemand = orderFull.demands && orderFull.demands.length > 0
-    log(`Проверка отгрузки для возврата: ${shipmentNum}`, { hasDemand })
-
-    if (!hasDemand) {
-      log(`Нет отгрузки для возврата: ${shipmentNum}`)
-      updateOrderState(shipmentNum, 'return_check', 'no_demand')
-      return res.json({ error: 'Нет отгрузки для возврата' })
-    }
-
-    const demandId = orderFull.demands[0].meta.href.split('/').pop()
-    log(`Создаю возврат: ${shipmentNum}`, { orderId: orderFull.id, demandId })
-    const salesReturn = await createReturn(order.id, orderFull, demandId)
+    log(`Создаю возврат: ${shipmentNum}`, { orderId: order.id })
+    const salesReturn = await createReturn(order.id)
     log(`Возврат создан: ${salesReturn.name}`, { shipmentNum, returnId: salesReturn.id })
+
+    // Получаем данные для обновления состояния
+    const { getOrderFullForCreate } = require('./lib/order')
+    const orderFull = await getOrderFullForCreate(order.id)
+
     updateOrderState(shipmentNum, 'return_created', salesReturn.name, {
       orderName: orderFull.name,
       orderId: orderFull.id,
@@ -578,20 +550,14 @@ app.post('/api/cancel-order', async (req, res) => {
       return res.json({ error: 'Заказ не найден' })
     }
 
-    log(`Получаю данные заказа для отмены: ${order.id}`)
-    const orderFull = await getOrderFullForCreate(order.id)
-    if (!orderFull) {
-      log(`Ошибка получения данных заказа для отмены: ${shipmentNum}`)
-      updateOrderState(shipmentNum, 'cancel_check', 'error_getting_order')
-      return res.json({ error: 'Не удалось получить данные заказа' })
-    }
-
-    const demandId =
-      orderFull.demands?.length > 0 ? orderFull.demands[0].meta.href.split('/').pop() : null
-
-    log(`Отменяю заказ: ${shipmentNum}`, { orderId: orderFull.id, demandId })
-    const result = await cancelOrder(order.id, orderFull, demandId)
+    log(`Отменяю заказ: ${shipmentNum}`, { orderId: order.id })
+    const result = await cancelOrder(order.id)
     log(`Заказ отменён: ${shipmentNum}`, { result })
+
+    // Получаем данные для обновления состояния
+    const { getOrderFullForCreate } = require('./lib/order')
+    const orderFull = await getOrderFullForCreate(order.id)
+
     updateOrderState(shipmentNum, 'order_cancelled', 'success', {
       orderName: orderFull.name,
       orderId: orderFull.id,
