@@ -2,6 +2,9 @@
 setlocal enabledelayedexpansion
 title SiMOTO-Sklad
 
+:: Переход в директорию скрипта (чтобы git команды работали корректно)
+cd /d "%~dp0"
+
 echo.
 echo ===============================================
 echo    SiMOTO-Sklad Launcher
@@ -50,20 +53,19 @@ echo [i] Current version: %curver%
 echo.
 echo [i] Checking for updates...
 node scripts/check-update.js %curver% > "%TEMP%\ver_check.txt" 2>&1
-if errorlevel 1 (
-  echo [X] Update check failed!
-) else (
-  :: Check if new version available (check-update.js prints "NEW_AVAILABLE=true" if update exists)
-  findstr /C:"NEW_AVAILABLE=true" "%TEMP%\ver_check.txt" >nul 2>&1
+if exist "%TEMP%\ver_check.txt" (
+  findstr /C:"New version available" "%TEMP%\ver_check.txt" >nul 2>&1
   if !errorlevel! EQU 0 (
     echo [i] New version available! Updating...
     git pull origin main
     if errorlevel 1 (
       echo [X] Update failed! Check git configuration.
+      del "%TEMP%\ver_check.txt" >nul 2>&1
       pause
       exit /b 1
     )
     echo [OK] Updated! Restarting...
+    del "%TEMP%\ver_check.txt" >nul 2>&1
     start "" "%~f0"
     exit /b 0
   )
