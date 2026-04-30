@@ -44,20 +44,42 @@ echo.
 for /f %%a in ('node -e "try{console.log(require('./package.json').version)}catch(e){console.log('0.0.0')}"') do set ver=%%a
 echo [i] Current version: !ver!
 
+:: Select version bump type
+echo.
+echo Select version bump type:
+echo [1] Patch (!ver! -^> X.X.X+1^) - Bug fixes
+echo [2] Minor (!ver! -^> X.X+1.0^)  - New features
+echo [3] Major (!ver! -^> X+1.0.0^)  - Breaking changes
+choice /c 123 /n /m "Your choice (1-3): "
+
+set bump_type=patch
+if errorlevel 3 set bump_type=major
+if errorlevel 2 set bump_type=minor
+
 :: Bump version
 for /f "tokens=1,2,3 delims=." %%a in ("!ver!") do (
     set major=%%a
     set minor=%%b
     set patch=%%c
 )
-set /a patch=!patch!+1
+
+if "!bump_type!"=="major" (
+    set /a major=!major!+1
+    set minor=0
+    set patch=0
+) else if "!bump_type!"=="minor" (
+    set /a minor=!minor!+1
+    set patch=0
+) else (
+    set /a patch=!patch!+1
+)
 set newver=!major!.!minor!.!patch!
 
 echo [i] New version: !newver!
 echo.
 
 :: Update package.json
-powershell -NoProfile -Command "(Get-Content 'package.json' -Raw) -replace '\"version\": \"!ver!\"', '\"version\": \"!newver!\"' | Set-Content 'package.json'"
+node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json')); p.version='!newver!'; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n');"
 
 :: Verify
 for /f %%a in ('node -e "console.log(require('./package.json').version)"') do set checkver=%%a
