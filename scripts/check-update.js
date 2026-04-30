@@ -1,6 +1,17 @@
 // Simple update checker for SiMOTO-sklad
 const https = require('https')
-const currentVersion = process.argv[2] || '0.0.0'
+const fs = require('fs')
+const path = require('path')
+
+// Читаем версию из package.json независимо от аргументов
+let currentVersion = '0.0.0'
+try {
+  const packagePath = path.join(__dirname, '..', 'package.json')
+  const packageData = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
+  currentVersion = packageData.version || '0.0.0'
+} catch (e) {
+  currentVersion = process.argv[2] || '0.0.0'
+}
 
 const options = {
   hostname: 'api.github.com',
@@ -28,6 +39,7 @@ https.get(options, (res) => {
       console.log('Latest: ' + release.tag_name)
       if (currentVersion !== latestVersion) {
         console.log('New version available!')
+        console.log('NEW_AVAILABLE=true')
       } else {
         console.log('You have latest version')
       }

@@ -40,14 +40,35 @@ if not exist ".env" (
 :: Create logs dir
 if not exist "logs" mkdir logs
 
-:: Get current version
-for /f %%a in ('node -p "require('./package.json').version"') do set curver=%%a
-echo [i] Current version: !curver!
+:: Get current version (reliable method)
+node -p "require('./package.json').version" > "%TEMP%\ver.txt" 2>nul
+set /p curver=<"%TEMP%\ver.txt"
+del "%TEMP%\ver.txt" >nul 2>&1
+echo [i] Current version: %curver%
 
 :: Check for updates
 echo.
 echo [i] Checking for updates...
-node scripts/check-update.js !curver!
+node scripts/check-update.js %curver% > "%TEMP%\ver_check.txt" 2>&1
+if errorlevel 1 (
+  echo [X] Update check failed!
+) else (
+  :: Check if new version available (check-update.js prints "NEW_AVAILABLE=true" if update exists)
+  findstr /C:"NEW_AVAILABLE=true" "%TEMP%\ver_check.txt" >nul 2>&1
+  if !errorlevel! EQU 0 (
+    echo [i] New version available! Updating...
+    git pull origin main
+    if errorlevel 1 (
+      echo [X] Update failed! Check git configuration.
+      pause
+      exit /b 1
+    )
+    echo [OK] Updated! Restarting...
+    start "" "%~f0"
+    exit /b 0
+  )
+)
+del "%TEMP%\ver_check.txt" >nul 2>&1
 
 :: Start server
 echo.
