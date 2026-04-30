@@ -12,6 +12,7 @@
 - **Отмена заказов** — сброс резерва и установка статуса "Отменён"
 - **Пакетная обработка** — массовые операции с SSE streaming
 - **Web-интерфейс** — тёмная тема
+- **Цветное логирование** — автоматическая цветовая кодировка сообщений в консоли (server.js)
 
 ## Быстрый старт
 
@@ -163,7 +164,17 @@ npm run push:auto # Автоматический пуш
 
 - [API.md](docs/API.md) — Документация всех эндпойнтов
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — Архитектура системы
+- [MAINTENANCE.md](docs/MAINTENANCE.md) — Руководство по поддержке документации
 - [lib/](docs/lib/) — Описание каждого модуля
+  - [product.md](docs/lib/product.md) — Поиск товаров
+  - [print.md](docs/lib/print.md) — Печать этикеток
+- [scripts/](docs/scripts/) — Скрипты автоматизации
+  - [auto-push.md](docs/scripts/auto-push.md) — Автопуш на GitHub
+  - [docs-generator.md](docs/scripts/docs-generator.md) — Генератор документации
+- [integrations/](docs/integrations/) — Интеграции
+  - [wb_ozon_sync.md](docs/integrations/wb_ozon_sync.md) — Синхронизация WB/Ozon
+- [frontend/](docs/frontend/) — Фронтенд
+  - [app.md](docs/frontend/app.md) — Логика веб-интерфейса
 - [PLAN.md](PLAN.md) — План и структура проекта
 - [INSTRUCTION.md](INSTRUCTION.md) — Подробная инструкция
 

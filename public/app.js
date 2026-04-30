@@ -1085,7 +1085,7 @@ async function printSticker(code) {
           'Content-Type': 'application/json',
           'X-API-Token': token
         },
-        body: JSON.stringify({ article })
+        body: JSON.stringify({ code })
       })
       
       clearInterval(timerInterval)

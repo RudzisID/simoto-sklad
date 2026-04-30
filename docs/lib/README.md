@@ -7,13 +7,15 @@
 ```
 lib/
 ├── moysklad.js      # Баррел — все экспорты
-├── batch.js       # Пакетная обработка + SSE
+├── batch.js       # Пакетная обработка + SSE, цветное логирование
 ├── order.js      # Поиск и работа с заказами
 ├── check.js     # Проверка статусов
 ├── payment.js   # Создание платежей
 ├── demand.js     # Создание отгрузок
 ├── return.js    # Создание возвратов
 ├── cancel.js    # Отмена заказов
+├── product.js   # Поиск товаров по коду (для печати)
+├── print.js     # Генерация PDF-этикеток
 ├── api-utils.js  # Утилиты API
 └── constants.js # Константы (UUID)
 ```
@@ -69,6 +71,13 @@ if (check.canPayment) {
 | [demand.md](lib/demand.md) | Создание отгрузок (demand) |
 | [return.md](lib/return.md) | Создание возвратов (salesreturn) |
 | [cancel.md](lib/cancel.md) | Отмена заказов |
+
+### Работа с товарами
+
+| Файл | Описание |
+|------|----------|
+| [product.md](lib/product.md) | Поиск товаров по коду |
+| [print.md](lib/print.md) | Печать этикеток (PDF) |
 
 ### Утилиты и конфигурация
 

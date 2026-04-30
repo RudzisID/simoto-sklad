@@ -72,7 +72,33 @@ function cleanOldLogs() {
 // Запускаем очистку при старте
 cleanOldLogs()
 
-// Логирование с подробностями
+// ANSI цвета для консоли
+const colors = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+  white: '\x1b[37m',
+  bgRed: '\x1b[41m',
+  bgGreen: '\x1b[42m'
+}
+
+// Определение цвета по содержимому сообщения
+function getColor(message) {
+  if (message.includes('Ошибка') || message.includes('error') || message.includes('ERROR')) return colors.red
+  if (message.includes('успешно') || message.includes('created') || message.includes('Успех')) return colors.green
+  if (message.includes('Пропущен') || message.includes('skipped')) return colors.yellow
+  if (message.includes('Завершено') || message.includes('completed')) return colors.cyan
+  if (message.includes('Начало') || message.includes('batch')) return colors.magenta
+  return colors.white
+}
+
+// Логирование с подробностями и цветом
 function log(message, details = null) {
   const now = new Date()
   const dateStr = now.toISOString().split('T')[0]
@@ -91,7 +117,10 @@ function log(message, details = null) {
   const logFile = path.join(LOG_DIR, `payments_${dateStr}.log`)
 
   fs.appendFileSync(logFile, logLine)
-  console.log(fullMessage)
+
+  // Цветной вывод в консоль
+  const color = getColor(message)
+  console.log(`${color}${fullMessage}${colors.reset}`)
 }
 
 // Health check

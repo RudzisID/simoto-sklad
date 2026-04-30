@@ -48,9 +48,10 @@ SiMOTO-sklad — это Node.js/Express сервер для автоматиза
 
 Express сервер обрабатывает HTTP запросы:
 
-- **REST эндпойнты** — `/api/process`, `/api/batch`, `/api/create-*`
+- **REST эндпойнты** — `/api/process`, `/api/batch`, `/api/create-*`, `/api/print-sticker`
 - **SSE streaming** — `/api/process/stream`, `/api/batch/stream`
 - **Утилиты** — `/api/logs`, `/api/status`, `/api/restart`
+- **Цветное логирование** — автоматическая цветовая кодировка сообщений в консоли
 
 ### 3. Business Logic Layer (lib/)
 
@@ -58,13 +59,15 @@ Express сервер обрабатывает HTTP запросы:
 
 | Модуль | Ответственность |
 |--------|-----------------|
-| `batch.js` | Поток обработки, параллелизм, SSE callbacks |
+| `batch.js` | Поток обработки, параллелизм, SSE callbacks, цветное логирование |
 | `order.js` | Поиск заказов, получение данных |
 | `check.js` | Анализ состояния заказа |
 | `payment.js` | Создание платежей |
 | `demand.js` | Создание отгрузок |
 | `return.js` | Создание возвратов |
 | `cancel.js` | Отмена заказов |
+| `product.js` | Поиск товаров по коду (для печати этикеток) |
+| `print.js` | Генерация PDF-этикеток через МойСклад |
 | `api-utils.js` | Инициализация API, утилиты |
 | `constants.js` | UUID статусов и атрибутов |
 
@@ -228,6 +231,21 @@ checkOrder(shipmentNum)
 | Express | ^4.18.2 | HTTP сервер |
 | moysklad | ^0.21.1 | SDK для API |
 | dotenv | ^16.3.1 | Переменные окружения |
+
+## Скрипты автоматизации (scripts/)
+
+| Скрипт | Назначение |
+|---------|------------|
+| `auto-push.js` | Автопуш на GitHub с версионированием и релизами |
+| `docs-generator.js` | Генератор документации из JSDoc комментариев |
+| `check-update.js` | Проверка обновлений через GitHub API |
+| `create-release.js` | Создание GitHub релиза через API |
+
+## Интеграции (integrations/)
+
+| Модуль | Назначение |
+|--------|------------|
+| `wb_ozon_sync.js` | Скелетная реализация синхронизации WB/Ozon (mock data) |
 
 ## Диаграмма компонентов
 

@@ -1,26 +1,98 @@
 {
-  "0125091453-0044-1": {
-    "orderName": "67094",
-    "sum": 1530,
-    "paid": 1530,
+  "57156649-0328-1": {
+    "orderName": "72860",
+    "sum": 17200,
+    "paid": 0,
     "status": "other",
-    "statusName": "Отгружен",
-    "orderId": "f0211b24-1789-11f1-0a80-081b002ac49e",
+    "statusName": "На отправку с отсрочкой платежа",
+    "orderId": "1a515a1e-366c-11f1-0a80-0f770159868c",
     "hasDemand": true,
-    "hasPayment": true,
+    "hasPayment": false,
     "hasReturn": false,
     "isCancelled": false,
-    "demandName": "63776",
-    "paymentName": "63820",
-    "returnName": null,
-    "savedAt": "2026-04-30T06:18:20.298Z",
+    "demandName": "68900",
+    "paymentName": null,
+    "returnName": "03881",
+    "savedAt": "2026-04-30T07:30:58.011Z",
     "orderPositions": [
       {
-        "code": "5190-120510",
-        "name": "Кран топливный",
+        "code": "0181-313008-10000..",
+        "name": "Корпус дифференциала Дилер",
         "quantity": 1,
-        "price": 1530,
-        "sum": 1530
+        "price": 17200,
+        "sum": 17200
+      }
+    ],
+    "demandPositions": [],
+    "history": [
+      {
+        "action": "return_created",
+        "result": "03881",
+        "time": "2026-04-30T07:31:11.690Z"
+      }
+    ],
+    "lastAction": "return_created",
+    "lastResult": "03881",
+    "lastUpdate": "2026-04-30T07:31:11.690Z"
+  },
+  "69897938-0110-1": {
+    "orderName": "73678",
+    "sum": 910,
+    "paid": 0,
+    "status": "other",
+    "statusName": "Возврат",
+    "orderId": "56c1e19f-398a-11f1-0a80-1075004ccb36",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": false,
+    "isCancelled": false,
+    "demandName": "73884",
+    "paymentName": null,
+    "returnName": "03882",
+    "savedAt": "2026-04-30T07:30:58.011Z",
+    "orderPositions": [
+      {
+        "code": "0180-023004",
+        "name": "Прокладка цилиндра CF500",
+        "quantity": 1,
+        "price": 910,
+        "sum": 910
+      }
+    ],
+    "demandPositions": [],
+    "history": [
+      {
+        "action": "return_created",
+        "result": "03882",
+        "time": "2026-04-30T07:31:13.662Z"
+      }
+    ],
+    "lastAction": "return_created",
+    "lastResult": "03882",
+    "lastUpdate": "2026-04-30T07:31:13.662Z"
+  },
+  "76179114-0024-1": {
+    "orderName": "73294",
+    "sum": 4330,
+    "paid": 0,
+    "status": "other",
+    "statusName": "Возврат",
+    "orderId": "1a68c882-3802-11f1-0a80-0f77025ee0e4",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": false,
+    "demandName": "73294",
+    "paymentName": null,
+    "returnName": "03880",
+    "savedAt": "2026-04-30T07:30:58.011Z",
+    "orderPositions": [
+      {
+        "code": "9AY0-200200",
+        "name": "Зеркало заднего вида, левое X8 H.O., X10",
+        "quantity": 1,
+        "price": 4330,
+        "sum": 4330
       }
     ],
     "demandPositions": []
