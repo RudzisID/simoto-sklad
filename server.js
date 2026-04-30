@@ -18,7 +18,7 @@ const { createPayment } = require('./lib/payment')
 const { createDemand } = require('./lib/demand')
 const { createReturn } = require('./lib/return')
 const { cancelOrder } = require('./lib/cancel')
-const { findProductByArticle } = require('./lib/product')
+const { findProductByCode } = require('./lib/product')
 const { exportStickerPdf } = require('./lib/print')
 const wbOzonSync = require('./integrations/wb_ozon_sync')
 
@@ -573,23 +573,23 @@ app.post('/api/cancel-order', async (req, res) => {
 
 // Print sticker (печать этикетки)
 app.post('/api/print-sticker', async (req, res) => {
-  const { article } = req.body
+  const { code } = req.body
   const token = req.headers['x-api-token']
 
-  if (!token || !article) {
-    return res.json({ error: 'Требуется токен и артикул товара' })
+  if (!token || !code) {
+    return res.json({ error: 'Требуется токен и код товара' })
   }
 
   initApi(token)
-  log(`Печать стикера: ${article}`, { token: token.slice(0, 8) + '...' })
+  log(`Печать стикера: ${code}`, { token: token.slice(0, 8) + '...' })
 
   try {
-    // 1. Find product by article
-    log(`Поиск товара по артикулу: ${article}`)
-    const product = await findProductByArticle(article)
+    // 1. Find product by code
+    log(`Поиск товара по коду: ${code}`)
+    const product = await findProductByCode(code)
 
     if (!product || !product.id) {
-      log(`Товар не найден: ${article}`)
+      log(`Товар не найден: ${code}`)
       return res.json({ error: 'Товар не найден' })
     }
 

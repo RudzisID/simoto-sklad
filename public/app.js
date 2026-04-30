@@ -11,6 +11,39 @@ let realtimeMode = false // Флаг для realtime добавления стр
 let serverCheckTimer = null // Для cleanup таймера
 let currentDuplicates = 0 // Счётчик дублей
 
+// Custom confirm dialog
+function showConfirm(message, title = 'Подтверждение') {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirmModal')
+    const titleEl = document.getElementById('confirmTitle')
+    const msgEl = document.getElementById('confirmMessage')
+    const okBtn = document.getElementById('confirmOk')
+    const cancelBtn = document.getElementById('confirmCancel')
+    
+    titleEl.textContent = title
+    msgEl.textContent = message
+    modal.classList.remove('hidden')
+    
+    const cleanup = (result) => {
+      modal.classList.add('hidden')
+      okBtn.removeEventListener('click', onOk)
+      cancelBtn.removeEventListener('click', onCancel)
+      modal.removeEventListener('click', onOverlayClick)
+      resolve(result)
+    }
+    
+    const onOk = () => cleanup(true)
+    const onCancel = () => cleanup(false)
+    const onOverlayClick = (e) => {
+      if (e.target === modal) cleanup(false)
+    }
+    
+    okBtn.addEventListener('click', onOk)
+    cancelBtn.addEventListener('click', onCancel)
+    modal.addEventListener('click', onOverlayClick)
+  })
+}
+
 // ===== Секундомер =====
 let operationTimer = null
 let operationStartTime = null
@@ -669,15 +702,15 @@ function renderTable() {
       const posTr = document.createElement('tr')
       posTr.className = 'positions-row'
       const cells = '<td colspan="10" class="positions-cell">' +
-                allPositions.map(p => {
-                  const article = p.article ? `[${p.article}] ` : ''
+                 allPositions.map(p => {
+                  const code = p.code ? `[${p.code}] ` : ''
                   const name = p.name || 'Наименование'
                   const price = p.price != null ? p.price : 0
                   const qty = p.quantity != null ? p.quantity : 0
                   const sum = p.sum != null ? p.sum : (price * qty)
-                  const printBtn = p.article ?
-                    `<button class="print-btn" onclick="printSticker('${(p.article || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>` : ''
-                  return `<div>${article}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`
+                  const printBtn = p.code ?
+                    `<button class="print-btn" onclick="printSticker('${(p.code || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>` : ''
+                  return `<div>${code}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`
                 }).join('') + '</td>'
       posTr.innerHTML = cells
       tbody.appendChild(posTr)
@@ -745,14 +778,14 @@ function appendOrderRow(order) {
     posTr.className = 'positions-row'
     const cells = '<td colspan="10" class="positions-cell">' +
       allPositions.map(p => {
-        const article = p.article ? `[${p.article}] ` : ''
+        const code = p.code ? `[${p.code}] ` : ''
         const name = p.name || 'Наименование'
         const price = p.price != null ? p.price : 0
         const qty = p.quantity != null ? p.quantity : 0
         const sum = p.sum != null ? p.sum : (price * qty)
-        const printBtn = p.article ?
-          `<button class="print-btn" onclick="printSticker('${(p.article || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>` : ''
-        return `<div>${article}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`
+        const printBtn = p.code ?
+          `<button class="print-btn" onclick="printSticker('${(p.code || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>` : ''
+        return `<div>${code}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`
       }).join('') + '</td>'
     posTr.innerHTML = cells
     tbody.appendChild(posTr)
@@ -1015,8 +1048,8 @@ async function cancelOrderByNum(shipmentNum) {
   await createSingleAction(shipmentNum, 'cancel')
 }
 
-// Print sticker for product by article
-async function printSticker(article) {
+// Print sticker for product by code
+async function printSticker(code) {
   const token = document.getElementById('tokenInput').value.trim()
   
   // Show timer in "After action stats" block
@@ -1113,7 +1146,7 @@ async function printSticker(article) {
             'Content-Type': 'application/json',
             'X-API-Token': token
           },
-          body: JSON.stringify({ article })
+        body: JSON.stringify({ code })
         })
         
         // Check response type
@@ -1211,48 +1244,97 @@ async function createSingleAction(shipmentNum, actionType) {
   }
 }
 
+// Refresh specific orders data after batch operation
+async function refreshSpecificOrders(numbers) {
+  const token = document.getElementById('tokenInput').value.trim()
+  if (!token || numbers.length === 0) return
+  
+  const numbersParam = encodeURIComponent(numbers.join(','))
+  const url = `/api/process/stream?token=${encodeURIComponent(token)}&numbers=${numbersParam}`
+  
+  try {
+    const response = await fetch(url)
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.type === 'progress') {
+              const order = data.order
+              // Заменяем в ordersData СВЕЖИМИ данными
+              const index = ordersData.findIndex(o => o.shipmentNum === order.shipmentNum)
+              if (index !== -1) {
+                ordersData[index] = { ...ordersData[index], ...order, enabled: true }
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    }
+    
+    // Перерисовываем с актуальными данными
+    realtimeMode = false
+    renderTable()
+    updateTotals()
+    renderCurrentStats()
+  } catch (e) {
+    console.error('Refresh error:', e)
+  }
+}
+
 // Batch action with SSE streaming
 async function batchAction(actionType) {
    const token = saveToken()
    if (!token) { alert('Введите токен API'); return }
 
    const actionNames = { demand: 'отгрузки', payment: 'платежи', return: 'возвраты', cancel: 'отмены' }
-   if (!confirm(`Создать ${actionNames[actionType]} для отмеченных?`)) return
+   if (!await showConfirm(`Создать ${actionNames[actionType]} для отмеченных?`)) return
 
    const orders = ordersData.filter(o => o.enabled)
    if (orders.length === 0) { alert('Нет отмеченных заказов'); return }
 
    showProgress(true)
    const numbers = orders.map(o => o.shipmentNum)
-     
+  
    // Запускаем секундомер и показываем блок
    hideFinalStats(true)
    startOperationTimer()
    
    // Добавляем анимацию сканирования
    document.querySelector('.stats-final').classList.add('scanning')
-
+   
   // Очищаем таблицу и показываем строки в реальном времени
-  const tbody = document.getElementById('tableBody')
-  tbody.innerHTML = ''
-  currentPage = 0
-    
-  // Включаем realtime режим
-  realtimeMode = true
-
-  try {
-    // Создаём AbortController и AbortId для сервера
-    currentController = new AbortController()
-    const abortId = Math.random().toString(36).substring(2, 15)
-    window.__currentAbortId = abortId
-        
-    // SSE URL с параметрами
-    const numbersParam = encodeURIComponent(numbers.join(','))
-    const url = `/api/batch/stream?token=${encodeURIComponent(token)}&numbers=${numbersParam}&action=${actionType}&abortId=${abortId}`
-        
-    const response = await fetch(url, {
-      signal: currentController.signal
-    })
+   const tbody = document.getElementById('tableBody')
+   tbody.innerHTML = ''
+   currentPage = 0
+   
+   // Включаем realtime режим
+   realtimeMode = true
+   
+   try {
+     // Создаём AbortController и AbortId для сервера
+     currentController = new AbortController()
+     const abortId = Math.random().toString(36).substring(2, 15)
+     window.__currentAbortId = abortId
+         
+     // SSE URL с параметрами
+     const numbersParam = encodeURIComponent(numbers.join(','))
+     const url = `/api/batch/stream?token=${encodeURIComponent(token)}&numbers=${numbersParam}&action=${actionType}&abortId=${abortId}`
+         
+     const response = await fetch(url, {
+       signal: currentController.signal
+     })
         
     if (!response.ok) {
       const errData = await response.json()
@@ -1339,44 +1421,35 @@ async function batchAction(actionType) {
               await new Promise(r => setTimeout(r, 50))
                             
 } else if (data.type === 'done') {
-               const stats = data.stats || { created, skipped, errors }
-                             
-               // Останавливаем секундомер
-               const elapsed = stopOperationTimer()
-                             
-               // Отключаем realtime режим для обновления статистики
-               realtimeMode = false
-                             
-               updateTotals()
-               renderCurrentStats()
-               saveLastActionStats()
-               hideProgress(true, `Создано: ${stats.created}, пропущено: ${stats.skipped}, ошибок: ${stats.errors}`)
-                             
-               // Показываем результаты в блоке "После действий"
-               showBatchResults(stats, elapsed)
-               
-               // Убираем анимацию сканирования
-               document.querySelector('.stats-final').classList.remove('scanning')
-} else if (data.type === 'aborted') {
-               // Прервано пользователем
-               // Останавливаем секундомер
-               const elapsed = stopOperationTimer()
-                             
-               const stats = data.stats || { created, skipped, errors }
-               realtimeMode = false
-               updateTotals()
-               renderCurrentStats()
-               hideProgress(false, `Прервано. Создано: ${stats.created}, пропущено: ${stats.skipped}`)
-               showBatchResults({ ...stats, errors: stats.errors + 1 }, elapsed)
-               
-               // Убираем анимацию сканирования
-               document.querySelector('.stats-final').classList.remove('scanning')
-            } else if (data.type === 'error') {
-              stopOperationTimer()
-              hideProgress(false, data.error)
-              document.querySelector('.stats-final')?.classList.remove('scanning')
-              return
-            }
+                const stats = data.stats || { created, skipped, errors }
+                                
+                // Останавливаем секундомер
+                const elapsed = stopOperationTimer()
+                                
+                // Собираем все изменённые номера (успех + ошибки)
+                const processedNumbers = data.orders
+                  .filter(o => o.status === 'created' || o.status === 'error')
+                  .map(o => o.shipmentNum)
+                
+                if (processedNumbers.length > 0) {
+                  // Обновляем только изменённые заказы актуальными данными
+                  await refreshSpecificOrders(processedNumbers)
+                } else {
+                  // Если нет изменённых, просто обновляем статистику
+                  realtimeMode = false
+                  updateTotals()
+                  renderCurrentStats()
+                }
+                
+                saveLastActionStats()
+                hideProgress(true, `Создано: ${stats.created}, пропущено: ${stats.skipped}, ошибок: ${stats.errors}`)
+                                
+                // Показываем результаты в блоке "После действий"
+                showBatchResults(stats, elapsed)
+                
+                // Убираем анимацию сканирования
+                document.querySelector('.stats-final').classList.remove('scanning')
+              }
           } catch (e) {
             console.error('SSE parse error:', e)
           }
@@ -1488,7 +1561,7 @@ async function startServer() {
 
 // Restart server
 async function restartServer() {
-  if (!confirm('Перезапустить сервер?')) return
+  if (!await showConfirm('Перезапустить сервер?')) return
 
   // Очистить предыдущий таймер
   if (serverCheckTimer) {
@@ -1589,7 +1662,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // Очистка сохранённых данных
 async function clearSavedData() {
-  if (!confirm('Очистить все сохранённые данные?')) return
+  if (!await showConfirm('Очистить все сохранённые данные?')) return
   try {
     const response = await fetch('/api/orders-state', { method: 'DELETE' })
     const result = await response.json()

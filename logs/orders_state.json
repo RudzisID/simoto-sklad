@@ -13,66 +13,14 @@
     "demandName": "63776",
     "paymentName": "63820",
     "returnName": null,
-    "savedAt": "2026-04-29T14:42:05.163Z",
+    "savedAt": "2026-04-30T06:18:20.298Z",
     "orderPositions": [
       {
-        "article": "5190-120510",
+        "code": "5190-120510",
         "name": "Кран топливный",
         "quantity": 1,
         "price": 1530,
         "sum": 1530
-      }
-    ],
-    "demandPositions": []
-  },
-  "0126453926-0212-1": {
-    "orderName": "68776",
-    "sum": 5400,
-    "paid": 0,
-    "status": "other",
-    "statusName": "Отменен",
-    "orderId": "f0abb797-23ba-11f1-0a80-0e0e00013045",
-    "hasDemand": true,
-    "hasPayment": false,
-    "hasReturn": true,
-    "isCancelled": true,
-    "demandName": "65396",
-    "paymentName": null,
-    "returnName": "03318",
-    "savedAt": "2026-04-29T14:42:05.163Z",
-    "orderPositions": [
-      {
-        "article": "SM-01163",
-        "name": "Катушка возбуждения Polaris SM-01163",
-        "quantity": 1,
-        "price": 5400,
-        "sum": 5400
-      }
-    ],
-    "demandPositions": []
-  },
-  "0146090935-0481-1": {
-    "orderName": "68722",
-    "sum": 500,
-    "paid": 500,
-    "status": "other",
-    "statusName": "Отгружен",
-    "orderId": "6214cc5b-2381-11f1-0a80-1ca20102142e",
-    "hasDemand": true,
-    "hasPayment": true,
-    "hasReturn": false,
-    "isCancelled": false,
-    "demandName": "65400",
-    "paymentName": "63818",
-    "returnName": null,
-    "savedAt": "2026-04-29T14:42:05.163Z",
-    "orderPositions": [
-      {
-        "article": "0180-081006",
-        "name": "Прокладка корпуса помпы",
-        "quantity": 1,
-        "price": 500,
-        "sum": 500
       }
     ],
     "demandPositions": []
