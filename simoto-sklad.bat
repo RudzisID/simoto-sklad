@@ -57,6 +57,12 @@ if exist "%TEMP%\ver_check.txt" (
   findstr /C:"New version available" "%TEMP%\ver_check.txt" >nul 2>&1
   if !errorlevel! EQU 0 (
     echo [i] New version available! Updating...
+    cd /d "%~dp0"
+    if not exist ".git" (
+        echo [X] Not a git repository!
+        pause
+        exit /b 1
+    )
     git pull origin main
     if errorlevel 1 (
       echo [X] Update failed! Check git configuration.
