@@ -1431,15 +1431,12 @@ async function batchAction(actionType) {
                   .filter(o => o.status === 'created' || o.status === 'error')
                   .map(o => o.shipmentNum)
                 
-                if (processedNumbers.length > 0) {
-                  // Обновляем только изменённые заказы актуальными данными
-                  await refreshSpecificOrders(processedNumbers)
-                } else {
-                  // Если нет изменённых, просто обновляем статистику
-                  realtimeMode = false
-                  updateTotals()
-                  renderCurrentStats()
-                }
+                // Данные уже обновлены в SSE цикле (строки 1373-1398)
+                // НЕ вызываем refreshSpecificOrders, чтобы избежать лишнего запроса и "замораживания" UI
+                realtimeMode = false
+                renderTable()
+                updateTotals()
+                renderCurrentStats()
                 
                 saveLastActionStats()
                 hideProgress(true, `Создано: ${stats.created}, пропущено: ${stats.skipped}, ошибок: ${stats.errors}`)
