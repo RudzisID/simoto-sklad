@@ -1,0 +1,55 @@
+{
+  "orderFullWithReturns": {
+    "id": "order-check-001",
+    "name": "Заказ с возвратами",
+    "demands": [
+      {
+        "meta": {
+          "href": "https://api.moysklad.ru/api/remap/1.2/entity/demand/demand-check-001",
+          "type": "demand"
+        }
+      }
+    ],
+    "returns": {
+      "rows": [
+        {
+          "meta": {
+            "href": "https://api.moysklad.ru/api/remap/1.2/entity/salesreturn/return-check-001",
+            "type": "salesreturn"
+          },
+          "id": "return-check-001",
+          "name": "Возврат 001",
+          "sum": 3000
+        },
+        {
+          "meta": {
+            "href": "https://api.moysklad.ru/api/remap/1.2/entity/salesreturn/return-check-002",
+            "type": "salesreturn"
+          },
+          "id": "return-check-002",
+          "name": "Возврат 002",
+          "sum": 2000
+        }
+      ]
+    }
+  },
+  "demandWithReturns": {
+    "id": "demand-check-001",
+    "name": "Отгрузка с возвратами",
+    "sum": 10000,
+    "payedSum": 0,
+    "returns": {
+      "rows": [
+        {
+          "meta": {
+            "href": "https://api.moysklad.ru/api/remap/1.2/entity/salesreturn/return-check-001",
+            "type": "salesreturn"
+          },
+          "id": "return-check-001",
+          "name": "Возврат 001",
+          "sum": 3000
+        }
+      ]
+    }
+  }
+}

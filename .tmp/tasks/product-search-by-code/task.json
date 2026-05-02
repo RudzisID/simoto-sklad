@@ -1,0 +1,7 @@
+{
+  "feature": "product-search-by-code",
+  "description": "Исправление поиска товара по коду (code) для печати стикеров — поддержка кириллицы",
+  "status": "completed",
+  "created": "2026-05-02T00:00:00Z",
+  "completed": "2026-05-02T00:30:00Z"
+}

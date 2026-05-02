@@ -146,18 +146,20 @@ describe('batch.js', () => {
         const numbers = ['003']
         const action = 'return'
         const log = jest.fn()
-
+        
         checkOrder.mockResolvedValue(mockData.checkResults[2]) // canReturn: true
         getOrderFullForCreate.mockResolvedValue({
           id: 'order-003',
           demands: [{ meta: { href: '.../demand-123' } }]
         })
-        createReturn.mockResolvedValue({ name: 'Возврат 001' })
-
+        createReturn.mockResolvedValue({ name: 'Возврат 001', sum: 10000 })
+        
         const result = await processBatch(numbers, action, log)
-
+        
         expect(result.created).toBe(1)
         expect(createReturn).toHaveBeenCalled()
+        // Check that returnSum is returned (10000 kopeks = 100.00 rubles)
+        expect(result.orders[0].returnSum).toBe(100.00)
       })
     })
 
@@ -182,12 +184,14 @@ describe('batch.js', () => {
       const numbers = ['001']
       const action = 'demand'
       const log = jest.fn()
-
+      
+      // checkResults[0] has canDemand: true
       checkOrder.mockResolvedValue(mockData.checkResults[0])
-      getOrderFullForCreate.mockRejectedValue(new Error('API Error'))
-
+      // Make createDemand throw an error
+      createDemand.mockRejectedValue(new Error('API Error'))
+      
       const result = await processBatch(numbers, action, log)
-
+      
       expect(result.errors).toBe(1)
       expect(result.orders[0].status).toBe('error')
     })

@@ -1,0 +1,21 @@
+{
+  "id": "sort-status-fix-01",
+  "seq": "01",
+  "title": "Изменить index.html (заменить isCancelled на statusName)",
+  "status": "completed",
+  "depends_on": [],
+  "parallel": true,
+  "suggested_agent": "CoderAgent",
+  "context_files": [],
+  "reference_files": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\public\\index.html"
+  ],
+  "acceptance_criteria": [
+    "В строке 63 index.html onclick=\"sortTable('isCancelled')\" заменен на onclick=\"sortTable('statusName')\"",
+    "Заголовок столбца остается понятным пользователю (Статус)"
+  ],
+  "deliverables": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\public\\index.html"
+  ],
+  "estimated_effort": 0.5
+}

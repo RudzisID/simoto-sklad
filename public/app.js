@@ -1,5 +1,17 @@
 // Frontend логика
 
+// Порядок статусов для сортировки
+const statusOrder = {
+  'Новый': 1,
+  'Сохранено': 2,
+  'С отсрочкой': 3,
+  'Отгружен': 4,
+  'Оплачен': 5,
+  'Частично оплачен': 6,
+  'Возврат': 7,
+  'Отменён': 8
+};
+
 let ordersData = []
 let currentPage = 0
 const PAGE_SIZE = 1000
@@ -294,6 +306,7 @@ async function loadSavedOrders() {
       demandName: state.demandName || null,
       paymentName: state.paymentName || null,
       returnName: state.returnName || null,
+      returnSum: state.returnSum || 0,
       orderPositions: state.orderPositions || [],
       demandPositions: state.demandPositions || []
     })
@@ -341,8 +354,16 @@ function getSortedOrders() {
   return [...ordersData].sort((a, b) => {
     let va, vb
 
-    if (col === 'hasDemand' || col === 'hasPayment' || col === 'hasReturn' || col === 'isCancelled') {
-      // Сортировка по статусу: false < true
+    if (col === 'statusName') {
+      // Сортировка по статусу с учетом правильного порядка
+      const statusA = a[col] || 'Новый'
+      const statusB = b[col] || 'Новый'
+      const orderA = statusOrder[statusA] || 999
+      const orderB = statusOrder[statusB] || 999
+      va = orderA
+      vb = orderB
+    } else if (col === 'hasDemand' || col === 'hasPayment' || col === 'hasReturn' || col === 'isCancelled') {
+      // Сортировка по булевым полям: false < true
       va = a[col] ? 1 : 0
       vb = b[col] ? 1 : 0
     } else if (col === 'sum') {
@@ -637,8 +658,10 @@ function renderTable() {
     const actualIndex = ordersData.findIndex(o => o.shipmentNum === order.shipmentNum)
 
     // Номера документов
-    const demandDisplay = order.demandName ? `<span class="demand-code">${order.demandName}</span>` : '<span class="status-no">—</span>'
-    const paymentDisplay = order.paymentName ? `<span class="doc-number">${order.paymentName}</span>` : '<span class="status-no">—</span>'
+    const demandDisplay = order.demandName ? `<span class="doc-number">${order.demandName}</span>` : '<span class="status-no">—</span>'
+    const paymentDisplay = order.paymentName 
+      ? `<span class="doc-number">${order.paymentName}</span><br><span class="payment-sum">${order.paid} ₽</span>` 
+      : '<span class="status-no">—</span>'
     const returnDisplay = order.returnName ? `<span class="doc-number">${order.returnName}</span>` : '<span class="status-no">—</span>'
 
     // Статус документа - показываем directly из API statusName
@@ -884,7 +907,7 @@ function calculateStats(orderList) {
     }
     if (o.hasReturn) {
       stats.returnCount++
-      stats.returnSum += sum
+      stats.returnSum += o.returnSum || sum
     }
     if (o.isCancelled) {
       stats.cancelledCount++
@@ -904,22 +927,22 @@ function calculateStats(orderList) {
       stats.cancelledSum_A += sum
     }
         
-    // Вариант B: Return imeet prioritet
+    // Вариант B: Return имеет приоритет
     if (o.hasReturn) {
       stats.returnCount_B++
-      stats.returnSum_B += sum
+      stats.returnSum_B += o.returnSum || sum
     } else if (o.isCancelled) {
       stats.cancelledCount_B++
       stats.cancelledSum_B += sum
     }
         
-    // Ваriant C: Otmena imeet prioritet
+    // Вариант C: Отмена имеет приоритет
     if (o.isCancelled) {
       stats.cancelledCount_C++
       stats.cancelledSum_C += sum
     } else if (o.hasReturn) {
       stats.returnCount_C++
-      stats.returnSum_C += sum
+      stats.returnSum_C += o.returnSum || sum
     }
   })
     
@@ -961,8 +984,7 @@ function renderCurrentStats(force = false) {
     container.innerHTML = `
             <div class="stat-row"><span class="stat-label">Отгрузок:</span><span class="stat-value success">${stats.demandCount || 0}</span><span class="stat-sum">${fmtSum(demandSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Оплачено:</span><span class="stat-value success">${stats.paymentCount || 0}</span><span class="stat-sum">${fmtSum(paymentSum)}</span></div>
-            <div class="stat-row"><span class="stat-label">Возвратов:</span><span class="stat-value">${stats.returnCount_C || 0}</span><span class="stat-sum">${fmtReturnSum(returnSum)}</span></div>
-            <div class="stat-row"><span class="stat-label">Отменено:</span><span class="stat-value error">${stats.cancelledCount_C || 0}</span><span class="stat-sum">${fmtSum(cancelledSum)}</span></div>
+            <div class="stat-row"><span class="stat-label">Возвраты + Отмены:</span><span class="stat-value">${(stats.returnCount_C || 0) + (stats.cancelledCount_C || 0)}</span><span class="stat-sum">${fmtSum(returnSum + cancelledSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Ошибок:</span><span class="stat-value error">${stats.errorCount || 0}</span><span class="stat-sum">-</span></div>
             ${currentDuplicates > 0 ? `<div class="stat-row"><span class="stat-label">Дублей:</span><span class="stat-value duplicates">${currentDuplicates}</span><span class="stat-sum">-</span></div>` : ''}
             <div class="calculator">
@@ -970,9 +992,7 @@ function renderCurrentStats(force = false) {
                 <div class="calc-formula">
                     <span class="calc-sum">${fmtSum(demandSum)}</span>
                     <span class="calc-op"> − </span>
-                    <span class="calc-sum">${fmtSum(returnSum)}</span>
-                    <span class="calc-op"> − </span>
-                    <span class="calc-sum">${fmtSum(cancelledSum)}</span>
+                    <span class="calc-sum">${fmtSum(returnSum + cancelledSum)}</span>
                 </div>
                 <div class="calc-formula">
                     <span class="calc-op">= </span>
@@ -1046,6 +1066,10 @@ async function createReturnByNum(shipmentNum) {
 
 async function cancelOrderByNum(shipmentNum) {
   await createSingleAction(shipmentNum, 'cancel')
+}
+
+async function createPartialPaymentByNum(shipmentNum) {
+  await createSingleAction(shipmentNum, 'partial_payment')
 }
 
 // Print sticker for product by code
@@ -1185,7 +1209,8 @@ async function createSingleAction(shipmentNum, actionType) {
     demand: '/api/create-demand',
     payment: '/api/create-payment',
     return: '/api/create-return',
-    cancel: '/api/cancel-order'  // ✅ Правильный endpoint для отмены
+    cancel: '/api/cancel-order',
+    partial_payment: '/api/create-partial-payment'
   }
   const endpoint = endpointMap[actionType] || `/api/create-${actionType}`
 
@@ -1222,11 +1247,18 @@ async function createSingleAction(shipmentNum, actionType) {
         } else if (actionType === 'return') {
           ordersData[orderIndex].hasReturn = true
           ordersData[orderIndex].statusName = 'Возврат'
+          ordersData[orderIndex].returnSum = data.returnSum || 0
           saveOrderAction(data.shipmentNum, 'return_created', data.returnName)
         } else if (actionType === 'cancel') {
           ordersData[orderIndex].isCancelled = true
           ordersData[orderIndex].statusName = 'Отменён'
           saveOrderAction(data.shipmentNum, 'order_cancelled', 'ok')
+        } else if (actionType === 'partial_payment') {
+          ordersData[orderIndex].hasPayment = true
+          ordersData[orderIndex].statusName = 'Частично оплачен'
+          ordersData[orderIndex].paid = data.paymentSum || (ordersData[orderIndex].sum - (ordersData[orderIndex].returnSum || 0))
+          ordersData[orderIndex].paymentName = data.paymentName || null
+          saveOrderAction(data.shipmentNum, 'partial_payment_created', data.paymentName)
         }
         ordersData[orderIndex].lastAction = `${actionType}_created`
                 
@@ -1390,12 +1422,20 @@ async function batchAction(actionType) {
                   ordersData[orderIndex].statusName = 'Возврат'
                   ordersData[orderIndex].lastAction = 'return_created'
                   ordersData[orderIndex].returnName = result.returnName || null
+                  ordersData[orderIndex].returnSum = result.returnSum || 0
                   saveOrderAction(result.shipmentNum, 'return_created', result.returnName)
                 } else if (actionType === 'cancel') {
                   ordersData[orderIndex].isCancelled = true
                   ordersData[orderIndex].statusName = 'Отменён'
                   ordersData[orderIndex].lastAction = 'order_cancelled'
                   saveOrderAction(result.shipmentNum, 'order_cancelled', 'success')
+                } else if (actionType === 'partial_payment') {
+                  ordersData[orderIndex].hasPayment = true
+                  ordersData[orderIndex].statusName = 'Частично оплачен'
+                  ordersData[orderIndex].paid = result.paymentSum || (ordersData[orderIndex].sum - (ordersData[orderIndex].returnSum || 0))
+                  ordersData[orderIndex].lastAction = 'partial_payment_created'
+                  ordersData[orderIndex].paymentName = result.paymentName || null
+                  saveOrderAction(result.shipmentNum, 'partial_payment_created', result.paymentName)
                 }
               } else if (result.status === 'skipped') {
                 skipped++

@@ -1,0 +1,22 @@
+{
+  "id": "sort-status-fix-03",
+  "seq": "03",
+  "title": "Добавить массив statusOrder в app.js",
+  "status": "completed",
+  "depends_on": [],
+  "parallel": true,
+  "suggested_agent": "CoderAgent",
+  "context_files": [],
+  "reference_files": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\public\\app.js"
+  ],
+  "acceptance_criteria": [
+    "Массив statusOrder добавлен в начало файла app.js (после комментария)",
+    "Порядок статусов соответствует ТЗ: Новый(1), Сохранено(2), С отсрочкой(3), Отгружен(4), Оплачен(5), Частично оплачен(6), Возврат(7), Отменён(8)",
+    "Синтаксис JavaScript корректен"
+  ],
+  "deliverables": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\public\\app.js"
+  ],
+  "estimated_effort": 0.5
+}

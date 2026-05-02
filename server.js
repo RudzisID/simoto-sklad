@@ -474,6 +474,54 @@ app.post('/api/create-payment', async (req, res) => {
   }
 })
 
+// Create partial payment (with returns deduction) - manual only
+app.post('/api/create-partial-payment', async (req, res) => {
+  const { shipmentNum } = req.body
+  const token = req.headers['x-api-token']
+
+  if (!token || !shipmentNum) {
+    return res.json({ error: 'Требуется токен и номер отправления' })
+  }
+
+  initApi(token)
+  log(`Создание частичного платежа: ${shipmentNum}`, { token: token.slice(0, 8) + '...' })
+
+  try {
+    log(`Проверка заказа: ${shipmentNum}`)
+    const order = await findOrderByShipmentNum(shipmentNum, log)
+    if (!order) {
+      log(`Заказ не найден: ${shipmentNum}`)
+      updateOrderState(shipmentNum, 'partial_payment_check', 'order_not_found')
+      return res.json({ error: 'Заказ не найден' })
+    }
+
+    log(`Создаю частичный платёж: ${shipmentNum}`, { orderId: order.id })
+    const { createPartialPayment } = require('./lib/payment')
+    const result = await createPartialPayment(order.id)
+    log(`Частичный платёж создан: ${result.name}`, { 
+      shipmentNum, 
+      paymentId: result.id,
+      paymentSum: result.paymentSum 
+    })
+
+    // Получаем данные для обновления состояния
+    const { getOrderFullForCreate } = require('./lib/order')
+    const orderFull = await getOrderFullForCreate(order.id)
+
+    updateOrderState(shipmentNum, 'partial_payment_created', result.name, {
+      orderName: orderFull.name,
+      orderId: orderFull.id,
+      paymentSum: result.paymentSum,
+      orderUrl: `https://online.moysklad.ru/app/#customerorder/${orderFull.id}`
+    })
+    res.json({ success: true, paymentName: result.name, paymentSum: result.paymentSum })
+  } catch (e) {
+    log(`Ошибка создания частичного платежа: ${e.message}`, { shipmentNum, stack: e.stack })
+    updateOrderState(shipmentNum, 'partial_payment_error', e.message)
+    res.json({ error: e.message })
+  }
+})
+
 // Create demand (отгрузка) - see Skills/moysklad-demand.md
 app.post('/api/create-demand', async (req, res) => {
   const { shipmentNum } = req.body
@@ -550,7 +598,7 @@ app.post('/api/create-return', async (req, res) => {
       orderId: orderFull.id,
       orderUrl: `https://online.moysklad.ru/app/#customerorder/${orderFull.id}`
     })
-    res.json({ success: true, returnName: salesReturn.name })
+    res.json({ success: true, returnName: salesReturn.name, returnSum: salesReturn.sum / 100 })
   } catch (e) {
     log(`Ошибка создания возврата: ${e.message}`, { shipmentNum, stack: e.stack })
     updateOrderState(shipmentNum, 'return_error', e.message)
@@ -622,11 +670,12 @@ app.post('/api/print-sticker', async (req, res) => {
       return res.json({ error: 'Товар не найден' })
     }
 
-    log(`Товар найден: ${product.name}, ID: ${product.id}`)
+    log(`Товар найден: ${product.name}, ID: ${product.id}, type: ${product.meta?.type || 'product'}`)
 
     // 2. Export sticker PDF
     log(`Генерация PDF стикера для товара: ${product.id}`)
-    const result = await exportStickerPdf(product.id, token)
+    const entityType = product.meta?.type || 'product'
+    const result = await exportStickerPdf(product.id, token, entityType)
 
     if (!result) {
       throw new Error('Не удалось получить PDF')

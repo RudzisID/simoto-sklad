@@ -1,0 +1,23 @@
+{
+  "id": "sort-status-fix-02",
+  "seq": "02",
+  "title": "Обновить логику сортировки в app.js (функция getSortedOrders)",
+  "status": "completed",
+  "depends_on": ["sort-status-fix-01", "sort-status-fix-03"],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [],
+  "reference_files": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\public\\app.js"
+  ],
+  "acceptance_criteria": [
+    "В функции getSortedOrders добавлена обработка поля statusName",
+    "Сортировка использует statusOrder для определения порядка",
+    "При отсутствии статуса в statusOrder заказы помещаются в конец списка",
+    "Логика сортировки работает корректно при переключении asc/desc"
+  ],
+  "deliverables": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\public\\app.js"
+  ],
+  "estimated_effort": 1.5
+}

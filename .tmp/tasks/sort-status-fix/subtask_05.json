@@ -1,0 +1,24 @@
+{
+  "id": "sort-status-fix-05",
+  "seq": "05",
+  "title": "Проверить и обновить индикаторы сортировки",
+  "status": "completed",
+  "depends_on": ["sort-status-fix-02"],
+  "parallel": true,
+  "suggested_agent": "CoderAgent",
+  "context_files": [],
+  "reference_files": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\public\\app.js",
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\public\\index.html"
+  ],
+  "acceptance_criteria": [
+    "Функция updateSortIndicators корректно работает для колонки statusName",
+    "CSS классы asc/desc добавляются к заголовку Статус при сортировке",
+    "Индикатор сортировки сбрасывается при переключении на другую колонку"
+  ],
+  "deliverables": [
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\public\\app.js",
+    "C:\\distr\\!OpenCode\\sklad\\SiMOTO-sklad\\public\\styles.css (при необходимости)"
+  ],
+  "estimated_effort": 1
+}
