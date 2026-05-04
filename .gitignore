@@ -13,3 +13,6 @@ tmp/
 
 # Планы выполнения (для автовызова)
 .opencode/context/plans/
+
+# Graphify output
+graphify-out/

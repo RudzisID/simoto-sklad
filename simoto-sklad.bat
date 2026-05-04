@@ -1,4 +1,5 @@
 @echo off
+set "_batfile=%~f0"
 setlocal enabledelayedexpansion
 title SiMOTO-Sklad
 
@@ -72,7 +73,7 @@ if exist "%TEMP%\ver_check.txt" (
     )
     echo [OK] Updated! Restarting...
     del "%TEMP%\ver_check.txt" >nul 2>&1
-    start "" "%~f0"
+    cmd /c start "" "%_batfile%"
     exit /b 0
   )
 )
