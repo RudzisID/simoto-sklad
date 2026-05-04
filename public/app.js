@@ -875,7 +875,8 @@ function calculateStats(orderList) {
     cancelledCount: 0,
     cancelledSum: 0,
     errorCount: 0,
-        
+    notFoundCount: 0,
+    
     // Вариант A: Раздельный подсчёт (оба могут быть)
     returnCount_A: 0,
     returnSum_A: 0,
@@ -916,7 +917,10 @@ function calculateStats(orderList) {
     if (o.lastAction && o.lastAction.includes('_error')) {
       stats.errorCount++
     }
-        
+    if (o.status === 'not_found' || o.statusName === 'Не найден') {
+      stats.notFoundCount++
+    }
+    
     // Вариант A: Раздельный (oba mogut byt true)
     if (o.hasReturn) {
       stats.returnCount_A++
@@ -986,6 +990,7 @@ function renderCurrentStats(force = false) {
             <div class="stat-row"><span class="stat-label">Оплачено:</span><span class="stat-value success">${stats.paymentCount || 0}</span><span class="stat-sum">${fmtSum(paymentSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Возвраты + Отмены:</span><span class="stat-value">${(stats.returnCount_C || 0) + (stats.cancelledCount_C || 0)}</span><span class="stat-sum">${fmtSum(returnSum + cancelledSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Ошибок:</span><span class="stat-value error">${stats.errorCount || 0}</span><span class="stat-sum">-</span></div>
+            <div class="stat-row"><span class="stat-label">Не найден:</span><span class="stat-value">${stats.notFoundCount || 0}</span><span class="stat-sum">-</span></div>
             ${currentDuplicates > 0 ? `<div class="stat-row"><span class="stat-label">Дублей:</span><span class="stat-value duplicates">${currentDuplicates}</span><span class="stat-sum">-</span></div>` : ''}
             <div class="calculator">
                 <div class="calc-divider"></div>

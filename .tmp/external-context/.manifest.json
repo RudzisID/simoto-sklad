@@ -1,75 +1,110 @@
 {
   "version": "1.0",
-  "last_updated": "2026-04-28T12:00:00Z",
+  "last_updated": "2026-05-04T12:00:00Z",
   "libraries": {
-    "tanstack-query": {
-      "files": [
-        {
-          "filename": "nextjs-ssr-hydration.md",
-          "topic": "SSR hydration",
-          "tech_stack": "Next.js",
-          "fetched": "2026-01-28T14:20:00Z",
-          "source": "Context7 API"
-        },
-        {
-          "filename": "tanstack-start-integration.md",
-          "topic": "server functions integration",
-          "tech_stack": "TanStack Start",
-          "fetched": "2026-01-30T10:15:00Z",
-          "source": "Official docs"
-        }
-      ]
-    },
     "moysklad-api-1.2": {
       "files": [
         {
+          "filename": "sticker-printing.md",
+          "topic": "sticker printing",
+          "tech_stack": "Moysklad",
+          "fetched": "2026-01-30T10:30:00Z",
+          "source": "Context7 API"
+        },
+        {
           "filename": "salesreturn-create.md",
           "topic": "sales return creation",
-          "fetched": "2026-04-28T10:00:00Z",
+          "tech_stack": "Moysklad",
+          "fetched": "2026-01-30T10:30:00Z",
           "source": "Context7 API"
         },
         {
-          "filename": "demand-create.md",
-          "topic": "demand creation",
-          "fetched": "2026-04-28T10:00:00Z",
-          "source": "Context7 API"
-        },
-        {
-          "filename": "customerorder-cancel.md",
-          "topic": "customer order cancel",
-          "fetched": "2026-04-28T10:00:00Z",
+          "filename": "sales-channel.md",
+          "topic": "sales channels",
+          "tech_stack": "Moysklad",
+          "fetched": "2026-01-30T10:30:00Z",
           "source": "Context7 API"
         },
         {
           "filename": "paymentin-create.md",
           "topic": "payment in creation",
-          "fetched": "2026-04-28T10:00:00Z",
-          "source": "Context7 API"
-        },
-        {
-          "filename": "sales-channel.md",
-          "topic": "sales channel",
-          "fetched": "2026-04-28T10:00:00Z",
+          "tech_stack": "Moysklad",
+          "fetched": "2026-01-30T10:30:00Z",
           "source": "Context7 API"
         },
         {
           "filename": "error-handling.md",
           "topic": "error handling",
-          "fetched": "2026-04-28T10:00:00Z",
+          "tech_stack": "Moysklad",
+          "fetched": "2026-01-30T10:30:00Z",
+          "source": "Context7 API"
+        },
+        {
+          "filename": "demand-create.md",
+          "topic": "demand creation",
+          "tech_stack": "Moysklad",
+          "fetched": "2026-01-30T10:30:00Z",
+          "source": "Context7 API"
+        },
+        {
+          "filename": "customerorder-cancel.md",
+          "topic": "customer order cancel",
+          "tech_stack": "Moysklad",
+          "fetched": "2026-01-30T10:30:00Z",
           "source": "Context7 API"
         },
         {
           "filename": "attributes-update.md",
           "topic": "attributes update",
-          "fetched": "2026-04-28T10:00:00Z",
+          "tech_stack": "Moysklad",
+          "fetched": "2026-01-30T10:30:00Z",
           "source": "Context7 API"
+        }
+      ]
+    },
+    "wildberries-api": {
+      "files": [
+        {
+          "filename": "overview.md",
+          "topic": "overview",
+          "tech_stack": "Wildberries Seller API",
+          "fetched": "2026-05-04T12:00:00Z",
+          "source": "Official Wildberries Documentation + Web Search"
         },
         {
-          "filename": "sticker-printing.md",
-          "topic": "sticker label printing",
-          "tech_stack": "MoySklad",
-          "fetched": "2026-04-28T12:00:00Z",
-          "source": "Web Search + Official Documentation"
+          "filename": "authentication.md",
+          "topic": "authentication",
+          "tech_stack": "Wildberries Seller API",
+          "fetched": "2026-05-04T12:00:00Z",
+          "source": "Official Wildberries Documentation + Web Search"
+        },
+        {
+          "filename": "endpoints.md",
+          "topic": "endpoints",
+          "tech_stack": "Wildberries Seller API",
+          "fetched": "2026-05-04T12:00:00Z",
+          "source": "Official Wildberries Documentation + Web Search"
+        },
+        {
+          "filename": "rate-limits.md",
+          "topic": "rate limits",
+          "tech_stack": "Wildberries Seller API",
+          "fetched": "2026-05-04T12:00:00Z",
+          "source": "Official Wildberries Documentation"
+        },
+        {
+          "filename": "examples.md",
+          "topic": "examples",
+          "tech_stack": "Wildberries Seller API",
+          "fetched": "2026-05-04T12:00:00Z",
+          "source": "Official Wildberries Documentation + Web Search"
+        },
+        {
+          "filename": "openapi-specs.md",
+          "topic": "openapi specs",
+          "tech_stack": "Wildberries Seller API",
+          "fetched": "2026-05-04T12:00:00Z",
+          "source": "Official Wildberries Documentation + Web Search"
         }
       ]
     }
