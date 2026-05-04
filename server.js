@@ -1000,6 +1000,81 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(moduleRoot, 'public', 'index.html'))
 })
 
+// Product search by OEM code (Market tab)
+app.get('/api/market/product', async (req, res) => {
+  const msToken = req.headers['x-api-token']
+  const wbToken = req.headers['x-wb-token']
+  const ozonClientId = req.headers['x-ozon-client-id']
+  const ozonApiKey = req.headers['x-ozon-api-key']
+  const oemCode = req.query.code
+
+  if (!msToken) {
+    return res.status(401).json({ error: 'Требуется токен API МойСклад' })
+  }
+
+  if (!oemCode) {
+    return res.status(400).json({ error: 'Требуется код товара (OEM)' })
+  }
+
+  try {
+    // 1. Init MoySklad API
+    process.env.MOYSKLAD_TOKEN = msToken
+    initApi(msToken)
+
+    // 2. Search in MoySklad
+    const msProduct = await findProductByCode(oemCode.trim())
+    
+    // 3. Search in WB (if token provided)
+    let wbResults = []
+    let wbError = null
+    if (wbToken) {
+      try {
+        wbResults = await wbOzonSync.fetchWBData([oemCode.trim()], wbToken)
+      } catch (e) {
+        wbError = e.message
+        wbResults = [{ code: oemCode, error: 'WB API Error: ' + e.message }]
+      }
+    } else {
+      wbResults = [{ code: oemCode, error: 'Токен WB не предоставлен' }]
+    }
+
+    // 4. Search in Ozon (if credentials provided)
+    let ozonResults = []
+    let ozonError = null
+    if (ozonClientId && ozonApiKey) {
+      try {
+        ozonResults = await wbOzonSync.fetchOzonData([oemCode.trim()], ozonClientId, ozonApiKey)
+      } catch (e) {
+        ozonError = e.message
+        ozonResults = [{ code: oemCode, error: 'Ozon API Error: ' + e.message }]
+      }
+    } else {
+      ozonResults = [{ code: oemCode, error: 'Не указаны Client-Id и Api-Key для Ozon' }]
+    }
+
+    // 5. Prepare response
+    const result = {
+      oem: oemCode,
+      moysklad: msProduct ? {
+        id: msProduct.id,
+        name: msProduct.name,
+        code: msProduct.code,
+        article: msProduct.article || '',
+        price: msProduct.price || 0,
+        stock: msProduct.quantity || 0,
+      } : null,
+      wildberries: wbResults && wbResults.length > 0 ? wbResults[0] : null,
+      ozon: ozonResults && ozonResults.length > 0 ? ozonResults[0] : null,
+      _debug: { wbError, ozonError } // Debug info
+    }
+
+    res.json(result)
+  } catch (e) {
+    log(`Ошибка поиска товара: ${e.message}`)
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // Start server
 const server = app.listen(PORT, () => {
   log(`=== Сервер запущен на http://localhost:${PORT} ===`, {

@@ -1,0 +1,19 @@
+{
+  "id": "simoto-tabs-02",
+  "seq": "02",
+  "title": "Стилизация верхней панели, табов и адаптация существующих стилей",
+  "status": "pending",
+  "depends_on": ["01"],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [],
+  "reference_files": ["public/styles.css", "public/index.html"],
+  "acceptance_criteria": [
+    "Верхняя панель имеет фиксированное положение (sticky/fixed)",
+    "Табы Склад/Маркет стилизованы в едином стиле (dark theme, glassmorphism)",
+    "Активный таб визуально выделен (accent color)",
+    "Существующие стили левого и правого блоков не нарушены",
+    "Адаптивность сохранена (медиа-запросы)"
+  ],
+  "deliverables": ["public/styles.css"]
+}

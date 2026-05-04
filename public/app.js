@@ -185,18 +185,24 @@ function hideFinalStats(showTimer = true) {
   }
 }
 
-// Load token
+// Load token from localStorage
 function loadToken() {
-  const saved = localStorage.getItem('moyskladToken')
-  if (saved) document.getElementById('tokenInput').value = saved
-  return saved
+  // Try new key first, then fallback to old key
+  return localStorage.getItem('ms_token') || localStorage.getItem('moyskladToken') || ''
 }
 
+// Save token to localStorage (called from modal now, but keep for compatibility)
 function saveToken() {
-  const token = document.getElementById('tokenInput').value.trim()
-  localStorage.setItem('moyskladToken', token)
-  showStatus('Токен сохранён')
-  return token
+  // This function is kept for compatibility, but token is now saved via modal
+  const tokenInput = document.getElementById('tokenInput')
+  if (tokenInput) {
+    const token = tokenInput.value.trim()
+    localStorage.setItem('ms_token', token)
+    localStorage.setItem('moyskladToken', token) // Keep old key for compatibility
+    showStatus('Токен сохранён')
+    return token
+  }
+  return loadToken()
 }
 
 // Load orders state
@@ -394,16 +400,20 @@ function toggleEnabled(index) {
 // Check numbers
 async function checkNumbers() {
   const text = document.getElementById('numbersInput').value
-    
+  
   // Подсчёт дублей (до уникализации)
   const lines = text.split('\n').map(l => l.trim()).filter(l => l)
   currentDuplicates = lines.length - new Set(lines).size
-    
+  
   const numbers = [...new Set(lines)]
-    
+  
   if (numbers.length === 0) { showStatus('Введите номера'); return }
-
+  
   const token = loadToken()
+  if (!token) {
+    showStatus('Ошибка: Токен не найден. Нажмите "Токены" в шапке.')
+    return
+  }
 
   await loadOrdersState()
 
@@ -1079,7 +1089,11 @@ async function createPartialPaymentByNum(shipmentNum) {
 
 // Print sticker for product by code
 async function printSticker(code) {
-  const token = document.getElementById('tokenInput').value.trim()
+  const token = loadToken()
+  if (!token) {
+    showStatus('Ошибка: Токен не найден. Нажмите "Токены" в шапке.')
+    return
+  }
   
   // Show timer in "After action stats" block
   const statsOutput = document.getElementById('statsFinalOutput')
@@ -1283,7 +1297,7 @@ async function createSingleAction(shipmentNum, actionType) {
 
 // Refresh specific orders data after batch operation
 async function refreshSpecificOrders(numbers) {
-  const token = document.getElementById('tokenInput').value.trim()
+  const token = loadToken()
   if (!token || numbers.length === 0) return
   
   const numbersParam = encodeURIComponent(numbers.join(','))

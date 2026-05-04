@@ -57,24 +57,31 @@ node scripts/check-update.js %curver% > "%TEMP%\ver_check.txt" 2>&1
 if exist "%TEMP%\ver_check.txt" (
   findstr /C:"New version available" "%TEMP%\ver_check.txt" >nul 2>&1
   if !errorlevel! EQU 0 (
-    echo [i] New version available! Updating...
-    cd /d "%~dp0"
-    if not exist ".git" (
-        echo [X] Not a git repository!
+    echo [i] New version available!
+    set /p "do_update=Update now? (y/n): "
+    if /i "!do_update!"=="y" (
+      echo [i] Updating...
+      cd /d "%~dp0"
+      if not exist ".git" (
+          echo [X] Not a git repository!
+          pause
+          exit /b 1
+      )
+      git pull origin main
+      if errorlevel 1 (
+        echo [X] Update failed! Check git configuration.
+        del "%TEMP%\ver_check.txt" >nul 2>&1
         pause
         exit /b 1
-    )
-    git pull origin main
-    if errorlevel 1 (
-      echo [X] Update failed! Check git configuration.
+      )
+      echo [OK] Updated! Restarting...
       del "%TEMP%\ver_check.txt" >nul 2>&1
-      pause
-      exit /b 1
+      cmd /c start "" "%_batfile%"
+      exit /b 0
+    ) else (
+      echo [i] Update skipped. Starting current version...
+      del "%TEMP%\ver_check.txt" >nul 2>&1
     )
-    echo [OK] Updated! Restarting...
-    del "%TEMP%\ver_check.txt" >nul 2>&1
-    cmd /c start "" "%_batfile%"
-    exit /b 0
   )
 )
 del "%TEMP%\ver_check.txt" >nul 2>&1

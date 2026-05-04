@@ -1,0 +1,23 @@
+{
+  "id": "simoto-tabs",
+  "name": "SiMOTO Tabs: Склад и Маркет",
+  "status": "active",
+  "objective": "Добавить навигационные вкладки (Склад/Маркет), сохранив левый и правый блоки, с реализацией поиска по OEM-коду",
+  "context_files": [],
+  "reference_files": [
+    "public/index.html",
+    "public/app.js",
+    "public/styles.css",
+    "server.js",
+    "integrations/wb_ozon_sync.js"
+  ],
+  "exit_criteria": [
+    "Верхняя панель содержит заголовок SiMOTO, табы Склад/Маркет и токены",
+    "Левый и правый блоки сохранены и функционируют во вкладке Склад",
+    "Вкладка Маркет содержит поиск по OEM-коду и отображает данные из МойСклад, WB, Ozon",
+    "Переключение между вкладками работает без перезагрузки"
+  ],
+  "subtask_count": 5,
+  "completed_count": 0,
+  "created_at": "2026-05-04T22:04:00+03:00"
+}

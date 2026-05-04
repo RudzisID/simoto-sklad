@@ -4,95 +4,144 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SiMOTO</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="app-container">
-        <!-- Left column -->
-        <div class="left-column">
-            <!-- Header over input -->
-            <div class="header-box">
-                <div class="header-top">
-                    <h1>SiMOTO</h1>
-                </div>
-                <div class="status">
-                    <span id="statusDot" class="status-dot"></span>
-                    <span id="statusText">Готов</span>
-                </div>
-                <div class="progress-container" id="progressContainer">
-                    <div class="progress-bar" id="progressBar"></div>
-                </div>
+    <!-- Common Header -->
+    <div class="app-header">
+        <div class="header-left">
+            <img src="logo-line.svg" alt="SiMOTO" class="header-logo">
+        </div>
+        <div class="header-center">
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="sklad">Склад</button>
+                <button class="tab-btn" data-tab="market">Маркет</button>
             </div>
+        </div>
+        <div class="header-right">
+            <button class="token-btn" onclick="showTokenModal()">Токены</button>
+            <div class="status">
+                <span id="statusDot" class="status-dot"></span>
+                <span id="statusText">Готов</span>
+            </div>
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+        </div>
+    </div>
 
+    <!-- Tab Content: Склад -->
+    <div class="tab-content" id="tab-sklad">
+        <div class="app-container">
+            <!-- Left column -->
+            <div class="left-column">
             <!-- Input block -->
             <div class="input-panel">
-                <p class="hint">Токен API (сохраняется в браузере)</p>
-                <div class="token-row">
-                    <input type="text" id="tokenInput" placeholder="Введите токен МойСклад">
-                    <button onclick="saveToken()" class="save-token-btn" title="Сохранить токен">
-                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                            <polyline points="17 21 17 13 7 13 7 21"/>
-                            <polyline points="7 3 7 8 15 8"/>
-                        </svg>
-                    </button>
-                </div>
                 <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
                 <div class="button-row">
                     <button onclick="checkNumbers()">Сканировать</button>
                     <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display: none;">✕</button>
                 </div>
             </div>
-        </div>
+            </div>
 
-        <!-- Center column: Table -->
-        <div class="center-column">
-            <div class="table-panel">
-                <div id="tableContainer">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width:30px"><input type="checkbox" id="selectAll" onchange="toggleAll(this.checked)" checked></th>
-                                <th class="sortable" onclick="sortTable('shipmentNum')">№</th>
-                                <th class="sortable order-header" onclick="sortTable('orderName')">Заказ</th>
-                                <th class="sortable" onclick="sortTable('sum')">Сумма</th>
-                                <th>Опл.</th>
-                                <th class="sortable" onclick="sortTable('hasDemand')">Отгрузка</th>
-                                <th class="sortable" onclick="sortTable('hasPayment')">Платёж</th>
-                                <th class="sortable" onclick="sortTable('hasReturn')">Возврат</th>
-                                <th class="sortable" onclick="sortTable('statusName')">Статус</th>
-                                <th>Кнопки</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tableBody">
-                            <tr><td colspan="10" class="empty">Введите номера и нажмите "Проверить"</td></tr>
-                        </tbody>
-                    </table>
+            <!-- Center column: Table -->
+            <div class="center-column">
+                <div class="table-panel">
+                    <div id="tableContainer">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width:30px"><input type="checkbox" id="selectAll" onchange="toggleAll(this.checked)" checked></th>
+                                    <th class="sortable" onclick="sortTable('shipmentNum')">№</th>
+                                    <th class="sortable order-header" onclick="sortTable('orderName')">Заказ</th>
+                                    <th class="sortable" onclick="sortTable('sum')">Сумма</th>
+                                    <th>Опл.</th>
+                                    <th class="sortable" onclick="sortTable('hasDemand')">Отгрузка</th>
+                                    <th class="sortable" onclick="sortTable('hasPayment')">Платёж</th>
+                                    <th class="sortable" onclick="sortTable('hasReturn')">Возврат</th>
+                                    <th class="sortable" onclick="sortTable('statusName')">Статус</th>
+                                    <th>Кнопки</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody">
+                                <tr><td colspan="10" class="empty">Введите номера и нажмите "Проверить"</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right column: Stats -->
+            <div class="right-column">
+                <!-- Bulk actions moved to right column -->
+                <div class="bulk-actions">
+                    <button onclick="createAllDemands()" class="bulk-btn demand">Отгрузка</button>
+                    <button onclick="createAllPayments()" class="bulk-btn payment">Платёж</button>
+                    <button onclick="batchAction('return')" class="bulk-btn return">Возврат</button>
+                    <button onclick="batchAction('cancel')" class="bulk-btn cancel">Отмена</button>
+                </div>
+                
+                <!-- Current stats (60%) -->
+                <div class="stats-panel stats-current">
+                    <div class="stats-header">Текущее состояние</div>
+                    <div id="statsOutput" class="stats-output"></div>
+                </div>
+                
+                <!-- After action stats (40%) -->
+                <div class="stats-panel stats-final">
+                    <div id="statsFinalOutput" class="stats-output idle">
+                        <div class="terminal-message">Ожидание массовой операции</div>
+                    </div>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- Right column: Stats -->
-        <div class="right-column">
-            <!-- Bulk actions moved to right column -->
-            <div class="bulk-actions">
-                <button onclick="createAllDemands()" class="bulk-btn demand">Отгрузка</button>
-                <button onclick="createAllPayments()" class="bulk-btn payment">Платёж</button>
-                <button onclick="batchAction('return')" class="bulk-btn return">Возврат</button>
-                <button onclick="batchAction('cancel')" class="bulk-btn cancel">Отмена</button>
-            </div>
-            
-            <!-- Current stats (60%) -->
-            <div class="stats-panel stats-current">
-                <div class="stats-header">Текущее состояние</div>
-                <div id="statsOutput" class="stats-output"></div>
-            </div>
-            
-            <!-- After action stats (40%) -->
-            <div class="stats-panel stats-final">
-                <div id="statsFinalOutput" class="stats-output idle">
-                    <div class="terminal-message">Ожидание массовой операции</div>
+    <!-- Tab Content: Маркет -->
+    <div class="tab-content" id="tab-market" style="display:none;">
+        <div class="market-container">
+            <h2>Маркет</h2>
+            <div class="market-search">
+                <p class="hint">Поиск товара по OEM-коду (Код в МС, артикул в WB и Ozon)</p>
+                <div class="search-row">
+                    <input type="text" id="oemSearchInput" placeholder="Введите OEM-код">
+                    <button onclick="searchProductByOEM()" class="search-btn">Поиск</button>
                 </div>
+                <div id="marketResults"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Token Modal -->
+    <div id="tokenModal" class="modal-overlay hidden">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h3>Токены API</h3>
+            </div>
+            <div class="modal-body">
+                <p>Введите токены для сервисов:</p>
+                <div class="token-field">
+                    <label>МойСклад:</label>
+                    <input type="text" id="msTokenInput" placeholder="Токен МойСклад">
+                </div>
+                <div class="token-field">
+                    <label>Wildberries:</label>
+                    <input type="text" id="wbTokenInput" placeholder="Токен WB (Authorization)">
+                </div>
+                <div class="token-field">
+                    <label>Ozon Client-Id:</label>
+                    <input type="text" id="ozonClientIdInput" placeholder="Client-Id от Ozon">
+                </div>
+                <div class="token-field">
+                    <label>Ozon Api-Key:</label>
+                    <input type="text" id="ozonApiKeyInput" placeholder="Api-Key от Ozon">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="tokenCancel" class="button secondary">Отмена</button>
+                <button id="tokenSave" class="button">Сохранить</button>
             </div>
         </div>
     </div>
@@ -114,5 +163,147 @@
     </div>
 
     <script src="app.js"></script>
+    <script>
+        // Tab switching logic
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+            const tabEl = document.getElementById('tab-' + tabName);
+            if (tabEl) tabEl.style.display = 'block';
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+            if (activeBtn) activeBtn.classList.add('active');
+            localStorage.setItem('simoto_active_tab', tabName);
+        }
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            const activeTab = localStorage.getItem('simoto_active_tab') || 'sklad';
+            switchTab(activeTab);
+            // Attach tab button clicks
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+            });
+            // Token modal
+            const tokenModal = document.getElementById('tokenModal');
+            document.querySelector('.token-btn').addEventListener('click', () => {
+                tokenModal.classList.remove('hidden');
+                // Pre-fill from localStorage if exist
+                document.getElementById('msTokenInput').value = localStorage.getItem('ms_token') || '';
+                document.getElementById('wbTokenInput').value = localStorage.getItem('wb_token') || '';
+                document.getElementById('ozonClientIdInput').value = localStorage.getItem('ozon_client_id') || '';
+                document.getElementById('ozonApiKeyInput').value = localStorage.getItem('ozon_api_key') || '';
+            });
+            document.getElementById('tokenCancel').addEventListener('click', () => {
+                tokenModal.classList.add('hidden');
+            });
+            document.getElementById('tokenSave').addEventListener('click', () => {
+                const msToken = document.getElementById('msTokenInput').value;
+                const wbToken = document.getElementById('wbTokenInput').value;
+                const ozonClientId = document.getElementById('ozonClientIdInput').value;
+                const ozonApiKey = document.getElementById('ozonApiKeyInput').value;
+                
+                localStorage.setItem('ms_token', msToken);
+                localStorage.setItem('wb_token', wbToken);
+                localStorage.setItem('ozon_client_id', ozonClientId);
+                localStorage.setItem('ozon_api_key', ozonApiKey);
+                
+                tokenModal.classList.add('hidden');
+            });
+            // Close modal on overlay click
+            tokenModal.addEventListener('click', (e) => {
+                if (e.target === tokenModal) tokenModal.classList.add('hidden');
+            });
+        });
+        // Market search logic
+        async function searchProductByOEM() {
+            const oem = document.getElementById('oemSearchInput').value.trim();
+            if (!oem) return;
+            
+            const resultsDiv = document.getElementById('marketResults');
+            // Show loading state
+            resultsDiv.innerHTML = '<div class="search-status"><span class="search-spinner"></span> Поиск кода: <strong>' + oem + '</strong></div>';
+
+            const token = localStorage.getItem('ms_token') || '';
+            if (!token) {
+                resultsDiv.innerHTML = '<div class="search-status error">Ошибка: Необходим токен МойСклад. Нажмите "Токены" в шапке.</div>';
+                return;
+            }
+
+            try {
+                const wbToken = localStorage.getItem('wb_token') || '';
+                const ozonClientId = localStorage.getItem('ozon_client_id') || '';
+                const ozonApiKey = localStorage.getItem('ozon_api_key') || '';
+
+                const response = await fetch(`/api/market/product?code=${encodeURIComponent(oem)}`, {
+                    headers: { 
+                        'x-api-token': token,
+                        'x-wb-token': wbToken,
+                        'x-ozon-client-id': ozonClientId,
+                        'x-ozon-api-key': ozonApiKey
+                    }
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Ошибка сервера');
+                }
+
+                // Render results
+                let html = '<div class="product-comparison">';
+                
+                // MoySklad Column
+                html += '<div class="product-card ms"><h3>МойСклад</h3>';
+                if (data.moysklad) {
+                    html += `<p><strong>${data.moysklad.name}</strong></p>`;
+                    html += `<p>Код: ${data.moysklad.code}</p>`;
+                    if (data.moysklad.article) html += `<p>Артикул: ${data.moysklad.article}</p>`;
+                    html += `<p>Цена: ${data.moysklad.price} руб.</p>`;
+                    html += `<p>Остаток: ${data.moysklad.stock}</p>`;
+                } else {
+                    html += '<p class="not-found">Товар не найден</p>';
+                }
+                html += '</div>';
+
+                // Wildberries Column
+                html += '<div class="product-card wb"><h3>Wildberries</h3>';
+                if (data.wildberries) {
+                    if (data.wildberries.error) {
+                        html += `<p class="error">Ошибка: ${data.wildberries.error}</p>`;
+                    } else {
+                        html += `<p><strong>${data.wildberries.title}</strong></p>`;
+                        html += `<p>Код: ${data.wildberries.code}</p>`;
+                        if (data.wildberries.vendorCode) html += `<p>Артикул: ${data.wildberries.vendorCode}</p>`;
+                        html += `<p>Цена: ${data.wildberries.price} руб.</p>`;
+                        html += `<p>Остаток: ${data.wildberries.stock}</p>`;
+                    }
+                } else {
+                    html += '<p class="not-found">Товар не найден</p>';
+                }
+                html += '</div>';
+
+                // Ozon Column
+                html += '<div class="product-card ozon"><h3>Ozon</h3>';
+                if (data.ozon) {
+                    if (data.ozon.error) {
+                        html += `<p class="error">Ошибка: ${data.ozon.error}</p>`;
+                    } else {
+                        html += `<p><strong>${data.ozon.title}</strong></p>`;
+                        html += `<p>Код: ${data.ozon.code}</p>`;
+                        if (data.ozon.sku) html += `<p>SKU: ${data.ozon.sku}</p>`;
+                        html += `<p>Цена: ${data.ozon.price} руб.</p>`;
+                        html += `<p>Остаток: ${data.ozon.stock}</p>`;
+                    }
+                } else {
+                    html += '<p class="not-found">Товар не найден</p>';
+                }
+                html += '</div>';
+
+                html += '</div>';
+                resultsDiv.innerHTML = html;
+
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="search-status error">Ошибка: ${error.message}</div>`;
+            }
+        }
+    </script>
 </body>
 </html>

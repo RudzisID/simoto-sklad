@@ -27,6 +27,7 @@
     "batch.js и server.js работают корректно с новыми функциями"
   ],
   "subtask_count": 9,
-  "completed_count": 0,
-  "created_at": "2026-04-28T21:30:00Z"
+  "completed_count": 9,
+  "created_at": "2026-04-28T21:30:00Z",
+  "updated_at": "2026-05-04T12:00:00Z"
 }

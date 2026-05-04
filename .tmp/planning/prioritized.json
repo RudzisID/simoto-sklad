@@ -1,0 +1,258 @@
+{
+  "metadata": {
+    "generated_at": "2026-05-04T15:30:00Z",
+    "source": "TaskManager breakdown + ContextScout analysis",
+    "frameworks": ["RICE", "WSJF"],
+    "total_items": 6,
+    "mvp_count": 4,
+    "post_mvp_count": 2,
+    "business_goal": "Расширение функционала SiMOTO-sklad для работы с Wildberries Market, сохраняя 100% работоспособность ядра 'Склад'"
+  },
+  "scoring_criteria": {
+    "rice": {
+      "reach_period": "per quarter",
+      "impact_scale": "0.25 (minimal) to 3.0 (massive)",
+      "confidence_scale": "0-100%",
+      "effort_unit": "person-months"
+    },
+    "wsjf": {
+      "business_value_scale": "1-10",
+      "time_criticality_scale": "1-10",
+      "risk_reduction_scale": "1-10",
+      "job_size_scale": "1-10 (inverse effort: 10=trivial, 1=huge)"
+    }
+  },
+  "mvp_features": [
+    {
+      "id": "task-001",
+      "title": "Критическая стабилизация: Сохранение работоспособности функционала «Склад»",
+      "epic": "Infrastructure & Core Stability",
+      "description": "Обеспечение регрессионной безопасности и стабильности существующих модулей (cancel, return, demand, payment, check) при добавлении новых вкладок.",
+      "rice_score": {
+        "reach": 100,
+        "impact": 3.0,
+        "confidence": 100,
+        "effort": 0.5,
+        "score": 600,
+        "justification": {
+          "reach": "100% текущих пользователей используют функционал Склада ежедневно",
+          "impact": "3.0 (Massive) — критический блокер. Если Склад сломается, бизнес-процесс остановится",
+          "confidence": "100% — точно знаем, что стабильность ядра — приоритет №1",
+          "effort": "0.5 person-months (около 10 рабочих дней на рефакторинг и тесты)"
+        }
+      },
+      "wsjf_score": {
+        "business_value": 10,
+        "time_criticality": 10,
+        "risk_reduction": 10,
+        "job_size": 5,
+        "score": 6.0,
+        "justification": {
+          "business_value": "10 — без работающего Склада система бесполезна",
+          "time_criticality": "10 — любая ошибка требует немедленного исправления",
+          "risk_reduction": "10 — предотвращает падение всего продукта при внедрении новых фич",
+          "job_size": "5 — средний размер задачи (0.5 мес)"
+        }
+      },
+      "combined_rank": 1,
+      "mvp_reason": "Абсолютный приоритет. Является фундаментом (Enabler) для всех остальных задач. Без стабильного Склада новые вкладки не имеют смысла.",
+      "estimated_effort": "10 days",
+      "dependencies": []
+    },
+    {
+      "id": "task-002",
+      "title": "Создание общих компонентов и UI-библиотеки для вкладок",
+      "epic": "UI/UX Foundation",
+      "description": "Разработка базовых компонентов (таблицы, фильтры, поисковые строки, кнопки действий), которые будут использоваться во всех вкладках (Склад, Маркет, Аналитика).",
+      "rice_score": {
+        "reach": 100,
+        "impact": 2.0,
+        "confidence": 90,
+        "effort": 0.3,
+        "score": 600,
+        "justification": {
+          "reach": "100% пользователей увидят новые вкладки с этими компонентами",
+          "impact": "2.0 (High) — ускоряет разработку всех последующих экранов в 2-3 раза",
+          "confidence": "90% — стандартные паттерны UI компонентов",
+          "effort": "0.3 person-months (около 6 рабочих дней)"
+        }
+      },
+      "wsjf_score": {
+        "business_value": 8,
+        "time_criticality": 5,
+        "risk_reduction": 8,
+        "job_size": 7,
+        "score": 3.0,
+        "justification": {
+          "business_value": "8 — основа для масштабирования интерфейса",
+          "time_criticality": "5 — важно для начала разработки вкладок, но не блокирует Склад",
+          "risk_reduction": "8 — снижает дублирование кода и будущие баги UI",
+          "job_size": "7 — малый размер задачи (0.3 мес)"
+        }
+      },
+      "combined_rank": 2,
+      "mvp_reason": "MVP. Общие компоненты должны быть реализованы в первую очередь как основа для всех вкладок (согласно требованию).",
+      "estimated_effort": "6 days",
+      "dependencies": ["task-001"]
+    },
+    {
+      "id": "task-003",
+      "title": "Базовая структура вкладок и навигация",
+      "epic": "UI/UX Foundation",
+      "description": "Создание каркаса приложения с вкладками (Склад, Маркет, Настройки), реализация роутинга и базовой навигации.",
+      "rice_score": {
+        "reach": 100,
+        "impact": 2.0,
+        "confidence": 90,
+        "effort": 0.2,
+        "score": 900,
+        "justification": {
+          "reach": "100% пользователей будут использовать новую навигацию",
+          "impact": "2.0 (High) — меняет парадигму использования с однооконного на многооконное приложение",
+          "confidence": "90% — стандартная реализация табов в UI",
+          "effort": "0.2 person-months (около 4 рабочих дней)"
+        }
+      },
+      "wsjf_score": {
+        "business_value": 8,
+        "time_criticality": 5,
+        "risk_reduction": 5,
+        "job_size": 9,
+        "score": 2.0,
+        "justification": {
+          "business_value": "8 — необходимо для доступа к новым функциям",
+          "time_criticality": "5 — плановая разработка",
+          "risk_reduction": "5 — улучшает структуру кода",
+          "job_size": "9 — крошечная задача (0.2 мес)"
+        }
+      },
+      "combined_rank": 3,
+      "mvp_reason": "MVP. Базовая структура вкладок — обязательное требование для релиза MVP.",
+      "estimated_effort": "4 days",
+      "dependencies": ["task-002"]
+    },
+    {
+      "id": "task-004",
+      "title": "Поиск товаров в Маркет (Wildberries API Integration)",
+      "epic": "Wildberries Market",
+      "description": "Интеграция с Content API Wildberries для поиска товаров по артикулу/коду, отображение карточек товаров в новой вкладке Маркет.",
+      "rice_score": {
+        "reach": 80,
+        "impact": 2.0,
+        "confidence": 80,
+        "effort": 0.4,
+        "score": 320,
+        "justification": {
+          "reach": "80% пользователей работают с Wildberries (оценка на основе контекста WB API)",
+          "impact": "2.0 (High) — ключевая функция для сопоставления товаров Склада и Маркета",
+          "confidence": "80% — API Wildberries документирован, но есть нюансы с пагинацией",
+          "effort": "0.4 person-months (около 8 рабочих дней)"
+        }
+      },
+      "wsjf_score": {
+        "business_value": 7,
+        "time_criticality": 6,
+        "risk_reduction": 6,
+        "job_size": 6,
+        "score": 3.16,
+        "justification": {
+          "business_value": "7 — прямая бизнес-ценность для продавцов WB",
+          "time_criticality": "6 — пользователи ждут функцию поиска",
+          "risk_reduction": "6 — снижает ручной ввод данных",
+          "job_size": "6 — небольшая задача (0.4 мес)"
+        }
+      },
+      "combined_rank": 4,
+      "mvp_reason": "MVP. Поиск товаров в Маркете — критическая функция для MVP этапа (согласно требованию).",
+      "estimated_effort": "8 days",
+      "dependencies": ["task-002", "task-003"]
+    }
+  ],
+  "post_mvp_features": [
+    {
+      "id": "task-005",
+      "title": "Редактирование товаров и массовые операции",
+      "epic": "Wildberries Market",
+      "description": "Возможность редактирования карточек товаров, изменения цен, остатков и массового обновления через UI Маркета.",
+      "rice_score": {
+        "reach": 80,
+        "impact": 1.0,
+        "confidence": 80,
+        "effort": 0.5,
+        "score": 128,
+        "justification": {
+          "reach": "80% пользователей WB",
+          "impact": "1.0 (Medium) — улучшает UX, но не блокирует старт работы",
+          "confidence": "80% — стандартные формы редактирования",
+          "effort": "0.5 person-months (около 10 рабочих дней)"
+        }
+      },
+      "wsjf_score": {
+        "business_value": 4,
+        "time_criticality": 3,
+        "risk_reduction": 2,
+        "job_size": 6,
+        "score": 1.5,
+        "justification": {
+          "business_value": "4 — важно для операционной деятельности",
+          "time_criticality": "3 — не срочно, можно делать вручную в WB кабинете",
+          "risk_reduction": "2 — минимальное влияние на риски",
+          "job_size": "6 — небольшая задача (0.5 мес)"
+        }
+      },
+      "combined_rank": 5,
+      "post_mvp_reason": "Post-MVP. Редактирование — это улучшение существующего функционала поиска, не критично для первого релиза.",
+      "estimated_effort": "10 days",
+      "dependencies": ["task-004"]
+    },
+    {
+      "id": "task-006",
+      "title": "Отправка изменений в Wildberries (Sync & Push)",
+      "epic": "Wildberries Market",
+      "description": "Реализация механизма отправки измененных данных (цены, остатки, описания) обратно в Wildberries через API.",
+      "rice_score": {
+        "reach": 80,
+        "impact": 1.5,
+        "confidence": 70,
+        "effort": 0.6,
+        "score": 140,
+        "justification": {
+          "reach": "80% пользователей WB",
+          "impact": "1.5 (Medium-High) — замыкает цикл 'поиск-редактирование-отправка'",
+          "confidence": "70% — сложная логика обработки ошибок API WB",
+          "effort": "0.6 person-months (около 12 рабочих дней)"
+        }
+      },
+      "wsjf_score": {
+        "business_value": 5,
+        "time_criticality": 4,
+        "risk_reduction": 3,
+        "job_size": 5,
+        "score": 2.4,
+        "justification": {
+          "business_value": "5 — завершает функционал управления товарами",
+          "time_criticality": "4 — важно для автоматизации",
+          "risk_reduction": "3 — снижает ручной труд, но есть риск ошибок синхронизации",
+          "job_size": "5 — средняя задача (0.6 мес)"
+        }
+      },
+      "combined_rank": 6,
+      "post_mvp_reason": "Post-MVP. Отправка изменений требует стабильного редактирования (task-005) и тщательного тестирования API WB.",
+      "estimated_effort": "12 days",
+      "dependencies": ["task-005"]
+    }
+  ],
+  "release_recommendations": {
+    "mvp_timeline": "4-5 weeks (sum of MVP efforts: 10+6+4+8 = 28 days)",
+    "mvp_scope": "Стабильный Склад + Общие компоненты + Вкладки + Поиск в Маркете",
+    "post_mvp_phases": [
+      {
+        "phase": "Phase 2 (Post-MVP)",
+        "timeline": "4 weeks",
+        "features": ["task-005", "task-006"],
+        "theme": "Полноценное управление товарами (Редактирование + Синхронизация)"
+      }
+    ],
+    "critical_note": "Задача task-001 (Стабильность Склада) имеет максимальный приоритет. Любые изменения в MVP должны проходить регрессионное тестирование на существующем функционале."
+  }
+}

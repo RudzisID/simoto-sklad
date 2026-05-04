@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.3.2] - 2026-05-04
+
+### Added
+- **V2 Complete**: Tests (38 tests, 5 suites), ESLint + Prettier, JSDoc types
+- Graphify integration for code knowledge graph visualization
+- WB/Ozon sync documentation (docs/integrations/wb_ozon_sync.md)
+
+### Changed
+- Code quality improvements (linting, formatting)
+- Added JSDoc types to lib/payment.js, lib/order.js, lib/batch.js
+- Created lib/types.js with typedefs for Order, Demand, Payment, APIResponse
+
+### Technical Details
+- V2 execution checklist completed (see docs/adr/v2-execution.md)
+- ESLint v10+ config (eslint.config.js)
+- Prettier config (.prettierrc)
+
 ## [Unreleased]
 
 ### Fixed
