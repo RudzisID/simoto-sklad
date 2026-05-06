@@ -1,22 +1,66 @@
 // Frontend логика
 
-// Порядок статусов для сортировки
-const statusOrder = {
-  'Новый': 1,
-  'Сохранено': 2,
-  'С отсрочкой': 3,
-  'Отгружен': 4,
-  'Оплачен': 5,
-  'Частично оплачен': 6,
-  'Возврат': 7,
-  'Отменён': 8
-};
-
 let ordersData = []
+
+// Порядок статусов по жизненному циклу (для циклической сортировки)
+const LIFECYCLE_STATUSES = [
+  'Новый',
+  'Предложение отправлено',
+  'Подтверждён',
+  'Оплачен',
+  'Частично оплачен',
+  'На отправке с отсрочкой платежа',
+  'На отправку - оплачен',
+  'Собран',
+  'Ожидает отгрузки',
+  'Сохранено',
+  'Отправлен',
+  'Доставляется',
+  'Доставлен',
+  'Отгружен',
+  'С отсрочкой',
+  'Возврат ожидает',
+  'Возврат',
+  'Возвращается',
+  'Частичная отмена',
+  'Отменён',
+  'ОЖДАЕТ ОЗОН (КОМПЕНСИРОВАН)'
+]
+
+// Получить статусы из жизненного цикла, которые есть в текущих данных
+function getLifecycleStatuses() {
+  const statusSet = new Set()
+  ordersData.forEach(order => {
+    if (order.statusName) statusSet.add(order.statusName)
+  })
+  
+  // Разделяем на статусы из жизненного цикла и остальные
+  const inLifecycle = []
+  const notInLifecycle = []
+  
+  statusSet.forEach(status => {
+    if (LIFECYCLE_STATUSES.includes(status)) {
+      inLifecycle.push(status)
+    } else {
+      notInLifecycle.push(status)
+    }
+  })
+  
+  // Сортируем статусы из жизненного цикла по порядку в LIFECYCLE_STATUSES
+  inLifecycle.sort((a, b) => LIFECYCLE_STATUSES.indexOf(a) - LIFECYCLE_STATUSES.indexOf(b))
+  
+  // Сортируем остальные статусы по алфавиту
+  notInLifecycle.sort((a, b) => a.localeCompare(b, 'ru'))
+  
+  // Объединяем: сначала жизненный цикл, потом остальные
+  return [...inLifecycle, ...notInLifecycle]
+}
+
 let currentPage = 0
 const PAGE_SIZE = 1000
 let ordersState = {}
-let currentSort = { column: 'shipmentNum', asc: true }
+// currentSort: column - текущая колонка, statusIndex - индекс в getLifecycleStatuses() (для статуса)
+let currentSort = { column: 'shipmentNum', asc: true, statusIndex: 0 }
 let currentController = null
 let isWorking = false
 let realtimeMode = false // Флаг для realtime добавления строк без перерисовки
@@ -216,12 +260,12 @@ async function loadOrdersState() {
 }
 
 // Save order action (payment, demand, return, cancel)
-async function saveOrderAction(shipmentNum, action, result) {
+async function saveOrderAction(shipmentNum, action, result, extraData = {}) {
   try {
     await fetch('/api/orders-state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ shipmentNum, action, result })
+      body: JSON.stringify({ shipmentNum, action, result, ...extraData })
     })
   } catch (e) {
     console.error('Error saving order action:', e)
@@ -313,6 +357,7 @@ async function loadSavedOrders() {
       paymentName: state.paymentName || null,
       returnName: state.returnName || null,
       returnSum: state.returnSum || 0,
+      cancelledSum: state.cancelledSum || 0,
       orderPositions: state.orderPositions || [],
       demandPositions: state.demandPositions || []
     })
@@ -335,11 +380,26 @@ function loadSavedOrdersAndRender() {
 
 // Sort table
 function sortTable(column) {
-  if (currentSort.column === column) {
-    currentSort.asc = !currentSort.asc
+  if (column === 'statusName') {
+    if (currentSort.column === column) {
+      // Циклически переключаем статус: +1 по кругу
+      const statuses = getLifecycleStatuses()
+      if (statuses.length > 0) {
+        currentSort.statusIndex = (currentSort.statusIndex + 1) % statuses.length
+      }
+    } else {
+      // Первая сортировка по статусу - берем первый статус из жизненного цикла
+      currentSort.column = column
+      currentSort.statusIndex = 0
+    }
   } else {
-    currentSort.column = column
-    currentSort.asc = true
+    // Для других колонок - стандартная логика asc/desc
+    if (currentSort.column === column) {
+      currentSort.asc = !currentSort.asc
+    } else {
+      currentSort.column = column
+      currentSort.asc = true
+    }
   }
   renderTable()
   updateSortIndicators()
@@ -347,10 +407,20 @@ function sortTable(column) {
 
 function updateSortIndicators() {
   document.querySelectorAll('th').forEach(th => {
-    th.classList.remove('asc', 'desc')
+    th.classList.remove('asc', 'desc', 'cycle')
+    th.removeAttribute('data-cycle-status')
   })
   const th = document.querySelector(`th[onclick="sortTable('${currentSort.column}')"]`)
-  if (th) th.classList.add(currentSort.asc ? 'asc' : 'desc')
+  if (th) {
+    if (currentSort.column === 'statusName') {
+      th.classList.add('cycle')
+      const lifecycleStatuses = getLifecycleStatuses()
+      const currentStatus = lifecycleStatuses[currentSort.statusIndex] || ''
+      th.setAttribute('data-cycle-status', currentStatus)
+    } else {
+      th.classList.add(currentSort.asc ? 'asc' : 'desc')
+    }
+  }
 }
 
 function getSortedOrders() {
@@ -361,13 +431,21 @@ function getSortedOrders() {
     let va, vb
 
     if (col === 'statusName') {
-      // Сортировка по статусу с учетом правильного порядка
-      const statusA = a[col] || 'Новый'
-      const statusB = b[col] || 'Новый'
-      const orderA = statusOrder[statusA] || 999
-      const orderB = statusOrder[statusB] || 999
-      va = orderA
-      vb = orderB
+      // Циклическая сортировка по статусу (жизненный цикл)
+      const lifecycleStatuses = getLifecycleStatuses()
+      const targetStatus = lifecycleStatuses[currentSort.statusIndex] || ''
+
+      // Группируем: выбранный статус наверху, остальные по порядку жизненного цикла
+      const getStatusPriority = (statusName) => {
+        if (statusName === targetStatus) return 0  // Выбранный статус - первый
+        const idx = lifecycleStatuses.indexOf(statusName)
+        return idx === -1 ? Number.MAX_SAFE_INTEGER : idx + 1  // Остальные по порядку
+      }
+
+      const priorityA = getStatusPriority(a[col] || '')
+      const priorityB = getStatusPriority(b[col] || '')
+      va = priorityA
+      vb = priorityB
     } else if (col === 'hasDemand' || col === 'hasPayment' || col === 'hasReturn' || col === 'isCancelled') {
       // Сортировка по булевым полям: false < true
       va = a[col] ? 1 : 0
@@ -914,15 +992,17 @@ function calculateStats(orderList) {
     }
     if (o.hasPayment) {
       stats.paymentCount++
-      stats.paymentSum += sum
+      stats.paymentSum += (o.paid || 0)
     }
     if (o.hasReturn) {
       stats.returnCount++
-      stats.returnSum += o.returnSum || sum
+      // Используем только фактическую сумму возврата, без fallback на всю сумму заказа
+      stats.returnSum += Number(o.returnSum) || 0
     }
     if (o.isCancelled) {
       stats.cancelledCount++
-      stats.cancelledSum += sum
+      // Используем сумму отмены (если есть), иначе всю сумму заказа
+      stats.cancelledSum += Number(o.cancelledSum) || sum
     }
     if (o.lastAction && o.lastAction.includes('_error')) {
       stats.errorCount++
@@ -934,29 +1014,29 @@ function calculateStats(orderList) {
     // Вариант A: Раздельный (oba mogut byt true)
     if (o.hasReturn) {
       stats.returnCount_A++
-      stats.returnSum_A += sum
+      stats.returnSum_A += Number(o.returnSum) || 0
     }
     if (o.isCancelled) {
       stats.cancelledCount_A++
-      stats.cancelledSum_A += sum
+      stats.cancelledSum_A += Number(o.cancelledSum) || sum
     }
         
     // Вариант B: Return имеет приоритет
     if (o.hasReturn) {
       stats.returnCount_B++
-      stats.returnSum_B += o.returnSum || sum
+      stats.returnSum_B += Number(o.returnSum) || 0
     } else if (o.isCancelled) {
       stats.cancelledCount_B++
-      stats.cancelledSum_B += sum
+      stats.cancelledSum_B += Number(o.cancelledSum) || sum
     }
         
     // Вариант C: Отмена имеет приоритет
     if (o.isCancelled) {
       stats.cancelledCount_C++
-      stats.cancelledSum_C += sum
+      stats.cancelledSum_C += Number(o.cancelledSum) || sum
     } else if (o.hasReturn) {
       stats.returnCount_C++
-      stats.returnSum_C += o.returnSum || sum
+      stats.returnSum_C += Number(o.returnSum) || 0
     }
   })
     
@@ -986,8 +1066,8 @@ function renderCurrentStats(force = false) {
     const fmtReturnSum = n => n ? fmt(n) + ' ₽' : '-'
         
     const demandSum = stats.demandSum || 0
-    const returnSum = stats.returnSum_C || 0
-    const cancelledSum = stats.cancelledSum_C || 0
+    const returnSum = stats.returnSum || 0
+    const cancelledSum = stats.cancelledSum || 0
     const paymentSum = stats.paymentSum || 0
         
     const expectedPayment = demandSum - returnSum - cancelledSum
@@ -998,7 +1078,8 @@ function renderCurrentStats(force = false) {
     container.innerHTML = `
             <div class="stat-row"><span class="stat-label">Отгрузок:</span><span class="stat-value success">${stats.demandCount || 0}</span><span class="stat-sum">${fmtSum(demandSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Оплачено:</span><span class="stat-value success">${stats.paymentCount || 0}</span><span class="stat-sum">${fmtSum(paymentSum)}</span></div>
-            <div class="stat-row"><span class="stat-label">Возвраты + Отмены:</span><span class="stat-value">${(stats.returnCount_C || 0) + (stats.cancelledCount_C || 0)}</span><span class="stat-sum">${fmtSum(returnSum + cancelledSum)}</span></div>
+            <div class="stat-row"><span class="stat-label">Возвраты:</span><span class="stat-value">${stats.returnCount || 0}</span><span class="stat-sum">${fmtSum(returnSum)}</span></div>
+            <div class="stat-row"><span class="stat-label">Отмены:</span><span class="stat-value">${stats.cancelledCount || 0}</span><span class="stat-sum">${fmtSum(cancelledSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Ошибок:</span><span class="stat-value error">${stats.errorCount || 0}</span><span class="stat-sum">-</span></div>
             <div class="stat-row"><span class="stat-label">Не найден:</span><span class="stat-value">${stats.notFoundCount || 0}</span><span class="stat-sum">-</span></div>
             ${currentDuplicates > 0 ? `<div class="stat-row"><span class="stat-label">Дублей:</span><span class="stat-value duplicates">${currentDuplicates}</span><span class="stat-sum">-</span></div>` : ''}
@@ -1007,7 +1088,9 @@ function renderCurrentStats(force = false) {
                 <div class="calc-formula">
                     <span class="calc-sum">${fmtSum(demandSum)}</span>
                     <span class="calc-op"> − </span>
-                    <span class="calc-sum">${fmtSum(returnSum + cancelledSum)}</span>
+                    <span class="calc-sum">${fmtSum(returnSum)}</span>
+                    <span class="calc-op"> − </span>
+                    <span class="calc-sum">${fmtSum(cancelledSum)}</span>
                 </div>
                 <div class="calc-formula">
                     <span class="calc-op">= </span>
@@ -1016,6 +1099,10 @@ function renderCurrentStats(force = false) {
                     <span class="calc-sum">${fmtSum(paymentSum)}</span>
                     <span class="calc-icon ${matchClass}">${matchIcon}</span>
                 </div>
+                ${!isMatch ? `<div class="calc-formula">
+                    <span class="calc-op">Разница: </span>
+                    <span class="calc-sum ${matchClass}">${fmtSum(Math.abs(paymentSum - expectedPayment))} ₽</span>
+                </div>` : ''}
             </div>
         `
   } catch (e) {
@@ -1043,26 +1130,32 @@ function renderFinalStats() {
   }
     
   const fmt = n => n.toLocaleString()
+  const fmtSum = n => (n && n > 0) ? fmt(n) + ' ₽' : '-'
     
-  const diff = (label, wasVal, nowVal, isCount) => {
+  const diffCount = (label, wasVal, nowVal) => {
     const diffVal = nowVal - wasVal
     const cls = diffVal > 0 ? 'success' : (diffVal < 0 ? 'error' : '')
     const arrow = diffVal > 0 ? '↑' : (diffVal < 0 ? '↓' : '—')
     return `<div class="stat-row"><span class="stat-label">${label}:</span><span class="stat-value ${cls}">${fmt(wasVal)} → ${fmt(nowVal)} ${arrow}</span></div>`
   }
+  
+  const diffSum = (label, wasVal, nowVal) => {
+    const diffVal = nowVal - wasVal
+    const cls = diffVal > 0 ? 'success' : (diffVal < 0 ? 'error' : '')
+    const arrow = diffVal > 0 ? '↑' : (diffVal < 0 ? '↓' : '—')
+    return `<div class="stat-row"><span class="stat-label">${label}:</span><span class="stat-value ${cls}">${fmtSum(wasVal)} → ${fmtSum(nowVal)} ${arrow}</span></div>`
+  }
     
   container.innerHTML = `
-        <div class="stat-section-title">Вариант А (Раздельный):</div>
-        ${diff('Возвратов', was.returnCount_A, now.returnCount_A)}
-        ${diff('Отменено', was.cancelledCount_A, now.cancelledCount_A)}
-        
-        <div class="stat-section-title">Вариант B (Return приоритет):</div>
-        ${diff('Возвратов', was.returnCount_B, now.returnCount_B)}
-        ${diff('Отменено', was.cancelledCount_B, now.cancelledCount_B)}
-        
-        <div class="stat-section-title">Вариант C (Отмена приоритет):</div>
-        ${diff('Возвратов', was.returnCount_C, now.returnCount_C)}
-        ${diff('Отменено', was.cancelledCount_C, now.cancelledCount_C)}
+        <div class="stat-section-title">Изменения после действия:</div>
+        ${diffCount('Отгрузок', was.demandCount, now.demandCount)}
+        ${diffSum('Сумма отгрузок', was.demandSum, now.demandSum)}
+        ${diffCount('Оплачено', was.paymentCount, now.paymentCount)}
+        ${diffSum('Сумма оплат', was.paymentSum, now.paymentSum)}
+        ${diffCount('Возвратов', was.returnCount, now.returnCount)}
+        ${diffSum('Сумма возвратов', was.returnSum, now.returnSum)}
+        ${diffCount('Отменено', was.cancelledCount, now.cancelledCount)}
+        ${diffSum('Сумма отмен', was.cancelledSum, now.cancelledSum)}
     `
 }
 
@@ -1267,23 +1360,22 @@ async function createSingleAction(shipmentNum, actionType) {
           ordersData[orderIndex].hasReturn = true
           ordersData[orderIndex].statusName = 'Возврат'
           ordersData[orderIndex].returnSum = data.returnSum || 0
-          saveOrderAction(data.shipmentNum, 'return_created', data.returnName)
+          saveOrderAction(data.shipmentNum, 'return_created', data.returnName, { returnSum: data.returnSum || 0 })
         } else if (actionType === 'cancel') {
           ordersData[orderIndex].isCancelled = true
           ordersData[orderIndex].statusName = 'Отменён'
-          saveOrderAction(data.shipmentNum, 'order_cancelled', 'ok')
+          // Сохраняем сумму отмены (вся сумма заказа)
+          ordersData[orderIndex].cancelledSum = ordersData[orderIndex].sum || 0
+          saveOrderAction(data.shipmentNum, 'order_cancelled', 'ok', { cancelledSum: ordersData[orderIndex].sum || 0 })
         } else if (actionType === 'partial_payment') {
           ordersData[orderIndex].hasPayment = true
           ordersData[orderIndex].statusName = 'Частично оплачен'
           ordersData[orderIndex].paid = data.paymentSum || (ordersData[orderIndex].sum - (ordersData[orderIndex].returnSum || 0))
           ordersData[orderIndex].paymentName = data.paymentName || null
-          saveOrderAction(data.shipmentNum, 'partial_payment_created', data.paymentName)
+          saveOrderAction(data.shipmentNum, 'partial_payment_created', data.paymentName, { returnSum: ordersData[orderIndex].returnSum || 0 })
         }
         ordersData[orderIndex].lastAction = `${actionType}_created`
-                
-        // Сохраняем действие
-        saveOrderAction(data.shipmentNum, `${actionType}_created`, data.returnName || data.demandName || 'ok')
-                
+                 
         renderTable()
         updateTotals()
         renderCurrentStats()
@@ -1442,12 +1534,13 @@ async function batchAction(actionType) {
                   ordersData[orderIndex].lastAction = 'return_created'
                   ordersData[orderIndex].returnName = result.returnName || null
                   ordersData[orderIndex].returnSum = result.returnSum || 0
-                  saveOrderAction(result.shipmentNum, 'return_created', result.returnName)
+                  saveOrderAction(result.shipmentNum, 'return_created', result.returnName, { returnSum: result.returnSum || 0 })
                 } else if (actionType === 'cancel') {
                   ordersData[orderIndex].isCancelled = true
                   ordersData[orderIndex].statusName = 'Отменён'
                   ordersData[orderIndex].lastAction = 'order_cancelled'
-                  saveOrderAction(result.shipmentNum, 'order_cancelled', 'success')
+                  ordersData[orderIndex].cancelledSum = ordersData[orderIndex].sum || 0
+                  saveOrderAction(result.shipmentNum, 'order_cancelled', 'success', { cancelledSum: ordersData[orderIndex].sum || 0 })
                 } else if (actionType === 'partial_payment') {
                   ordersData[orderIndex].hasPayment = true
                   ordersData[orderIndex].statusName = 'Частично оплачен'

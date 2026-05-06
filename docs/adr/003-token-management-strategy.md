@@ -110,7 +110,7 @@ function getServiceToken(req, service) {
 ```javascript
 // integrations/wb_client.js
 async function wbRequest(endpoint, token) {
-  const response = await fetch(`https://suppliers-api.wildberries.ru${endpoint}`, {
+   const response = await fetch(`https://marketplace-api.wildberries.ru${endpoint}`, {
     headers: {
       'Authorization': token,  // WB использует Authorization header
       'Content-Type': 'application/json'

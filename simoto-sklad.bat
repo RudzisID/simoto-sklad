@@ -58,8 +58,8 @@ if exist "%TEMP%\ver_check.txt" (
   findstr /C:"New version available" "%TEMP%\ver_check.txt" >nul 2>&1
   if !errorlevel! EQU 0 (
     echo [i] New version available!
-    set /p "do_update=Update now? (y/n): "
-    if /i "!do_update!"=="y" (
+    choice /t 5 /c yn /d n /n /m "Update now? (y/n) [5s]: "
+    if !errorlevel! EQU 1 (
       echo [i] Updating...
       cd /d "%~dp0"
       if not exist ".git" (

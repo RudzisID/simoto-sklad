@@ -158,7 +158,7 @@ import { BaseApiClient } from './base-client.js';
 
 export class WildberriesClient extends BaseApiClient {
   constructor(apiKey) {
-    super('https://suppliers-api.wildberries.ru', {
+     super('https://marketplace-api.wildberries.ru', {
       'Authorization': apiKey,
       'Content-Type': 'application/json'
     });

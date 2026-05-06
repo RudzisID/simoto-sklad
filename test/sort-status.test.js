@@ -1,50 +1,82 @@
-// Тесты для проверки сортировки по статусу (statusName)
+// Тесты для проверки циклической сортировки по статусу (жизненный цикл)
 // Имитируем логику из public/app.js
 
-// Копируем константу и функцию для тестирования
-const statusOrder = {
-  'Новый': 1,
-  'Сохранено': 2,
-  'С отсрочкой': 3,
-  'Отгружен': 4,
-  'Оплачен': 5,
-  'Частично оплачен': 6,
-  'Возврат': 7,
-  'Отменён': 8
-};
+// Порядок статусов по жизненному циклу
+const LIFECYCLE_STATUSES = [
+  'Новый',
+  'Предложение отправлено',
+  'Подтверждён',
+  'Оплачен',
+  'Частично оплачен',
+  'На отправке с отсрочкой платежа',
+  'На отправку - оплачен',
+  'Собран',
+  'Ожидает отгрузки',
+  'Сохранено',
+  'Отправлен',
+  'Доставляется',
+  'Доставлен',
+  'Отгружен',
+  'С отсрочкой',
+  'Возврат ожидает',
+  'Возврат',
+  'Возвращается',
+  'Частичная отмена',
+  'Отменён',
+  'ОЖДАЕТ ОЗОН (КОМПЕНСИРОВАН)'
+]
 
-function getSortedOrdersTest(ordersData, column, asc) {
-  const col = column
-  const ascending = asc
+// Получить статусы из жизненного цикла, которые есть в данных
+function getLifecycleStatusesTest(ordersData) {
+  const statusSet = new Set()
+  ordersData.forEach(order => {
+    if (order.statusName) statusSet.add(order.statusName)
+  })
+  
+  // Разделяем на статусы из жизненного цикла и остальные
+  const inLifecycle = []
+  const notInLifecycle = []
+  
+  statusSet.forEach(status => {
+    if (LIFECYCLE_STATUSES.includes(status)) {
+      inLifecycle.push(status)
+    } else {
+      notInLifecycle.push(status)
+    }
+  })
+  
+  // Сортируем статусы из жизненного цикла по порядку в LIFECYCLE_STATUSES
+  inLifecycle.sort((a, b) => LIFECYCLE_STATUSES.indexOf(a) - LIFECYCLE_STATUSES.indexOf(b))
+  
+  // Сортируем остальные статусы по алфавиту
+  notInLifecycle.sort((a, b) => a.localeCompare(b, 'ru'))
+  
+  // Объединяем: сначала жизненный цикл, потом остальные
+  return [...inLifecycle, ...notInLifecycle]
+}
+
+// Сортировка с циклическим переключением
+function getSortedOrdersTest(ordersData, statusIndex) {
+  const lifecycleStatuses = getLifecycleStatusesTest(ordersData)
+  const targetStatus = lifecycleStatuses[statusIndex] || ''
 
   return [...ordersData].sort((a, b) => {
-    let va, vb
-
-    if (col === 'statusName') {
-      const statusA = a[col] || 'Новый'
-      const statusB = b[col] || 'Новый'
-      const orderA = statusOrder[statusA] || 999
-      const orderB = statusOrder[statusB] || 999
-      va = orderA
-      vb = orderB
-    } else if (col === 'hasDemand' || col === 'hasPayment' || col === 'hasReturn' || col === 'isCancelled') {
-      va = a[col] ? 1 : 0
-      vb = b[col] ? 1 : 0
-    } else if (col === 'sum') {
-      va = Number(a.sum) || 0
-      vb = Number(b.sum) || 0
-    } else {
-      va = String(a[col] || '').toLowerCase()
-      vb = String(b[col] || '').toLowerCase()
+    const getStatusPriority = (statusName) => {
+      if (statusName === targetStatus) return 0
+      const idx = lifecycleStatuses.indexOf(statusName)
+      return idx === -1 ? Number.MAX_SAFE_INTEGER : idx + 1
     }
 
-    if (va < vb) return ascending ? -1 : 1
-    if (va > vb) return ascending ? 1 : -1
+    const priorityA = getStatusPriority(a.statusName || '')
+    const priorityB = getStatusPriority(b.statusName || '')
+
+    if (priorityA < priorityB) return -1
+    if (priorityA > priorityB) return 1
     return 0
   })
 }
 
-// Тестовые данные
+// Тестовые данные (только некоторые статусы для простоты)
 const mockOrders = [
   { shipmentNum: '001', statusName: 'Отменён', sum: 1000 },
   { shipmentNum: '002', statusName: 'Новый', sum: 2000 },
@@ -54,130 +86,132 @@ const mockOrders = [
   { shipmentNum: '006', statusName: 'Частично оплачен', sum: 6000 },
   { shipmentNum: '007', statusName: 'Сохранено', sum: 7000 },
   { shipmentNum: '008', statusName: 'С отсрочкой', sum: 8000 },
-  { shipmentNum: '009', statusName: 'Новый', sum: 9000 }, // Дубликат статуса
-  { shipmentNum: '010', statusName: 'Неизвестный статус', sum: 10000 } // Неизвестный статус
+  { shipmentNum: '009', statusName: 'Новый', sum: 9000 },
+  { shipmentNum: '010', statusName: 'Неизвестный статус', sum: 10000 }
 ]
 
-describe('Сортировка по statusName', () => {
-  describe('По возрастанию (asc = true)', () => {
-    it('должен сортировать статусы в правильном порядке', () => {
-      const sorted = getSortedOrdersTest(mockOrders, 'statusName', true)
-      
-      // Проверяем порядок
-      expect(sorted[0].statusName).toBe('Новый') // 1
-      expect(sorted[1].statusName).toBe('Новый') // 1 (дубликат)
-      expect(sorted[2].statusName).toBe('Сохранено') // 2
-      expect(sorted[3].statusName).toBe('С отсрочкой') // 3
-      expect(sorted[4].statusName).toBe('Отгружен') // 4
-      expect(sorted[5].statusName).toBe('Оплачен') // 5
-      expect(sorted[6].statusName).toBe('Частично оплачен') // 6
-      expect(sorted[7].statusName).toBe('Возврат') // 7
-      expect(sorted[8].statusName).toBe('Отменён') // 8
-      expect(sorted[9].statusName).toBe('Неизвестный статус') // 999 (в конце)
+describe('Циклическая сортировка по statusName (жизненный цикл)', () => {
+  // Порядок статусов в lifecycleStatuses для mockOrders:
+  // 0: Новый (индекс 0 в LIFECYCLE_STATUSES)
+  // 1: Оплачен (3)
+  // 2: Частично оплачен (4)
+  // 3: Сохранено (9)
+  // 4: Отгружен (13)
+  // 5: С отсрочкой (14)
+  // 6: Возврат (16)
+  // 7: Отменён (19)
+  // 8: Неизвестный статус (не в жизненном цикле, в конце)
+
+  describe('Переключение статусов (statusIndex)', () => {
+    it('statusIndex=0: наверху "Новый"', () => {
+      const sorted = getSortedOrdersTest(mockOrders, 0)
+      expect(sorted[0].statusName).toBe('Новый')
+      expect(sorted[1].statusName).toBe('Новый')
     })
 
-    it('должен помещать неизвестные статусы в конец', () => {
-      const sorted = getSortedOrdersTest(mockOrders, 'statusName', true)
+    it('statusIndex=1: наверху "Оплачен"', () => {
+      const sorted = getSortedOrdersTest(mockOrders, 1)
+      expect(sorted[0].statusName).toBe('Оплачен')
+    })
+
+    it('statusIndex=2: наверху "Частично оплачен"', () => {
+      const sorted = getSortedOrdersTest(mockOrders, 2)
+      expect(sorted[0].statusName).toBe('Частично оплачен')
+    })
+
+    it('statusIndex=3: наверху "Сохранено"', () => {
+      const sorted = getSortedOrdersTest(mockOrders, 3)
+      expect(sorted[0].statusName).toBe('Сохранено')
+    })
+
+    it('statusIndex=4: наверху "Отгружен"', () => {
+      const sorted = getSortedOrdersTest(mockOrders, 4)
+      expect(sorted[0].statusName).toBe('Отгружен')
+    })
+
+    it('statusIndex=7: наверху "Отменён"', () => {
+      const sorted = getSortedOrdersTest(mockOrders, 7)
+      expect(sorted[0].statusName).toBe('Отменён')
+    })
+
+    it('statusIndex=8: наверху "Неизвестный статус"', () => {
+      const sorted = getSortedOrdersTest(mockOrders, 8)
+      expect(sorted[0].statusName).toBe('Неизвестный статус')
+    })
+  })
+
+  describe('Циклический переход', () => {
+    it('после последнего статуса снова первый', () => {
+      const lifecycleStatuses = getLifecycleStatusesTest(mockOrders)
+      const lastIndex = lifecycleStatuses.length - 1  // 8
+      // После последнего (Неизвестный статус) переходим к первому (Новый)
+      const nextIndex = (lastIndex + 1) % lifecycleStatuses.length  // 0
+      expect(nextIndex).toBe(0)
+      
+      const sorted = getSortedOrdersTest(mockOrders, nextIndex)
+      expect(sorted[0].statusName).toBe('Новый')
+    })
+  })
+
+  describe('Неизвестные статусы', () => {
+    it('Неизвестный статус всегда в конце (когда не выбран)', () => {
+      const sorted = getSortedOrdersTest(mockOrders, 0)  // Выбран Новый
       const lastOrder = sorted[sorted.length - 1]
       expect(lastOrder.statusName).toBe('Неизвестный статус')
     })
   })
 
-  describe('По убыванию (asc = false)', () => {
-    it('должен сортировать статусы в обратном порядке', () => {
-      const sorted = getSortedOrdersTest(mockOrders, 'statusName', false)
-      
-      // Проверяем обратный порядок
-      expect(sorted[0].statusName).toBe('Отменён') // 8
-      expect(sorted[1].statusName).toBe('Возврат') // 7
-      expect(sorted[2].statusName).toBe('Частично оплачен') // 6
-      expect(sorted[3].statusName).toBe('Оплачен') // 5
-      expect(sorted[4].statusName).toBe('Отгружен') // 4
-      expect(sorted[5].statusName).toBe('С отсрочкой') // 3
-      expect(sorted[6].statusName).toBe('Сохранено') // 2
-      expect(sorted[7].statusName).toBe('Новый') // 1
-      expect(sorted[8].statusName).toBe('Новый') // 1 (дубликат)
-    })
-
-    it('должен помещать неизвестные статусы в начало при desc', () => {
-      const sorted = getSortedOrdersTest(mockOrders, 'statusName', false)
-      const firstOrder = sorted[0]
-      expect(firstOrder.statusName).toBe('Неизвестный статус')
-    })
-  })
-
   describe('Крайние случаи', () => {
-    it('должен обрабатывать пустой массив', () => {
-      const sorted = getSortedOrdersTest([], 'statusName', true)
+    it('Пустой массив', () => {
+      const sorted = getSortedOrdersTest([], 0)
       expect(sorted).toEqual([])
     })
 
-    it('должен обрабатывать отсутствие поля statusName', () => {
-      const ordersWithoutStatus = [
+    it('Отсутствие statusName', () => {
+      const orders = [
         { shipmentNum: '001', sum: 1000 },
         { shipmentNum: '002', sum: 2000 }
       ]
-      const sorted = getSortedOrdersTest(ordersWithoutStatus, 'statusName', true)
-      // Оба должны получить статус 'Новый' (1)
+      const sorted = getSortedOrdersTest(orders, 0)
+      // Пустые статусы получат MAX_SAFE_INTEGER, будут в конце
       expect(sorted[0].shipmentNum).toBe('001')
       expect(sorted[1].shipmentNum).toBe('002')
     })
 
-    it('должен сохранять порядок при равных статусах', () => {
-      const ordersSameStatus = [
-        { shipmentNum: '001', statusName: 'Новый', sum: 1000 },
-        { shipmentNum: '002', statusName: 'Новый', sum: 2000 },
-        { shipmentNum: '003', statusName: 'Новый', sum: 3000 }
+    it('Один статус в данных', () => {
+      const orders = [
+        { shipmentNum: '001', statusName: 'Новый' },
+        { shipmentNum: '002', statusName: 'Новый' }
       ]
-      const sorted = getSortedOrdersTest(ordersSameStatus, 'statusName', true)
-      // При равных статусах порядок может быть любым, но все должны остаться "Новый"
+      const sorted = getSortedOrdersTest(orders, 0)
       expect(sorted[0].statusName).toBe('Новый')
       expect(sorted[1].statusName).toBe('Новый')
-      expect(sorted[2].statusName).toBe('Новый')
     })
   })
 
-  describe('Интеграция с currentSort', () => {
-    it('должен правильно переключать asc/desc', () => {
-      // Симулируем логику sortTable
-      let currentSort = { column: 'statusName', asc: true }
-      
-      // Первая сортировка - по возрастанию
-      let sorted = getSortedOrdersTest(mockOrders, currentSort.column, currentSort.asc)
+  describe('Интеграция с currentSort (симуляция)', () => {
+    it('Должен циклически переключать статусы', () => {
+      let statusIndex = 0
+      const lifecycleStatuses = getLifecycleStatusesTest(mockOrders)
+
+      // Первый клик - Новый
+      let sorted = getSortedOrdersTest(mockOrders, statusIndex)
       expect(sorted[0].statusName).toBe('Новый')
-      
-      // Переключаем на убывание
-      currentSort.asc = false
-      sorted = getSortedOrdersTest(mockOrders, currentSort.column, currentSort.asc)
-      expect(sorted[0].statusName).toBe('Отменён')
-      
-      // Переключаем обратно
-      currentSort.asc = true
-      sorted = getSortedOrdersTest(mockOrders, currentSort.column, currentSort.asc)
-      expect(sorted[0].statusName).toBe('Новый')
+
+      // Второй клик - Оплачен
+      statusIndex = (statusIndex + 1) % lifecycleStatuses.length
+      sorted = getSortedOrdersTest(mockOrders, statusIndex)
+      expect(sorted[0].statusName).toBe('Оплачен')
+
+      // Третий клик - Частично оплачен
+      statusIndex = (statusIndex + 1) % lifecycleStatuses.length
+      sorted = getSortedOrdersTest(mockOrders, statusIndex)
+      expect(sorted[0].statusName).toBe('Частично оплачен')
+
+      // Четвертый клик - Сохранено
+      statusIndex = (statusIndex + 1) % lifecycleStatuses.length
+      sorted = getSortedOrdersTest(mockOrders, statusIndex)
+      expect(sorted[0].statusName).toBe('Сохранено')
     })
-  })
-})
-
-describe('Проверка массива statusOrder', () => {
-  it('должен содержать все 8 статусов', () => {
-    expect(Object.keys(statusOrder)).toHaveLength(8)
-  })
-
-  it('должен иметь правильный порядок чисел', () => {
-    expect(statusOrder['Новый']).toBe(1)
-    expect(statusOrder['Сохранено']).toBe(2)
-    expect(statusOrder['С отсрочкой']).toBe(3)
-    expect(statusOrder['Отгружен']).toBe(4)
-    expect(statusOrder['Оплачен']).toBe(5)
-    expect(statusOrder['Частично оплачен']).toBe(6)
-    expect(statusOrder['Возврат']).toBe(7)
-    expect(statusOrder['Отменён']).toBe(8)
-  })
-
-  it('должен обрабатывать неизвестные статусы как 999', () => {
-    const unknownStatus = 'Несуществующий статус'
-    const order = statusOrder[unknownStatus] || 999
-    expect(order).toBe(999)
   })
 })

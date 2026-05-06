@@ -12,10 +12,21 @@ function makeRequest(options, postData = null) {
       let data = ''
       res.on('data', (chunk) => { data += chunk })
       res.on('end', () => {
+        console.log(`WB Request to ${options.hostname}${options.path} - Status: ${res.statusCode}`)
         try {
-          resolve(JSON.parse(data))
+          resolve({ 
+            status: res.statusCode, 
+            headers: res.headers, 
+            body: JSON.parse(data) 
+          })
         } catch (e) {
-          resolve(data) // return raw if not JSON
+          // If not JSON, return raw text
+          resolve({ 
+            status: res.statusCode, 
+            headers: res.headers, 
+            body: data,
+            isJSON: false 
+          })
         }
       })
     })
@@ -32,52 +43,73 @@ function makeRequest(options, postData = null) {
 async function fetchWBData(codes, token) {
   if (!token) return codes.map(code => ({ code, error: 'No WB token' }))
 
-  const options = {
-    hostname: 'suppliers-api.wildberries.ru',
-    path: '/api/v2/list/goods/filter',
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': token // WB uses token in Authorization header
+  const results = []
+  
+  for (const code of codes) {
+    try {
+      // WB API: Use 'find' parameter for searching by article/barcode
+      const body = JSON.stringify({
+        'filter': {
+          'find': code // Search by article or barcode
+        },
+        'limit': 10
+      })
+      
+      const options = {
+        hostname: 'content-api.wildberries.ru', // Content API domain
+        path: '/api/v2/list/goods/filter',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token
+        }
+      }
+      
+      console.log(`WB Search Request for ${code}:`, { hostname: options.hostname, path: options.path, body: JSON.parse(body) })
+      
+      const response = await makeRequest(options, body)
+      
+      console.log(`WB API Full Response for ${code}:`, JSON.stringify(response))
+      
+      // Check HTTP status
+      if (response.status !== 200) {
+        results.push({ 
+          code, 
+          error: `WB API Error: HTTP ${response.status}`, 
+          details: response.body 
+        })
+        continue
+      }
+      
+      // Check response structure
+      const items = response.body?.data?.list || []
+      
+      if (items.length > 0) {
+        const found = items[0]
+        results.push({
+          code: found.vendorCode || found.article || code,
+          title: found.name || 'N/A',
+          price: found.price || 0,
+          stock: (found.stocks || []).reduce((sum, s) => sum + (s.quantity || 0), 0),
+          site: 'Wildberries',
+          vendorCode: found.vendorCode || '',
+          brand: found.brand || '',
+          nmID: found.nmID || ''
+        })
+      } else {
+        results.push({ 
+          code, 
+          error: 'Not found in WB', 
+          details: response.body 
+        })
+      }
+    } catch (e) {
+      console.error('WB API Error:', e.message)
+      results.push({ code, error: e.message })
     }
   }
-
-  const body = JSON.stringify({
-    'filter': {
-      'find': codes.join(',') // Search by article/barcode
-    },
-    'limit': 1000
-  })
-
-  try {
-    const response = await makeRequest(options, body)
-    console.log('WB API Response:', JSON.stringify(response))
-    
-    // Response structure: { data: { list: [...] } }
-    const items = response?.data?.list || []
-    
-    return codes.map(code => {
-      // WB might return multiple items, find by article
-      const found = items.find(item => 
-        item.article === code || item.barcode?.includes(code)
-      )
-      if (!found) return { code, error: 'Not found in WB', details: response }
-      
-      return {
-        code: found.article || code,
-        title: found.name || 'N/A',
-        price: found.price || 0,
-        stock: (found.stocks || []).reduce((sum, s) => sum + (s.quantity || 0), 0),
-        site: 'Wildberries',
-        vendorCode: found.vendorCode || '',
-        brand: found.brand || '',
-        // Add more fields as needed
-      }
-    })
-  } catch (e) {
-    console.error('WB API Error:', e.message)
-    return codes.map(code => ({ code, error: e.message }))
-  }
+  
+  return results
 }
 
 /**
@@ -100,23 +132,36 @@ async function fetchOzonData(codes, clientId, apiKey) {
 
   const body = JSON.stringify({
     'filter': {
-      'offer_id': codes // Search by offer_id (which is usually the article)
+      'offer_id': codes
     },
     'limit': 1000
   })
 
   try {
     const response = await makeRequest(options, body)
-    console.log('Ozon API Response:', JSON.stringify(response))
     
-    // Response structure: { result: { items: [...] } }
-    const items = response?.result?.items || []
+    console.log('Ozon API Full Response:', JSON.stringify(response))
+    
+    if (response.status !== 200) {
+      return codes.map(code => ({ 
+        code, 
+        error: `Ozon API Error: HTTP ${response.status}`, 
+        details: response.body 
+      }))
+    }
+    
+    const items = response.body?.result?.items || []
     
     return codes.map(code => {
       const found = items.find(item => 
         item.offer_id === code || item.sku?.toString() === code
       )
-      if (!found) return { code, error: 'Not found in Ozon', details: response }
+      
+      if (!found) return { 
+        code, 
+        error: 'Not found in Ozon', 
+        details: response.body 
+      }
       
       return {
         code: found.offer_id || code,
@@ -125,7 +170,6 @@ async function fetchOzonData(codes, clientId, apiKey) {
         stock: (found.stocks || []).reduce((sum, s) => sum + (s.present || 0), 0),
         site: 'Ozon',
         sku: found.sku || '',
-        // Add more fields as needed
       }
     })
   } catch (e) {

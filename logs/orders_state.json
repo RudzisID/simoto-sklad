@@ -1,104 +1,529 @@
 {
-  "51634298-0014": {
-    "orderName": "70279",
-    "sum": 6830,
-    "paid": 6830,
+  "0128101694-0064-3": {
+    "orderName": "68662",
+    "sum": 960,
+    "paid": 0,
     "status": "other",
     "statusName": "Отгружен",
-    "orderId": "1e3b3612-2bd5-11f1-0a80-1460060641b3",
+    "orderId": "166bd0a5-2336-11f1-0a80-0f3e0046a53a",
     "hasDemand": true,
-    "hasPayment": true,
+    "hasPayment": false,
     "hasReturn": false,
     "isCancelled": false,
-    "demandName": "66824",
-    "paymentName": "64959",
+    "demandName": "65218",
+    "paymentName": "62067",
     "returnName": null,
-    "savedAt": "2026-05-04T17:40:30.785Z",
+    "savedAt": "2026-05-05T08:45:58.659Z",
     "orderPositions": [
       {
-        "code": "7020-080110",
-        "name": "Тормозной цилиндр главной тормозной системы CF Х8, ODES 650, 800, 1000",
+        "code": "89A146130000ГРАФИТ",
+        "name": "MASUMA ГРАФИТ для OZON (2 шт.)",
         "quantity": 1,
-        "price": 6830,
-        "sum": 6830
+        "price": 960,
+        "sum": 960
       }
     ],
     "demandPositions": []
   },
-  "22089359-0227-1": {
-    "orderName": "69408",
-    "sum": 3060,
-    "paid": 3060,
+  "19898434-0196-1": {
+    "orderName": "69607",
+    "sum": 1160,
+    "paid": 0,
     "status": "other",
-    "statusName": "Отгружен",
-    "orderId": "3241b251-273a-11f1-0a80-132100221a29",
+    "statusName": "Возврат",
+    "orderId": "d2b00192-283a-11f1-0a80-18cf025e0eb0",
     "hasDemand": true,
-    "hasPayment": true,
-    "hasReturn": false,
+    "hasPayment": false,
+    "hasReturn": true,
     "isCancelled": false,
-    "demandName": "65927",
-    "paymentName": "64704",
-    "returnName": null,
-    "savedAt": "2026-05-04T17:40:30.785Z",
+    "demandName": "66183",
+    "paymentName": null,
+    "returnName": "03488",
+    "savedAt": "2026-05-05T08:45:58.659Z",
     "orderPositions": [
       {
-        "code": "7020-290130Комплект4",
-        "name": "Комплект крестовин 1 большая, 1 малая для OZON",
+        "code": "9010-060003КОМПЛЕКТ",
+        "name": "Комплект Втулок стабилизатора JDT21C04F00, CVT-45, ST-48815-33090, QF23D00010 (OZON к-т 2шт)",
         "quantity": 1,
-        "price": 3060,
-        "sum": 3060
+        "price": 1160,
+        "sum": 1160
       }
     ],
     "demandPositions": []
   },
-  "22089359-0231-1": {
-    "orderName": "69546",
-    "sum": 7500,
-    "paid": 7500,
+  "39617984-0466-3": {
+    "orderName": "69682",
+    "sum": 2200,
+    "paid": 0,
     "status": "other",
-    "statusName": "Отгружен",
-    "orderId": "e46a439a-27fe-11f1-0a80-07c601a3065f",
+    "statusName": "Отменен",
+    "orderId": "4f1e6ac9-2887-11f1-0a80-138d000b0718",
     "hasDemand": true,
-    "hasPayment": true,
-    "hasReturn": false,
-    "isCancelled": false,
-    "demandName": "66190",
-    "paymentName": "64705",
-    "returnName": null,
-    "savedAt": "2026-05-04T17:40:30.785Z",
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": true,
+    "demandName": "66241",
+    "paymentName": null,
+    "returnName": "03461",
+    "savedAt": "2026-05-05T08:45:58.659Z",
     "orderPositions": [
       {
-        "code": "9010-080500",
-        "name": "Задний тормозной суппорт",
+        "code": "0800-112000",
+        "name": "Фильтр воздушный Х8",
         "quantity": 1,
-        "price": 7500,
-        "sum": 7500
+        "price": 2200,
+        "sum": 2200
       }
     ],
     "demandPositions": []
   },
-  "56835842-0105": {
-    "orderName": "70280",
-    "sum": 1020,
-    "paid": 1020,
+  "0151317738-0195-1": {
+    "orderName": "69570",
+    "sum": 2400,
+    "paid": 0,
     "status": "other",
-    "statusName": "Отгружен",
-    "orderId": "f4a9b3b0-2bd8-11f1-0a80-18350141b87a",
+    "statusName": "Возврат",
+    "orderId": "b63dbebf-2816-11f1-0a80-09ce007475b6",
     "hasDemand": true,
-    "hasPayment": true,
-    "hasReturn": false,
+    "hasPayment": false,
+    "hasReturn": true,
     "isCancelled": false,
-    "demandName": "66823",
-    "paymentName": "65020",
-    "returnName": null,
-    "savedAt": "2026-05-04T17:40:30.785Z",
+    "demandName": "66174",
+    "paymentName": null,
+    "returnName": "03490",
+    "savedAt": "2026-05-05T08:45:58.659Z",
     "orderPositions": [
       {
-        "code": "0800-011300комплект",
-        "name": "Фильтр масляный X8 для OZON комплект с кольцом",
+        "code": "9010-150600..",
+        "name": "Блок предохранителей в сборе Дилер",
         "quantity": 1,
-        "price": 1020,
-        "sum": 1020
+        "price": 2400,
+        "sum": 2400
+      }
+    ],
+    "demandPositions": []
+  },
+  "0128752789-0070-3": {
+    "orderName": "69533",
+    "sum": 1030,
+    "paid": 0,
+    "status": "other",
+    "statusName": "Отменен",
+    "orderId": "9880f5c5-27bd-11f1-0a80-09ce0055d8a8",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": true,
+    "demandName": "66041",
+    "paymentName": null,
+    "returnName": "03554",
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "6090-120220",
+        "name": "Фильтр топливный X6, Х8, ODES 650,800,1000, RM800",
+        "quantity": 1,
+        "price": 1030,
+        "sum": 1030
+      }
+    ],
+    "demandPositions": []
+  },
+  "25037657-0443-1": {
+    "orderName": "70136",
+    "sum": 6434,
+    "paid": 0,
+    "status": "other",
+    "statusName": "Возврат",
+    "orderId": "3539b97d-2b15-11f1-0a80-183501002ab5",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": false,
+    "demandName": "66864",
+    "paymentName": null,
+    "returnName": "03491",
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "0180-334003",
+        "name": "Сальник приводов заднего редуктора 65х90х9",
+        "quantity": 1,
+        "price": 880,
+        "sum": 880
+      },
+      {
+        "code": "0180-311001",
+        "name": "Сальник приводов переднего редуктора 24*38*8 CF, ODES, RM800",
+        "quantity": 1,
+        "price": 574,
+        "sum": 574
+      },
+      {
+        "code": "9010-060700-1000",
+        "name": "Стойка стабилизатора зад. левая CLM9, CLKH18L, CL0261L, AW1350025L, C7075L",
+        "quantity": 1,
+        "price": 1910,
+        "sum": 1910
+      },
+      {
+        "code": "9010-060800-1000",
+        "name": "Стойка стабилизатора зад. правая CLM10, CLKH18R, CL0261R, AW1350026R, C7075R",
+        "quantity": 1,
+        "price": 1910,
+        "sum": 1910
+      },
+      {
+        "code": "9010-060003КОМПЛЕКТ",
+        "name": "Комплект Втулок стабилизатора JDT21C04F00, CVT-45, ST-48815-33090, QF23D00010 (OZON к-т 2шт)",
+        "quantity": 1,
+        "price": 1160,
+        "sum": 1160
+      }
+    ],
+    "demandPositions": []
+  },
+  "0149019984-0237-1": {
+    "orderName": "69674",
+    "sum": 2404,
+    "paid": 1642,
+    "status": "other",
+    "statusName": "Частичная отмена",
+    "orderId": "3f593cfb-287a-11f1-0a80-06a00006c321",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": true,
+    "demandName": "66131",
+    "paymentName": "65181",
+    "returnName": "03587",
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "0180-334003",
+        "name": "Сальник приводов заднего редуктора 65х90х9",
+        "quantity": 1,
+        "price": 880,
+        "sum": 880
+      },
+      {
+        "code": "0180-331007",
+        "name": "Сальник зад хвостовика 34,5*61*9/13",
+        "quantity": 2,
+        "price": 762,
+        "sum": 1524
+      }
+    ],
+    "demandPositions": []
+  },
+  "0128984088-0089-1": {
+    "orderName": "69215",
+    "sum": 1000,
+    "paid": 0,
+    "status": "other",
+    "statusName": "На отправку с отсрочкой платежа",
+    "orderId": "05b58839-267b-11f1-0a80-0cd70618a0b1",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": false,
+    "isCancelled": false,
+    "demandName": "65775",
+    "paymentName": null,
+    "returnName": null,
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "8010-180024.",
+        "name": "Крышка радиатора охлаждения SAT R101B",
+        "quantity": 1,
+        "price": 1000,
+        "sum": 1000
+      }
+    ],
+    "demandPositions": []
+  },
+  "0174845003-0025-1": {
+    "orderName": "69183",
+    "sum": 1530,
+    "paid": 0,
+    "status": "other",
+    "statusName": "На отправку с отсрочкой платежа",
+    "orderId": "a5f70fd9-262c-11f1-0a80-119d01d9071c",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": false,
+    "isCancelled": false,
+    "demandName": "65589",
+    "paymentName": null,
+    "returnName": null,
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "7020-200300",
+        "name": "Зеркало правое Х8",
+        "quantity": 1,
+        "price": 1530,
+        "sum": 1530
+      }
+    ],
+    "demandPositions": []
+  },
+  "0159593277-0048-1": {
+    "orderName": "77243",
+    "sum": 4460,
+    "paid": 0,
+    "status": "other",
+    "statusName": "На отправку с отсрочкой платежа",
+    "orderId": "e5aeaca9-47d8-11f1-0a80-05d000003e94",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": false,
+    "isCancelled": false,
+    "demandName": "76826",
+    "paymentName": null,
+    "returnName": null,
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "LU065593",
+        "name": "Цепь ГРМ STELS-500/600/650 LEO, RM500-2, 650-2 (124 звена)",
+        "quantity": 1,
+        "price": 4460,
+        "sum": 4460
+      }
+    ],
+    "demandPositions": []
+  },
+  "74130184-0012-1": {
+    "orderName": "69184",
+    "sum": 1500,
+    "paid": 0,
+    "status": "other",
+    "statusName": "На отправку с отсрочкой платежа",
+    "orderId": "b98020ff-262f-11f1-0a80-069800cdd237",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": false,
+    "isCancelled": false,
+    "demandName": "65588",
+    "paymentName": null,
+    "returnName": null,
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "9010-150310",
+        "name": "Реле стартера CF / ODES 650 800 1000",
+        "quantity": 1,
+        "price": 1500,
+        "sum": 1500
+      }
+    ],
+    "demandPositions": []
+  },
+  "0160490409-0103-1": {
+    "orderName": "69606",
+    "sum": 5220,
+    "paid": 0,
+    "status": "other",
+    "statusName": "Возврат",
+    "orderId": "490f37c7-2839-11f1-0a80-07c602001750",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": false,
+    "demandName": "66205",
+    "paymentName": null,
+    "returnName": "03509",
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "9010-080600R.",
+        "name": "Тормозная машинка правая 14 мм",
+        "quantity": 1,
+        "price": 5220,
+        "sum": 5220
+      }
+    ],
+    "demandPositions": []
+  },
+  "0159064799-0170-2": {
+    "orderName": "70458",
+    "sum": 4300,
+    "paid": 0,
+    "status": "other",
+    "statusName": "Возврат",
+    "orderId": "47431224-2c4f-11f1-0a80-06a001643ede",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": false,
+    "demandName": "66766",
+    "paymentName": null,
+    "returnName": "03476",
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "9010-270140-1000",
+        "name": "ШРУС внешний, комплект 18 шлицов (Simoto)",
+        "quantity": 1,
+        "price": 4300,
+        "sum": 4300
+      }
+    ],
+    "demandPositions": []
+  },
+  "0210868898-0042-1": {
+    "orderName": "69772",
+    "sum": 530,
+    "paid": 0,
+    "status": "other",
+    "statusName": "На отправку с отсрочкой платежа",
+    "orderId": "2f54fcfe-28ff-11f1-0a80-11a400ad1653",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": false,
+    "isCancelled": false,
+    "demandName": "66950",
+    "paymentName": null,
+    "returnName": null,
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "9010-070002-A000",
+        "name": "Гайка колесная",
+        "quantity": 1,
+        "price": 530,
+        "sum": 530
+      }
+    ],
+    "demandPositions": []
+  },
+  "0210868898-0041-1": {
+    "orderName": "69773",
+    "sum": 500,
+    "paid": 0,
+    "status": "other",
+    "statusName": "На отправку с отсрочкой платежа",
+    "orderId": "2f8bdb52-28ff-11f1-0a80-11a400ad1667",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": false,
+    "isCancelled": false,
+    "demandName": "66278",
+    "paymentName": null,
+    "returnName": null,
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "9010-070201",
+        "name": "Болт колесной ступицы",
+        "quantity": 1,
+        "price": 500,
+        "sum": 500
+      }
+    ],
+    "demandPositions": []
+  },
+  "0131575157-0114-1": {
+    "orderName": "69039",
+    "sum": 57300,
+    "paid": 0,
+    "status": "other",
+    "statusName": "Возврат",
+    "orderId": "fa0d955d-2553-11f1-0a80-054500cf0b3d",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": false,
+    "demandName": "65627",
+    "paymentName": null,
+    "returnName": "03848",
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "7020-061600комплект",
+        "name": "Амортизаторы YIT комплект для OZON",
+        "quantity": 1,
+        "price": 57300,
+        "sum": 57300
+      }
+    ],
+    "demandPositions": []
+  },
+  "46435931-0539-1": {
+    "orderName": "70532",
+    "sum": 3140,
+    "paid": 0,
+    "status": "other",
+    "statusName": "Отменен",
+    "orderId": "b9e0465f-2ccc-11f1-0a80-191f0092d54d",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": true,
+    "demandName": "67023",
+    "paymentName": null,
+    "returnName": "03551",
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "30499-03080",
+        "name": "Подшипник ступицы CFMOTO (Китай)",
+        "quantity": 2,
+        "price": 1570,
+        "sum": 3140
+      }
+    ],
+    "demandPositions": []
+  },
+  "46435931-0540-2": {
+    "orderName": "70622",
+    "sum": 3140,
+    "paid": 0,
+    "status": "other",
+    "statusName": "Отменен",
+    "orderId": "e3941a8b-2d07-11f1-0a80-16d800d099b2",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": true,
+    "demandName": "67054",
+    "paymentName": null,
+    "returnName": "03552",
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "30499-03080",
+        "name": "Подшипник ступицы CFMOTO (Китай)",
+        "quantity": 2,
+        "price": 1570,
+        "sum": 3140
+      }
+    ],
+    "demandPositions": []
+  },
+  "69100217-2392-4": {
+    "orderName": "71034",
+    "sum": 4969,
+    "paid": 0,
+    "status": "other",
+    "statusName": "Отменен",
+    "orderId": "85e05c3a-2ec2-11f1-0a80-196000041071",
+    "hasDemand": true,
+    "hasPayment": false,
+    "hasReturn": true,
+    "isCancelled": true,
+    "demandName": "67496",
+    "paymentName": null,
+    "returnName": "03562",
+    "savedAt": "2026-05-05T08:45:58.659Z",
+    "orderPositions": [
+      {
+        "code": "9GQ0-280170",
+        "name": "ШРУС внешний X5 HO, X8 (2015) 19 шлицов",
+        "quantity": 1,
+        "price": 4969,
+        "sum": 4969
       }
     ],
     "demandPositions": []

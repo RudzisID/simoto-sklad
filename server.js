@@ -596,7 +596,8 @@ app.post('/api/create-return', async (req, res) => {
     updateOrderState(shipmentNum, 'return_created', salesReturn.name, {
       orderName: orderFull.name,
       orderId: orderFull.id,
-      orderUrl: `https://online.moysklad.ru/app/#customerorder/${orderFull.id}`
+      orderUrl: `https://online.moysklad.ru/app/#customerorder/${orderFull.id}`,
+      returnSum: salesReturn.sum / 100 // Сумма возврата в рублях
     })
     res.json({ success: true, returnName: salesReturn.name, returnSum: salesReturn.sum / 100 })
   } catch (e) {
@@ -638,7 +639,8 @@ app.post('/api/cancel-order', async (req, res) => {
     updateOrderState(shipmentNum, 'order_cancelled', 'success', {
       orderName: orderFull.name,
       orderId: orderFull.id,
-      orderUrl: `https://online.moysklad.ru/app/#customerorder/${orderFull.id}`
+      orderUrl: `https://online.moysklad.ru/app/#customerorder/${orderFull.id}`,
+      sum: orderFull.sum / 100 // Сумма заказа в рублях
     })
     res.json({ success: true, ...result })
   } catch (e) {
@@ -914,6 +916,8 @@ function updateOrderState(shipmentNum, action, result, extraData = {}) {
   if (extraData.paid) state[shipmentNum].paid = extraData.paid
   if (extraData.orderId) state[shipmentNum].orderId = extraData.orderId
   if (extraData.orderUrl) state[shipmentNum].orderUrl = extraData.orderUrl
+  if (extraData.returnSum !== undefined) state[shipmentNum].returnSum = extraData.returnSum
+  if (extraData.cancelledSum !== undefined) state[shipmentNum].cancelledSum = extraData.cancelledSum
 
   state[shipmentNum].history.push({
     action,
@@ -956,6 +960,8 @@ app.post('/api/orders-state', (req, res) => {
         demandName: order.demandName || null,
         paymentName: order.paymentName || null,
         returnName: order.returnName || null,
+        returnSum: order.returnSum || 0,
+        cancelledSum: order.cancelledSum || 0,
         savedAt: new Date().toISOString(),
         orderPositions: order.orderPositions || [],
         demandPositions: order.demandPositions || []
