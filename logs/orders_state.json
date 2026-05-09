@@ -1,116 +1,30 @@
 {
-  "0156799040-0349-1": {
-    "orderName": "68929",
-    "sum": 3310,
-    "paid": 0,
+  "62476487-0213-4": {
+    "orderName": "70479",
+    "sum": 1370,
+    "paid": 1370,
     "status": "other",
-    "statusName": "На отправку с отсрочкой платежа",
-    "orderId": "aca5bff2-24c9-11f1-0a80-1d3600ea2b20",
+    "statusName": "Отгружен",
+    "orderId": "04242a9c-2c5e-11f1-0a80-16d8000335d7",
     "hasDemand": true,
-    "hasPayment": false,
+    "hasPayment": true,
     "hasReturn": false,
     "isCancelled": false,
-    "demandName": "65653",
-    "paymentName": "65783",
+    "demandName": "67031",
+    "paymentName": "66277",
     "returnName": null,
     "returnSum": 0,
     "cancelledSum": 0,
-    "savedAt": "2026-05-09T03:29:43.995Z",
+    "savedAt": "2026-05-09T05:12:56.386Z",
     "orderPositions": [
       {
-        "code": "0180-331005",
-        "name": "Корпус подшипника",
+        "code": "0180-152000",
+        "name": "Катушка зажигания 500",
         "quantity": 1,
-        "price": 3310,
-        "sum": 3310
+        "price": 1370,
+        "sum": 1370
       }
     ],
-    "demandPositions": [],
-    "history": [
-      {
-        "action": "payment_created",
-        "result": "65783",
-        "time": "2026-05-09T03:30:16.971Z"
-      }
-    ],
-    "lastAction": "payment_created",
-    "lastResult": "65783",
-    "lastUpdate": "2026-05-09T03:30:16.971Z"
-  },
-  "0157452784-0133-1": {
-    "orderName": "68980",
-    "sum": 880,
-    "paid": 0,
-    "status": "other",
-    "statusName": "На отправку с отсрочкой платежа",
-    "orderId": "bd807a84-2515-11f1-0a80-054500b1f951",
-    "hasDemand": true,
-    "hasPayment": false,
-    "hasReturn": false,
-    "isCancelled": false,
-    "demandName": "65641",
-    "paymentName": "65784",
-    "returnName": null,
-    "returnSum": 0,
-    "cancelledSum": 0,
-    "savedAt": "2026-05-09T03:29:43.995Z",
-    "orderPositions": [
-      {
-        "code": "0180-334003",
-        "name": "Сальник приводов заднего редуктора 65х90х9",
-        "quantity": 1,
-        "price": 880,
-        "sum": 880
-      }
-    ],
-    "demandPositions": [],
-    "history": [
-      {
-        "action": "payment_created",
-        "result": "65784",
-        "time": "2026-05-09T03:30:21.385Z"
-      }
-    ],
-    "lastAction": "payment_created",
-    "lastResult": "65784",
-    "lastUpdate": "2026-05-09T03:30:21.385Z"
-  },
-  "47152445-0034-1": {
-    "orderName": "57210",
-    "sum": 1000,
-    "paid": 0,
-    "status": "other",
-    "statusName": "На отправку с отсрочкой платежа",
-    "orderId": "c66988e7-b3b6-11f0-0a80-0e020044181b",
-    "hasDemand": true,
-    "hasPayment": false,
-    "hasReturn": false,
-    "isCancelled": false,
-    "demandName": "54606",
-    "paymentName": "65785",
-    "returnName": null,
-    "returnSum": 0,
-    "cancelledSum": 0,
-    "savedAt": "2026-05-09T03:29:43.995Z",
-    "orderPositions": [
-      {
-        "code": "89A146130000.",
-        "name": "Прокладка под выпуск VK540 D90917-06038 DEKO (D9091706038)",
-        "quantity": 2,
-        "price": 500,
-        "sum": 1000
-      }
-    ],
-    "demandPositions": [],
-    "history": [
-      {
-        "action": "payment_created",
-        "result": "65785",
-        "time": "2026-05-09T03:30:23.052Z"
-      }
-    ],
-    "lastAction": "payment_created",
-    "lastResult": "65785",
-    "lastUpdate": "2026-05-09T03:30:23.052Z"
+    "demandPositions": []
   }
 }

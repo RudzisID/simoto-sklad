@@ -589,8 +589,8 @@ async function checkNumbers() {
               updateTotals()
               renderCurrentStats(true)
 
-              // Небольшая задержка для визуализации (30ms)
-              await new Promise(r => setTimeout(r, 30))
+              // Небольшая задержка для визуализации (30ms) — закомментировано для скорости
+              // await new Promise(r => setTimeout(r, 30))
                             
 } else if (data.type === 'done') {
                // Завершено
@@ -1478,13 +1478,39 @@ async function batchAction(actionType) {
      const abortId = Math.random().toString(36).substring(2, 15)
      window.__currentAbortId = abortId
          
-     // SSE URL с параметрами
-     const numbersParam = encodeURIComponent(numbers.join(','))
-     const url = `/api/batch/stream?token=${encodeURIComponent(token)}&numbers=${numbersParam}&action=${actionType}&abortId=${abortId}`
-         
-     const response = await fetch(url, {
-       signal: currentController.signal
-     })
+       // ── POST с checkData (результаты первого сканирования) ──
+       // Раньше был GET /api/batch/stream?numbers=...&action=...&abortId=...
+       // Сервер делал повторный re-check всех заказов (~4-5 API-запросов на заказ).
+       // Теперь POST передаёт checkData — данные уже получены при "Сканировать",
+       // сервер использует их напрямую, экономя ~8000-10000 запросов на 2000 заказов.
+       // POST вместо GET выбран из-за большого объёма checkData (не влезает в URL).
+       const body = {
+         token,
+         numbers,
+         action: actionType,
+         abortId,
+         checkData: orders.map(o => ({
+           shipmentNum: o.shipmentNum,
+           orderId: o.orderId,
+           statusName: o.statusName,
+           canPayment: o.canPayment,
+           canDemand: o.canDemand,
+           canReturn: o.canReturn,
+           canCancel: o.canCancel,
+           demandName: o.demandName,
+           orderName: o.orderName,
+           sum: o.sum,
+           paid: o.paid
+         }))
+       }
+       const url = '/api/batch/stream'
+          
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: currentController.signal
+      })
         
     if (!response.ok) {
       const errData = await response.json()
@@ -1576,8 +1602,6 @@ async function batchAction(actionType) {
               // Обновляем статистику после каждой строки (с force=true для realtime)
               renderCurrentStats(true)
 
-              // Небольшая задержка для визуализации
-              await new Promise(r => setTimeout(r, 50))
                             
 } else if (data.type === 'done') {
                 const stats = data.stats || { created, skipped, errors }
@@ -1598,11 +1622,35 @@ async function batchAction(actionType) {
                 renderCurrentStats()
                 
                 saveLastActionStats()
+                // Сохраняем обновлённые статусы на сервер
+                saveScanStateSilent()
                 hideProgress(true, `Создано: ${stats.created}, пропущено: ${stats.skipped}, ошибок: ${stats.errors}`)
                                 
                 // Показываем результаты в блоке "После действий"
                 showBatchResults(stats, elapsed)
                 
+                // Убираем анимацию сканирования
+                document.querySelector('.stats-final').classList.remove('scanning')
+              } else if (data.type === 'aborted') {
+                const stats = data.stats || { created, skipped, errors }
+
+                // Останавливаем секундомер
+                const elapsed = stopOperationTimer()
+
+                realtimeMode = false
+                renderTable()
+                updateTotals()
+                renderCurrentStats()
+
+                saveLastActionStats()
+                // Сохраняем обновлённые статусы на сервер
+                saveScanStateSilent()
+                // Показываем сообщение о прерывании (батч не завершён, часть заказов не обработана)
+                hideProgress(false, `Прервано. Обработано: ${data.processed}, создано: ${stats.created}`)
+
+                // Показываем результаты в блоке "После действий"
+                showBatchResults(stats, elapsed)
+
                 // Убираем анимацию сканирования
                 document.querySelector('.stats-final').classList.remove('scanning')
               }

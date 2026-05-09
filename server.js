@@ -35,8 +35,8 @@ const PORT = process.env.PORT || 3000
 // Track SSE connections for proper shutdown
 const sseConnections = new Set()
 
-// Middleware для парсинга JSON
-app.use(express.json())
+// Middleware для парсинга JSON (10MB — для checkData из 2000+ заказов)
+app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 const LOG_DIR = path.join(moduleRoot, 'logs')
 const LOG_DAYS_KEEP = 10
@@ -297,24 +297,19 @@ app.post('/api/batch', async (req, res) => {
 })
 
 // SSE endpoint для realtime batch операций
-app.get('/api/batch/stream', (req, res) => {
-  const token = req.query.token || req.headers['x-api-token']
-  const numbersParam = req.query.numbers
-  const action = req.query.action
-  const abortId = req.query.abortId
+app.post('/api/batch/stream', (req, res) => {
+  const token = req.body.token || req.headers['x-api-token']
+  const numbers = req.body.numbers
+  const action = req.body.action
+  const abortId = req.body.abortId
 
   if (!token) {
     return res.status(401).json({ error: 'Требуется токен API' })
   }
 
-  if (!numbersParam) {
+  if (!numbers || !Array.isArray(numbers) || numbers.length === 0) {
     return res.status(400).json({ error: 'Требуется массив numbers' })
   }
-
-  const numbers = numbersParam
-    .split(',')
-    .map((n) => n.trim())
-    .filter((n) => n)
   const validActions = ['demand', 'payment', 'return', 'cancel']
 
   if (!validActions.includes(action)) {
@@ -371,9 +366,13 @@ app.get('/api/batch/stream', (req, res) => {
     if (res.flush) res.flush()
   }
 
-  // Обрабатываем батч с callback и опциями abort
-  processBatch(numbers, action, log, onProgress, { onAbort: checkAbort })
+  // Флаг: завершён ли ответ (чтобы отличать premature close от нормального)
+  let responseEnded = false
+
+  // Обрабатываем батч с callback и опциями abort и checkResults
+  processBatch(numbers, action, log, onProgress, { onAbort: checkAbort, checkResults: req.body.checkData || null })
     .then((result) => {
+      responseEnded = true
       // Если прервано - отправляем событие abort
       if (result.aborted) {
         res.write(
@@ -391,16 +390,21 @@ app.get('/api/batch/stream', (req, res) => {
       res.end()
     })
     .catch((e) => {
+      responseEnded = true
       log(`SSE batch error: ${e.message}`)
-      res.write(`data: ${JSON.stringify({ type: 'error', error: e.message })}\n\n`)
+      try { res.write(`data: ${JSON.stringify({ type: 'error', error: e.message })}\n\n`) } catch (_) {}
       res.end()
     })
 
-  // Cleanup при disconnect - устанавливаем флаг abort
-  req.on('close', () => {
-    log('SSE batch: client disconnected, setting abort flag')
-    if (abortId) {
-      abortSignals.set(abortId, true)
+  // Cleanup при disconnect - используем res.on('close'), а не req.on('close')
+  // req.on('close') для POST срабатывает преждевременно (Node.js autoDestroy после чтения тела),
+  // res.on('close') срабатывает при реальном отключении клиента.
+  res.on('close', () => {
+    if (!responseEnded) {
+      log('SSE batch: client disconnected, setting abort flag')
+      if (abortId) {
+        abortSignals.set(abortId, true)
+      }
     }
   })
 })

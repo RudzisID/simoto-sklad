@@ -1,70 +1,15 @@
 {
   "version": "1.0",
-  "last_updated": "2026-05-09T12:00:00Z",
+  "last_updated": "2026-05-09T00:00:00Z",
   "libraries": {
-    "express": {
-      "files": [
-        {
-          "filename": "getting-started.md",
-          "topic": "getting-started",
-          "tech_stack": "Node.js",
-          "fetched": "2026-05-09T12:00:00Z",
-          "source": "Official docs"
-        }
-      ]
-    },
     "moysklad": {
       "files": [
         {
-          "filename": "api-overview.md",
-          "topic": "api-overview",
-          "tech_stack": "Node.js",
-          "fetched": "2026-05-09T12:00:00Z",
-          "source": "npm registry + GitHub"
-        }
-      ]
-    },
-    "dotenv": {
-      "files": [
-        {
-          "filename": "configuration.md",
-          "topic": "configuration",
-          "tech_stack": "Node.js",
-          "fetched": "2026-05-09T12:00:00Z",
-          "source": "GitHub README"
-        }
-      ]
-    },
-    "jest": {
-      "files": [
-        {
-          "filename": "getting-started.md",
-          "topic": "getting-started",
-          "tech_stack": "Node.js",
-          "fetched": "2026-05-09T12:00:00Z",
-          "source": "Official docs"
-        }
-      ]
-    },
-    "eslint": {
-      "files": [
-        {
-          "filename": "getting-started.md",
-          "topic": "getting-started",
-          "tech_stack": "Node.js",
-          "fetched": "2026-05-09T12:00:00Z",
-          "source": "Official docs"
-        }
-      ]
-    },
-    "prettier": {
-      "files": [
-        {
-          "filename": "overview.md",
-          "topic": "overview",
-          "tech_stack": "Node.js",
-          "fetched": "2026-05-09T12:00:00Z",
-          "source": "Official docs"
+          "filename": "rate-limits-and-throttling.md",
+          "topic": "API rate limits and throttling",
+          "fetched": "2026-05-09T00:00:00Z",
+          "source": "Official MoySklad API docs + community analysis",
+          "official_docs": "https://dev.moysklad.ru/workbook/tag_api.html"
         }
       ]
     }
