@@ -45,7 +45,8 @@ jest.mock('../lib/constants', () => ({
 
 // Mock order module (for getOrderFullForCreate)
 jest.mock('../lib/order', () => ({
-  getOrderFullForCreate: jest.fn()
+  getOrderFullForCreate: jest.fn(),
+  invalidateReturnsCache: jest.fn()
 }))
 
 describe('return.js', () => {

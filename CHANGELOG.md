@@ -1,23 +1,27 @@
 # Changelog
 
-## [1.3.2] - 2026-05-04
+## [Unreleased]
 
 ### Added
-- **V2 Complete**: Tests (38 tests, 5 suites), ESLint + Prettier, JSDoc types
-- Graphify integration for code knowledge graph visualization
-- WB/Ozon sync documentation (docs/integrations/wb_ozon_sync.md)
+- **OpenAPI/Swagger спецификация**: Создан `docs/openapi.yaml` с полным описанием API
+- **Централизованная обработка ошибок**: Добавлен error handler middleware в `server.js`
+
+### Fixed
+- **SSE disconnect handling**: Исправлена обработка отключения клиента (добавлен флаг `serverClosed`)
+- **Сортировка таблицы**: Исправлена логика сортировки булевых колонок (true наверху при asc=true)
+- **Отображение сумм в таблице**: Исправлено отображение сумм оплат и возвратов (вместо номеров документов)
+- **Калькулятор**: Добавлено логирование для отладки `returnSum` в `lib/check.js`
 
 ### Changed
-- Code quality improvements (linting, formatting)
-- Added JSDoc types to lib/payment.js, lib/order.js, lib/batch.js
-- Created lib/types.js with typedefs for Order, Demand, Payment, APIResponse
+- **UI таблицы**: `renderTable()` и `appendOrderRow()` теперь используют `paymentDisplay` и `returnDisplay`
+- **SSE логика**: В `lib/batch.js` добавлена функция очистки abort signals
 
 ### Technical Details
-- V2 execution checklist completed (see docs/adr/v2-execution.md)
-- ESLint v10+ config (eslint.config.js)
-- Prettier config (.prettierrc)
+- `server.js`: Добавлен centralized error handler (4 параметра: err, req, res, next)
+- `docs/openapi.yaml`: Полная спецификация OpenAPI 3.0.0 на основе `docs/API.md`
+- `server.js`: Закомментированный код для подключения Swagger UI (требуется `npm install swagger-jsdoc swagger-ui-express`)
 
-## [Unreleased]
+## [1.3.2] - 2026-05-04
 
 ### Fixed
 - **Счетчики в блоке "Текущее состояние" больше не "замерзают"** при сканировании и массовых операциях

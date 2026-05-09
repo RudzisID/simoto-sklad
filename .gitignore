@@ -7,6 +7,14 @@ update.zip
 simoto-sklad-main/logs/
 .opencode/
 tmp/
+.tmp/
+.gitattributes
+.gitignore
+.opencodeignore
+.prettierrc
+AGENTS.md
+CHANGELOG.md
+test/
 
 # API Documentation (external libraries)
 .opencode/api-docs/

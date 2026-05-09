@@ -39,6 +39,8 @@ function makeRequest(options, postData = null) {
 /**
  * Wildberries: Search product by article (OEM)
  * Docs: https://dev.wildberries.ru/openapi/work-with-products/
+ * Endpoint: POST /content/v2/get/cards/list
+ * Search: textSearch (exact vendorCode match)
  */
 async function fetchWBData(codes, token) {
   if (!token) return codes.map(code => ({ code, error: 'No WB token' }))
@@ -47,17 +49,22 @@ async function fetchWBData(codes, token) {
   
   for (const code of codes) {
     try {
-      // WB API: Use 'find' parameter for searching by article/barcode
+      // WB Content API: correct endpoint and structure
       const body = JSON.stringify({
-        'filter': {
-          'find': code // Search by article or barcode
-        },
-        'limit': 10
+        settings: {
+          filter: {
+            textSearch: code,  // Exact vendorCode match only
+            withPhoto: -1       // Return all cards regardless of photo status
+          },
+          cursor: {
+            limit: 10
+          }
+        }
       })
       
       const options = {
-        hostname: 'content-api.wildberries.ru', // Content API domain
-        path: '/api/v2/list/goods/filter',
+        hostname: 'content-api.wildberries.ru',
+        path: '/content/v2/get/cards/list',  // Correct endpoint for searching by vendorCode
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -65,11 +72,11 @@ async function fetchWBData(codes, token) {
         }
       }
       
-      console.log(`WB Search Request for ${code}:`, { hostname: options.hostname, path: options.path, body: JSON.parse(body) })
+      console.log(`WB Search for ${code}:`, { endpoint: options.path, textSearch: code })
       
       const response = await makeRequest(options, body)
       
-      console.log(`WB API Full Response for ${code}:`, JSON.stringify(response))
+      console.log(`WB API Full Response for ${code}:`, JSON.stringify(response).substring(0, 1000))
       
       // Check HTTP status
       if (response.status !== 200) {
@@ -81,16 +88,20 @@ async function fetchWBData(codes, token) {
         continue
       }
       
-      // Check response structure
-      const items = response.body?.data?.list || []
+      // WB API response structure: { cards: [...] }
+      const cards = response.body?.cards || []
       
-      if (items.length > 0) {
-        const found = items[0]
+      if (cards.length > 0) {
+        const found = cards[0]
+        // Price and stock are in sizes array
+        // WB API returns price in cents (like MS), need to divide by 100
+        const firstSize = found.sizes?.[0] || {}
+        const wbPrice = firstSize.price ? firstSize.price / 100 : 0
         results.push({
-          code: found.vendorCode || found.article || code,
-          title: found.name || 'N/A',
-          price: found.price || 0,
-          stock: (found.stocks || []).reduce((sum, s) => sum + (s.quantity || 0), 0),
+          code: found.vendorCode || code,
+          title: found.title || 'N/A',
+          price: wbPrice,
+          stock: (found.sizes || []).reduce((sum, s) => sum + (s.quantity || 0), 0),
           site: 'Wildberries',
           vendorCode: found.vendorCode || '',
           brand: found.brand || '',
@@ -99,8 +110,8 @@ async function fetchWBData(codes, token) {
       } else {
         results.push({ 
           code, 
-          error: 'Not found in WB', 
-          details: response.body 
+          error: 'Not found in WB',
+          details: 'Product not found. Verify vendorCode exists and is not in trash. Try checking WB cabinet.'
         })
       }
     } catch (e) {

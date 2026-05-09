@@ -22,6 +22,7 @@ jest.mock('../lib/order', () => ({
   getOrderFull: jest.fn(),
   getOrderFullForCreate: jest.fn(),
   getDemand: jest.fn(),
+  findSalesReturnsByDemand: jest.fn(),
   findSalesReturnsByDemand_v2: jest.fn()
 }))
 

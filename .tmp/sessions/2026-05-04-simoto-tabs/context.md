@@ -52,3 +52,13 @@ Status: in_progress
 - [x] Удален дублирующий ввод токена на вкладке "Склад".
 - [x] Модальное окно "Токены" обновлено (разделены поля для Ozon).
 - [x] Исправлена работа сканирования на вкладке "Склад" (токен берется из localStorage).
+
+## Test Data
+- **WB Test Article**: `0180-011300-0b00` (vendorCode format, contains letters/hyphens)
+
+## Fixes Applied (2026-05-07)
+- [x] Fixed WB API endpoint: `/content/v2/get/cards/list` (was `/api/v2/list/goods/filter`)
+- [x] Fixed WB request structure: `settings.filter.textSearch` (was `filter.vendorCode/barcode/find`)
+- [x] Fixed WB response parsing: `response.body.cards` (was `response.body.data.list`)
+- [x] Fixed WB product fields: `title`, `sizes[].price`, `sizes[].quantity` (was `name`, `price`, `stocks`)
+- [x] Updated documentation: `.opencode/context/external/wildberries-api.md`

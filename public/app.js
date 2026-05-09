@@ -450,9 +450,9 @@ function getSortedOrders() {
       // Сортировка по булевым полям: false < true
       va = a[col] ? 1 : 0
       vb = b[col] ? 1 : 0
-    } else if (col === 'sum') {
-      va = Number(a.sum) || 0
-      vb = Number(b.sum) || 0
+    } else if (col === 'sum' || col === 'paid' || col === 'returnSum') {
+      va = Number(a[col]) || 0
+      vb = Number(b[col]) || 0
     } else {
       va = String(a[col] || '').toLowerCase()
       vb = String(b[col] || '').toLowerCase()
@@ -468,11 +468,14 @@ function getSortedOrders() {
 function toggleAll(checked) {
   ordersData.forEach(o => o.enabled = checked)
   renderTable()
+  updateTotals()
+  renderCurrentStats()
 }
 
 function toggleEnabled(index) {
   ordersData[index].enabled = !ordersData[index].enabled
   updateTotals()
+  renderCurrentStats()
 }
 
 // Check numbers
@@ -736,7 +739,7 @@ function renderTable() {
   const pageOrders = sorted.slice(start, end)
 
   if (pageOrders.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" class="empty">Нет данных для текущей страницы</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">Нет данных для текущей страницы</td></tr>'
     return
   }
 
@@ -745,12 +748,14 @@ function renderTable() {
     // Используем индекс внутри всей таблицы
     const actualIndex = ordersData.findIndex(o => o.shipmentNum === order.shipmentNum)
 
-    // Номера документов
+    // Номера документов и суммы
     const demandDisplay = order.demandName ? `<span class="doc-number">${order.demandName}</span>` : '<span class="status-no">—</span>'
-    const paymentDisplay = order.paymentName 
-      ? `<span class="doc-number">${order.paymentName}</span><br><span class="payment-sum">${order.paid} ₽</span>` 
+    const paymentDisplay = order.paid 
+      ? `<span class="payment-sum">${order.paid} ₽</span>` 
       : '<span class="status-no">—</span>'
-    const returnDisplay = order.returnName ? `<span class="doc-number">${order.returnName}</span>` : '<span class="status-no">—</span>'
+    const returnDisplay = order.returnSum 
+      ? `<span class="payment-sum">${order.returnSum} ₽</span>` 
+      : '<span class="status-no">—</span>'
 
     // Статус документа - показываем directly из API statusName
     let statusDisplay = ''
@@ -794,7 +799,6 @@ function renderTable() {
             <td class="order-num">${order.extractedShipmentNum || order.shipmentNum}</td>
 <td class="order-name-cell">${order.orderName || '—'}</td>
             <td>${order.sum} ₽</td>
-            <td>${order.paid} ₽</td>
             <td>${demandDisplay}</td>
             <td>${paymentDisplay}</td>
             <td>${returnDisplay}</td>
@@ -812,7 +816,7 @@ function renderTable() {
     if (allPositions.length > 0) {
       const posTr = document.createElement('tr')
       posTr.className = 'positions-row'
-      const cells = '<td colspan="10" class="positions-cell">' +
+      const cells = '<td colspan="9" class="positions-cell">' +
                  allPositions.map(p => {
                   const code = p.code ? `[${p.code}] ` : ''
                   const name = p.name || 'Наименование'
@@ -858,8 +862,12 @@ function appendOrderRow(order) {
   else if (status === 'delayed' || statusName.includes('отсрочк')) cssClass = 'status-delayed'
 
   const demandDisplay = order.demandName ? `<span class="demand-code">${order.demandName}</span>` : '<span class="status-no">—</span>'
-  const paymentDisplay = order.paymentName ? `<span class="doc-number">${order.paymentName}</span>` : '<span class="status-no">—</span>'
-  const returnDisplay = order.returnName ? `<span class="doc-number">${order.returnName}</span>` : '<span class="status-no">—</span>'
+  const paymentDisplay = order.paid 
+    ? `<span class="payment-sum">${order.paid} ₽</span>` 
+    : '<span class="status-no">—</span>'
+  const returnDisplay = order.returnSum 
+    ? `<span class="payment-sum">${order.returnSum} ₽</span>` 
+    : '<span class="status-no">—</span>'
   const displayText = statusName || 'Новый'
   const statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>'
 
@@ -868,7 +876,6 @@ function appendOrderRow(order) {
         <td class="order-num">${order.extractedShipmentNum || order.shipmentNum}</td>
         <td class="order-name-cell">${order.orderName || '—'}</td>
         <td>${order.sum} ₽</td>
-        <td>${order.paid} ₽</td>
         <td>${demandDisplay}</td>
         <td>${paymentDisplay}</td>
         <td>${returnDisplay}</td>
@@ -887,7 +894,7 @@ function appendOrderRow(order) {
   if (allPositions.length > 0) {
     const posTr = document.createElement('tr')
     posTr.className = 'positions-row'
-    const cells = '<td colspan="10" class="positions-cell">' +
+    const cells = '<td colspan="9" class="positions-cell">' +
       allPositions.map(p => {
         const code = p.code ? `[${p.code}] ` : ''
         const name = p.name || 'Наименование'
@@ -950,7 +957,7 @@ function updateTotals() {
 
 // Calculate statistics
 function calculateStats(orderList) {
-  const list = orderList || ordersData
+  const list = (orderList || ordersData).filter(o => o.enabled)
   // Не перерисовываем таблицу тут - только считаем статистику
   const stats = {
     total: list.length,
@@ -990,7 +997,7 @@ function calculateStats(orderList) {
       stats.demandCount++
       stats.demandSum += sum
     }
-    if (o.hasPayment) {
+    if (o.paid > 0) {
       stats.paymentCount++
       stats.paymentSum += (o.paid || 0)
     }
@@ -998,8 +1005,8 @@ function calculateStats(orderList) {
       stats.returnCount++
       // Используем только фактическую сумму возврата, без fallback на всю сумму заказа
       stats.returnSum += Number(o.returnSum) || 0
-    }
-    if (o.isCancelled) {
+    } else if (o.isCancelled) {
+      // Если есть возврат — не дублируем в отменах (иначе сумма заказа считается дважды)
       stats.cancelledCount++
       // Используем сумму отмены (если есть), иначе всю сумму заказа
       stats.cancelledSum += Number(o.cancelledSum) || sum
@@ -1070,8 +1077,8 @@ function renderCurrentStats(force = false) {
     const cancelledSum = stats.cancelledSum || 0
     const paymentSum = stats.paymentSum || 0
         
-    const expectedPayment = demandSum - returnSum - cancelledSum
-    const isMatch = Math.abs(paymentSum - expectedPayment) < 1
+    const totalAccounted = paymentSum + returnSum + cancelledSum
+    const isMatch = Math.abs(demandSum - totalAccounted) < 1
     const matchIcon = isMatch ? '✓' : '✗'
     const matchClass = isMatch ? 'success' : 'error'
         
@@ -1086,22 +1093,22 @@ function renderCurrentStats(force = false) {
             <div class="calculator">
                 <div class="calc-divider"></div>
                 <div class="calc-formula">
-                    <span class="calc-sum">${fmtSum(demandSum)}</span>
-                    <span class="calc-op"> − </span>
+                    <span class="calc-sum">${fmtSum(paymentSum)}</span>
+                    <span class="calc-op"> + </span>
                     <span class="calc-sum">${fmtSum(returnSum)}</span>
-                    <span class="calc-op"> − </span>
+                    <span class="calc-op"> + </span>
                     <span class="calc-sum">${fmtSum(cancelledSum)}</span>
                 </div>
                 <div class="calc-formula">
                     <span class="calc-op">= </span>
-                    <span class="calc-sum">${fmtSum(expectedPayment)}</span>
+                    <span class="calc-sum">${fmtSum(totalAccounted)}</span>
                     <span class="calc-op"> → </span>
-                    <span class="calc-sum">${fmtSum(paymentSum)}</span>
+                    <span class="calc-sum">${fmtSum(demandSum)}</span>
                     <span class="calc-icon ${matchClass}">${matchIcon}</span>
                 </div>
                 ${!isMatch ? `<div class="calc-formula">
                     <span class="calc-op">Разница: </span>
-                    <span class="calc-sum ${matchClass}">${fmtSum(Math.abs(paymentSum - expectedPayment))} ₽</span>
+                    <span class="calc-sum ${matchClass}">${fmtSum(Math.abs(demandSum - totalAccounted))} ₽</span>
                 </div>` : ''}
             </div>
         `

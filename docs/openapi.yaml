@@ -1,0 +1,558 @@
+openapi: 3.0.0
+info:
+  title: SiMOTO-sklad API
+  description: API для автоматизации платежей, отгрузок, возвратов и отмены заказов в МойСклад
+  version: 1.0.0
+  contact:
+    name: RudzisID
+    url: https://github.com/RudzisID/simoto-sklad
+
+servers:
+  - url: http://localhost:3000
+    description: Локальный сервер разработки
+  - url: https://your-production-url.com
+    description: Продакшн сервер
+
+paths:
+  /api/health:
+    get:
+      summary: Проверка работоспособности сервера
+      tags: [Health]
+      responses:
+        '200':
+          description: Сервер работает
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  time:
+                    type: string
+                    format: date-time
+                    example: '2026-04-27T10:30:00.000Z'
+
+  /api/process:
+    post:
+      summary: Проверка списка номеров заказов
+      tags: [Process]
+      security:
+        - ApiToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [numbers]
+              properties:
+                numbers:
+                  type: array
+                  items:
+                    type: string
+                  example: ["0128545550-0011-1", "4965524118"]
+      responses:
+        '200':
+          description: Результаты проверки
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrderCheckResult'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/process/stream:
+    get:
+      summary: SSE стриминг проверки номеров
+      tags: [Process, SSE]
+      security:
+        - ApiToken: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Токен API
+        - name: numbers
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Номера через запятую
+        - name: abortId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: ID для отмены операции
+      responses:
+        '200':
+          description: SSE поток событий
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum: [progress, done, aborted, error]
+                  order:
+                    $ref: '#/components/schemas/OrderCheckResult'
+                  orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OrderCheckResult'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/batch:
+    post:
+      summary: Массовая операция над заказами
+      tags: [Batch]
+      security:
+        - ApiToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [numbers, action]
+              properties:
+                numbers:
+                  type: array
+                  items:
+                    type: string
+                action:
+                  type: string
+                  enum: [demand, payment, return, cancel]
+      responses:
+        '200':
+          description: Результаты операции
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    type: integer
+                  skipped:
+                    type: integer
+                  errors:
+                    type: integer
+                  orders:
+                    type: array
+                    items:
+                      type: object
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/batch/stream:
+    get:
+      summary: SSE стриминг массовой операции
+      tags: [Batch, SSE]
+      security:
+        - ApiToken: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: numbers
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [demand, payment, return, cancel]
+        - name: abortId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE поток событий
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum: [progress, done, aborted, error]
+                  result:
+                    type: object
+                  stats:
+                    type: object
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/create-payment:
+    post:
+      summary: Создание входящего платежа
+      tags: [Actions]
+      security:
+        - ApiToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shipmentNum]
+              properties:
+                shipmentNum:
+                  type: string
+                  example: "0128545550-0011-1"
+      responses:
+        '200':
+          description: Платеж создан
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  paymentName:
+                    type: string
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '400':
+          description: Невозможно создать платеж
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/create-demand:
+    post:
+      summary: Создание отгрузки
+      tags: [Actions]
+      security:
+        - ApiToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shipmentNum]
+              properties:
+                shipmentNum:
+                  type: string
+      responses:
+        '200':
+          description: Отгрузка создана
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  demandName:
+                    type: string
+
+  /api/create-return:
+    post:
+      summary: Создание возврата
+      tags: [Actions]
+      security:
+        - ApiToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shipmentNum]
+              properties:
+                shipmentNum:
+                  type: string
+      responses:
+        '200':
+          description: Возврат создан
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  returnName:
+                    type: string
+
+  /api/cancel-order:
+    post:
+      summary: Отмена заказа
+      tags: [Actions]
+      security:
+        - ApiToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shipmentNum]
+              properties:
+                shipmentNum:
+                  type: string
+      responses:
+        '200':
+          description: Заказ отменен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  status:
+                    type: string
+
+  /api/orders-state:
+    get:
+      summary: Получить состояние всех заказов
+      tags: [State]
+      responses:
+        '200':
+          description: Состояние заказов
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/OrderState'
+
+    post:
+      summary: Сохранить состояние заказов
+      tags: [State]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                orders:
+                  type: array
+                  items:
+                    type: object
+                shipmentNum:
+                  type: string
+                action:
+                  type: string
+                result:
+                  type: string
+      responses:
+        '200':
+          description: Состояние сохранено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+    delete:
+      summary: Очистить состояние заказов
+      tags: [State]
+      responses:
+        '200':
+          description: Состояние очищено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/logs:
+    get:
+      summary: Получить логи за текущий день
+      tags: [Utility]
+      responses:
+        '200':
+          description: Логи
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: string
+                  file:
+                    type: string
+
+  /api/restart:
+    post:
+      summary: Перезапустить сервер
+      tags: [Utility]
+      responses:
+        '200':
+          description: Перезапуск инициирован
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+components:
+  schemas:
+    OrderCheckResult:
+      type: object
+      properties:
+        shipmentNum:
+          type: string
+        orderName:
+          type: string
+        sum:
+          type: number
+          description: Сумма заказа (в рублях)
+        paid:
+          type: number
+          description: Оплачено (в рублях)
+        status:
+          type: string
+          enum: [not_found, new, no_demand, other, shipped, delayed, cancelled, return]
+        statusName:
+          type: string
+        canDemand:
+          type: boolean
+        canPayment:
+          type: boolean
+        canReturn:
+          type: boolean
+        canCancel:
+          type: boolean
+        hasDemand:
+          type: boolean
+        hasPayment:
+          type: boolean
+        hasReturn:
+          type: boolean
+        isCancelled:
+          type: boolean
+        demandName:
+          type: string
+        paymentName:
+          type: string
+        returnName:
+          type: string
+        returnSum:
+          type: number
+          description: Сумма возвратов (в рублях)
+        orderId:
+          type: string
+        orderPositions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Position'
+        demandPositions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Position'
+
+    Position:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: number
+        price:
+          type: number
+          description: Цена (в рублях)
+        sum:
+          type: number
+          description: Сумма (в рублях)
+
+    OrderState:
+      type: object
+      properties:
+        orderName:
+          type: string
+        sum:
+          type: number
+        paid:
+          type: number
+        status:
+          type: string
+        statusName:
+          type: string
+        hasDemand:
+          type: boolean
+        hasPayment:
+          type: boolean
+        hasReturn:
+          type: boolean
+        isCancelled:
+          type: boolean
+        demandName:
+          type: string
+        paymentName:
+          type: string
+        returnName:
+          type: string
+        returnSum:
+          type: number
+        cancelledSum:
+          type: number
+        orderPositions:
+          type: array
+        demandPositions:
+          type: array
+        lastAction:
+          type: string
+        lastResult:
+          type: string
+        lastUpdate:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        statusCode:
+          type: integer
+
+  responses:
+    UnauthorizedError:
+      description: Требуется токен API
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  securitySchemes:
+    ApiToken:
+      type: apiKey
+      in: header
+      name: X-Api-Token
+      description: Токен API МойСклад

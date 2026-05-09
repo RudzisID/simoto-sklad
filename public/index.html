@@ -57,16 +57,15 @@
                                     <th class="sortable" onclick="sortTable('shipmentNum')">№</th>
                                     <th class="sortable order-header" onclick="sortTable('orderName')">Заказ</th>
                                     <th class="sortable" onclick="sortTable('sum')">Сумма</th>
-                                    <th>Опл.</th>
-                                    <th class="sortable" onclick="sortTable('hasDemand')">Отгрузка</th>
-                                    <th class="sortable" onclick="sortTable('hasPayment')">Платёж</th>
-                                    <th class="sortable" onclick="sortTable('hasReturn')">Возврат</th>
+                                    <th class="sortable" onclick="sortTable('demandName')">Отгрузка</th>
+                                    <th class="sortable" onclick="sortTable('paid')">Платёж</th>
+                                    <th class="sortable" onclick="sortTable('returnSum')">Возврат</th>
                                     <th class="sortable" onclick="sortTable('statusName')">Статус</th>
                                     <th>Кнопки</th>
                                 </tr>
                             </thead>
                             <tbody id="tableBody">
-                                <tr><td colspan="10" class="empty">Введите номера и нажмите "Проверить"</td></tr>
+                                <tr><td colspan="9" class="empty">Введите номера и нажмите "Проверить"</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -106,7 +105,7 @@
             <div class="market-search">
                 <p class="hint">Поиск товара по OEM-коду (Код в МС, артикул в WB и Ozon)</p>
                 <div class="search-row">
-                    <input type="text" id="oemSearchInput" placeholder="Введите OEM-код">
+                    <input type="text" id="oemSearchInput" placeholder="Введите OEM-код" value="7020-061600комплект">
                     <button onclick="searchProductByOEM()" class="search-btn">Поиск</button>
                 </div>
                 <div id="marketResults"></div>
@@ -247,50 +246,72 @@
                     throw new Error(data.error || 'Ошибка сервера');
                 }
 
-                // Render results
-                let html = '<div class="product-comparison">';
+                // Render results - Full width 3-column layout
+                let html = '<div class="product-comparison full-width">';
                 
-                // MoySklad Column
+                // MoySklad Column (editable, same level as others)
                 html += '<div class="product-card ms"><h3>МойСклад</h3>';
                 if (data.moysklad) {
                     html += `<p><strong>${data.moysklad.name}</strong></p>`;
                     html += `<p>Код: ${data.moysklad.code}</p>`;
                     if (data.moysklad.article) html += `<p>Артикул: ${data.moysklad.article}</p>`;
-                    html += `<p>Цена: ${data.moysklad.price} руб.</p>`;
-                    html += `<p>Остаток: ${data.moysklad.stock}</p>`;
+                    
+                    // Editable fields for MS (same design as WB/Ozon)
+                    html += '<div class="edit-fields">';
+                    html += `<label>Цена (руб): <input type="number" id="ms-price" value="${data.moysklad.price || 0}" step="0.01" class="edit-input"></label>`;
+                    html += `<label>Остаток: <input type="number" id="ms-stock" value="${data.moysklad.stock || 0}" class="edit-input"></label>`;
+                    html += `<label>Название: <input type="text" id="ms-title" value="${data.moysklad.name || ''}" class="edit-input full-width"></label>`;
+                    html += '</div>';
+                    
+                    html += `<button onclick="pushToMS('${data.moysklad.id}')" class="push-btn ms-btn">📤 Отправить в МС</button>`;
                 } else {
                     html += '<p class="not-found">Товар не найден</p>';
                 }
                 html += '</div>';
 
-                // Wildberries Column
+                // Wildberries Column (editable)
                 html += '<div class="product-card wb"><h3>Wildberries</h3>';
                 if (data.wildberries) {
                     if (data.wildberries.error) {
                         html += `<p class="error">Ошибка: ${data.wildberries.error}</p>`;
                     } else {
-                        html += `<p><strong>${data.wildberries.title}</strong></p>`;
-                        html += `<p>Код: ${data.wildberries.code}</p>`;
-                        if (data.wildberries.vendorCode) html += `<p>Артикул: ${data.wildberries.vendorCode}</p>`;
-                        html += `<p>Цена: ${data.wildberries.price} руб.</p>`;
-                        html += `<p>Остаток: ${data.wildberries.stock}</p>`;
+                        html += `<p><strong>${data.wildberries.title || 'N/A'}</strong></p>`;
+                        html += `<p>Артикул (vendorCode): <strong>${data.wildberries.vendorCode || data.wildberries.code}</strong></p>`;
+                        if (data.wildberries.brand) html += `<p>Бренд: ${data.wildberries.brand}</p>`;
+                        if (data.wildberries.nmID) html += `<p>nmID: ${data.wildberries.nmID}</p>`;
+                        
+                        // Editable fields for WB
+                        html += '<div class="edit-fields">';
+                        html += `<label>Цена (руб): <input type="number" id="wb-price" value="${data.wildberries.price || 0}" step="0.01" class="edit-input"></label>`;
+                        html += `<label>Остаток: <input type="number" id="wb-stock" value="${data.wildberries.stock || 0}" class="edit-input"></label>`;
+                        html += `<label>Название: <input type="text" id="wb-title" value="${data.wildberries.title || ''}" class="edit-input full-width"></label>`;
+                        html += '</div>';
+                        
+                        html += `<button onclick="pushToWB('${data.wildberries.vendorCode || data.wildberries.code}')" class="push-btn wb-btn">📤 Отправить в WB</button>`;
                     }
                 } else {
                     html += '<p class="not-found">Товар не найден</p>';
                 }
                 html += '</div>';
 
-                // Ozon Column
+                // Ozon Column (editable, same design as WB)
                 html += '<div class="product-card ozon"><h3>Ozon</h3>';
                 if (data.ozon) {
                     if (data.ozon.error) {
                         html += `<p class="error">Ошибка: ${data.ozon.error}</p>`;
                     } else {
-                        html += `<p><strong>${data.ozon.title}</strong></p>`;
-                        html += `<p>Код: ${data.ozon.code}</p>`;
+                        html += `<p><strong>${data.ozon.title || 'N/A'}</strong></p>`;
+                        html += `<p>Код (offer_id): <strong>${data.ozon.code}</strong></p>`;
                         if (data.ozon.sku) html += `<p>SKU: ${data.ozon.sku}</p>`;
-                        html += `<p>Цена: ${data.ozon.price} руб.</p>`;
-                        html += `<p>Остаток: ${data.ozon.stock}</p>`;
+                        
+                        // Editable fields for Ozon (same design as WB)
+                        html += '<div class="edit-fields">';
+                        html += `<label>Цена (руб): <input type="number" id="ozon-price" value="${data.ozon.price || 0}" step="0.01" class="edit-input"></label>`;
+                        html += `<label>Остаток: <input type="number" id="ozon-stock" value="${data.ozon.stock || 0}" class="edit-input"></label>`;
+                        html += `<label>Название: <input type="text" id="ozon-title" value="${data.ozon.title || ''}" class="edit-input full-width"></label>`;
+                        html += '</div>';
+                        
+                        html += `<button onclick="pushToOzon('${data.ozon.code}')" class="push-btn ozon-btn">📤 Отправить в Ozon</button>`;
                     }
                 } else {
                     html += '<p class="not-found">Товар не найден</p>';
@@ -302,6 +323,152 @@
 
             } catch (error) {
                 resultsDiv.innerHTML = `<div class="search-status error">Ошибка: ${error.message}</div>`;
+            }
+        }
+        
+        // Push updated data to MoySklad
+        async function pushToMS(productId) {
+            if (!productId) return;
+            
+            const price = parseFloat(document.getElementById('ms-price').value) || 0;
+            const stock = parseInt(document.getElementById('ms-stock').value) || 0;
+            const title = document.getElementById('ms-title').value.trim();
+            
+            const resultsDiv = document.getElementById('marketResults');
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'search-status';
+            statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в МойСклад...';
+            resultsDiv.prepend(statusDiv);
+            
+            try {
+                const msToken = localStorage.getItem('ms_token') || '';
+                if (!msToken) throw new Error('Нет токена МойСклад');
+                
+                const response = await fetch(`/api/market/push/ms`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-api-token': msToken
+                    },
+                    body: JSON.stringify({
+                        productId: productId,
+                        price: price,
+                        stock: stock,
+                        title: title
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
+                
+                statusDiv.className = 'search-status success';
+                statusDiv.innerHTML = `✅ Данные успешно отправлены в МойСклад`;
+                
+                // Refresh search after 2 seconds
+                setTimeout(() => searchProductByOEM(), 2000);
+                
+            } catch (error) {
+                statusDiv.className = 'search-status error';
+                statusDiv.innerHTML = `❌ Ошибка отправки в МойСклад: ${error.message}`;
+            }
+        }
+        
+        // Push updated data to Wildberries
+        async function pushToWB(vendorCode) {
+            if (!vendorCode) return;
+            
+            const price = parseFloat(document.getElementById('wb-price').value) || 0;
+            const stock = parseInt(document.getElementById('wb-stock').value) || 0;
+            const title = document.getElementById('wb-title').value.trim();
+            
+            const resultsDiv = document.getElementById('marketResults');
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'search-status';
+            statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в WB...';
+            resultsDiv.prepend(statusDiv);
+            
+            try {
+                const wbToken = localStorage.getItem('wb_token') || '';
+                if (!wbToken) throw new Error('Нет токена WB');
+                
+                const response = await fetch('/api/market/push/wb', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-wb-token': wbToken
+                    },
+                    body: JSON.stringify({
+                        vendorCode: vendorCode,
+                        price: price,
+                        stock: stock,
+                        title: title
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
+                
+                statusDiv.className = 'search-status success';
+                statusDiv.innerHTML = `✅ Данные успешно отправлены в WB для ${vendorCode}`;
+                
+                // Refresh search after 2 seconds
+                setTimeout(() => searchProductByOEM(), 2000);
+                
+            } catch (error) {
+                statusDiv.className = 'search-status error';
+                statusDiv.innerHTML = `❌ Ошибка отправки в WB: ${error.message}`;
+            }
+        }
+        
+        // Push updated data to Ozon
+        async function pushToOzon(offerId) {
+            if (!offerId) return;
+            
+            const price = parseFloat(document.getElementById('ozon-price').value) || 0;
+            const stock = parseInt(document.getElementById('ozon-stock').value) || 0;
+            const title = document.getElementById('ozon-title').value.trim();
+            
+            const resultsDiv = document.getElementById('marketResults');
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'search-status';
+            statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в Ozon...';
+            resultsDiv.prepend(statusDiv);
+            
+            try {
+                const ozonClientId = localStorage.getItem('ozon_client_id') || '';
+                const ozonApiKey = localStorage.getItem('ozon_api_key') || '';
+                if (!ozonClientId || !ozonApiKey) throw new Error('Нет ключей Ozon');
+                
+                const response = await fetch('/api/market/push/ozon', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-ozon-client-id': ozonClientId,
+                        'x-ozon-api-key': ozonApiKey
+                    },
+                    body: JSON.stringify({
+                        offerId: offerId,
+                        price: price,
+                        stock: stock,
+                        title: title
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
+                
+                statusDiv.className = 'search-status success';
+                statusDiv.innerHTML = `✅ Данные успешно отправлены в Ozon для ${offerId}`;
+                
+                // Refresh search after 2 seconds
+                setTimeout(() => searchProductByOEM(), 2000);
+                
+            } catch (error) {
+                statusDiv.className = 'search-status error';
+                statusDiv.innerHTML = `❌ Ошибка отправки в Ozon: ${error.message}`;
             }
         }
     </script>

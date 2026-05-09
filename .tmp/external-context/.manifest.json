@@ -1,110 +1,70 @@
 {
   "version": "1.0",
-  "last_updated": "2026-05-04T12:00:00Z",
+  "last_updated": "2026-05-09T12:00:00Z",
   "libraries": {
-    "moysklad-api-1.2": {
+    "express": {
       "files": [
         {
-          "filename": "sticker-printing.md",
-          "topic": "sticker printing",
-          "tech_stack": "Moysklad",
-          "fetched": "2026-01-30T10:30:00Z",
-          "source": "Context7 API"
-        },
-        {
-          "filename": "salesreturn-create.md",
-          "topic": "sales return creation",
-          "tech_stack": "Moysklad",
-          "fetched": "2026-01-30T10:30:00Z",
-          "source": "Context7 API"
-        },
-        {
-          "filename": "sales-channel.md",
-          "topic": "sales channels",
-          "tech_stack": "Moysklad",
-          "fetched": "2026-01-30T10:30:00Z",
-          "source": "Context7 API"
-        },
-        {
-          "filename": "paymentin-create.md",
-          "topic": "payment in creation",
-          "tech_stack": "Moysklad",
-          "fetched": "2026-01-30T10:30:00Z",
-          "source": "Context7 API"
-        },
-        {
-          "filename": "error-handling.md",
-          "topic": "error handling",
-          "tech_stack": "Moysklad",
-          "fetched": "2026-01-30T10:30:00Z",
-          "source": "Context7 API"
-        },
-        {
-          "filename": "demand-create.md",
-          "topic": "demand creation",
-          "tech_stack": "Moysklad",
-          "fetched": "2026-01-30T10:30:00Z",
-          "source": "Context7 API"
-        },
-        {
-          "filename": "customerorder-cancel.md",
-          "topic": "customer order cancel",
-          "tech_stack": "Moysklad",
-          "fetched": "2026-01-30T10:30:00Z",
-          "source": "Context7 API"
-        },
-        {
-          "filename": "attributes-update.md",
-          "topic": "attributes update",
-          "tech_stack": "Moysklad",
-          "fetched": "2026-01-30T10:30:00Z",
-          "source": "Context7 API"
+          "filename": "getting-started.md",
+          "topic": "getting-started",
+          "tech_stack": "Node.js",
+          "fetched": "2026-05-09T12:00:00Z",
+          "source": "Official docs"
         }
       ]
     },
-    "wildberries-api": {
+    "moysklad": {
+      "files": [
+        {
+          "filename": "api-overview.md",
+          "topic": "api-overview",
+          "tech_stack": "Node.js",
+          "fetched": "2026-05-09T12:00:00Z",
+          "source": "npm registry + GitHub"
+        }
+      ]
+    },
+    "dotenv": {
+      "files": [
+        {
+          "filename": "configuration.md",
+          "topic": "configuration",
+          "tech_stack": "Node.js",
+          "fetched": "2026-05-09T12:00:00Z",
+          "source": "GitHub README"
+        }
+      ]
+    },
+    "jest": {
+      "files": [
+        {
+          "filename": "getting-started.md",
+          "topic": "getting-started",
+          "tech_stack": "Node.js",
+          "fetched": "2026-05-09T12:00:00Z",
+          "source": "Official docs"
+        }
+      ]
+    },
+    "eslint": {
+      "files": [
+        {
+          "filename": "getting-started.md",
+          "topic": "getting-started",
+          "tech_stack": "Node.js",
+          "fetched": "2026-05-09T12:00:00Z",
+          "source": "Official docs"
+        }
+      ]
+    },
+    "prettier": {
       "files": [
         {
           "filename": "overview.md",
           "topic": "overview",
-          "tech_stack": "Wildberries Seller API",
-          "fetched": "2026-05-04T12:00:00Z",
-          "source": "Official Wildberries Documentation + Web Search"
-        },
-        {
-          "filename": "authentication.md",
-          "topic": "authentication",
-          "tech_stack": "Wildberries Seller API",
-          "fetched": "2026-05-04T12:00:00Z",
-          "source": "Official Wildberries Documentation + Web Search"
-        },
-        {
-          "filename": "endpoints.md",
-          "topic": "endpoints",
-          "tech_stack": "Wildberries Seller API",
-          "fetched": "2026-05-04T12:00:00Z",
-          "source": "Official Wildberries Documentation + Web Search"
-        },
-        {
-          "filename": "rate-limits.md",
-          "topic": "rate limits",
-          "tech_stack": "Wildberries Seller API",
-          "fetched": "2026-05-04T12:00:00Z",
-          "source": "Official Wildberries Documentation"
-        },
-        {
-          "filename": "examples.md",
-          "topic": "examples",
-          "tech_stack": "Wildberries Seller API",
-          "fetched": "2026-05-04T12:00:00Z",
-          "source": "Official Wildberries Documentation + Web Search"
-        },
-        {
-          "filename": "openapi-specs.md",
-          "topic": "openapi specs",
-          "tech_stack": "Wildberries Seller API",
-          "fetched": "2026-05-04T12:00:00Z",
-          "source": "Official Wildberries Documentation + Web Search"
+          "tech_stack": "Node.js",
+          "fetched": "2026-05-09T12:00:00Z",
+          "source": "Official docs"
         }
       ]
     }
