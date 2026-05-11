@@ -3,8 +3,14 @@ set "_batfile=%~f0"
 setlocal enabledelayedexpansion
 title SiMOTO-Sklad
 
-:: Переход в директорию скрипта (чтобы git команды работали корректно)
+:: Переход в директорию скрипта
 cd /d "%~dp0"
+
+:: ANSI цвета (через ESC-символ из PowerShell)
+for /f %%a in ('powershell -NoProfile -Command "[char]27"') do set "ESC=%%a"
+set "GREEN=%ESC%[92m"
+set "RED=%ESC%[91m"
+set "RESET=%ESC%[0m"
 
 echo.
 echo ===============================================
@@ -54,38 +60,53 @@ echo [i] Current version: %curver%
 echo.
 echo [i] Checking for updates...
 node scripts/check-update.js %curver% > "%TEMP%\ver_check.txt" 2>&1
-if exist "%TEMP%\ver_check.txt" (
-  findstr /C:"New version available" "%TEMP%\ver_check.txt" >nul 2>&1
-  if !errorlevel! EQU 0 (
-    echo [i] New version available!
-    choice /t 5 /c yn /d n /n /m "Update now? (y/n) [5s]: "
-    if !errorlevel! EQU 1 (
-      echo [i] Updating...
-      cd /d "%~dp0"
-      if not exist ".git" (
-          echo [X] Not a git repository!
-          pause
-          exit /b 1
-      )
-      git pull origin main
-      if errorlevel 1 (
-        echo [X] Update failed! Check git configuration.
-        del "%TEMP%\ver_check.txt" >nul 2>&1
-        pause
-        exit /b 1
-      )
-      echo [OK] Updated! Restarting...
-      del "%TEMP%\ver_check.txt" >nul 2>&1
-      cmd /c start "" "%_batfile%"
-      exit /b 0
-    ) else (
-      echo [i] Update skipped. Starting current version...
-      del "%TEMP%\ver_check.txt" >nul 2>&1
-    )
-  )
+if not exist "%TEMP%\ver_check.txt" goto start_server
+
+findstr /C:"New version available" "%TEMP%\ver_check.txt" >nul 2>&1
+if errorlevel 1 goto skip_update
+
+:: Extract tag name (e.g. TAG_NAME=v1.4.0)
+for /f "tokens=2 delims==" %%a in ('findstr /C:"TAG_NAME" "%TEMP%\ver_check.txt"') do set "NEW_TAG=%%a"
+
+:update_prompt
+echo.
+echo %GREEN%[i] Рекомендуется установить обновление%RESET%
+set "update_choice="
+set /p "update_choice=%GREEN%y%RESET%/%GREEN%да%RESET% / %RED%n%RESET%/%RED%нет%RESET%: "
+
+:: Normalize input: y/yes/да → y, n/no/нет/н → n
+if /i "!update_choice!"=="y"   set "update_choice=y"
+if /i "!update_choice!"=="yes" set "update_choice=y"
+if /i "!update_choice!"=="да"  set "update_choice=y"
+if /i "!update_choice!"=="n"   set "update_choice=n"
+if /i "!update_choice!"=="no"  set "update_choice=n"
+if /i "!update_choice!"=="нет" set "update_choice=n"
+if /i "!update_choice!"=="н"   set "update_choice=n"
+
+if not defined update_choice goto update_prompt
+if "!update_choice!"=="y" goto do_update
+if "!update_choice!"=="n" goto skip_update
+goto update_prompt
+
+:do_update
+del "%TEMP%\ver_check.txt" >nul 2>&1
+echo.
+echo [i] Updating to version !NEW_TAG!...
+node scripts/update.js !NEW_TAG!
+if errorlevel 1 (
+    echo [X] Update failed!
+    pause
+    exit /b 1
 )
+echo [OK] Updated! Restarting...
+cmd /c start "" "%_batfile%"
+exit /b 0
+
+:skip_update
+echo [i] Update skipped. Starting current version...
 del "%TEMP%\ver_check.txt" >nul 2>&1
 
+:start_server
 :: Start server
 echo.
 echo [i] Starting server...

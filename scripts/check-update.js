@@ -37,6 +37,7 @@ https.get(options, (res) => {
       }
       const latestVersion = release.tag_name.replace('v', '')
       console.log('Latest: ' + release.tag_name)
+      console.log('TAG_NAME=' + release.tag_name)
       if (currentVersion !== latestVersion) {
         console.log('New version available!')
         console.log('NEW_AVAILABLE=true')
