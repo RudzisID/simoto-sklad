@@ -68,9 +68,9 @@ for /f "tokens=2 delims==" %%a in ('findstr /C:"TAG_NAME" "%TEMP%\ver_check.txt"
 
 :update_prompt
 echo.
-%PSCMD% "Write-Host '[i] Рекомендуется установить обновление' -ForegroundColor Green"
+%PSCMD% "Write-Host '[i] Update recommended' -ForegroundColor Green"
 set "update_choice="
-%PSCMD% -NoProfile -Command "Write-Host 'y' -ForegroundColor Green -NoNewline; Write-Host '/' -NoNewline; Write-Host 'да' -ForegroundColor Green -NoNewline; Write-Host ' / ' -NoNewline; Write-Host 'n' -ForegroundColor Red -NoNewline; Write-Host '/' -NoNewline; Write-Host 'нет' -ForegroundColor Red -NoNewline; Write-Host ': ' -NoNewline"
+%PSCMD% "Write-Host 'y' -ForegroundColor Green -NoNewline; Write-Host '/' -NoNewline; Write-Host 'да' -ForegroundColor Green -NoNewline; Write-Host ' / ' -NoNewline; Write-Host 'n' -ForegroundColor Red -NoNewline; Write-Host '/' -NoNewline; Write-Host 'нет' -ForegroundColor Red -NoNewline; Write-Host ': ' -NoNewline"
 set /p "update_choice="
 
 :: Normalize input: y/yes/да → y, n/no/нет/н → n
