@@ -36,3 +36,22 @@ github-push.bat
 
 # Кэш приложения
 cache/
+
+# Внутренние dev-документы (не для пользователей)
+docs/adr/
+docs/ARCHITECTURE.md
+docs/MAINTENANCE.md
+docs/frontend/
+docs/lib/
+docs/scripts/
+docs/account-metadata.md
+
+# Dev-инструменты
+eslint.config.js
+jest.config.js
+
+# Dev-скрипты (не для пользователей)
+scripts/auto-push.js
+scripts/create-release.js
+scripts/docs-generator.js
+scripts/rename-communities*.js

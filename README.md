@@ -51,18 +51,14 @@ npm start
 ```
 SiMOTO-sklad/
 ├── simoto-sklad.bat    # Launcher (Windows) — запуск с проверкой обновлений
-├── github-push.bat    # Push (Windows) — коммит и пуш на GitHub с релизом
 ├── package.json       # Зависимости и скрипты
 ├── .env               # Переменные окружения (токены)
 ├── .gitignore         # Git ignore
-├── .opencodeignore    # OpenCode ignore
 ├── server.js          # Express сервер, все API эндпойнты
 │
-├── scripts/           # Автоматизация
-│   ├── auto-push.js   # Автопуш с версионированием
-│   ├── docs-generator.js  # Генератор документации
+├── scripts/           # Служебные скрипты
 │   ├── check-update.js    # Проверка обновлений GitHub
-│   └── create-release.js # Создание GitHub release
+│   └── update.js          # Обновление приложения
 │
 ├── lib/               # Бизнес-логика
 │   ├── moysklad.js    # Баррел — экспорт всех модулей
@@ -77,12 +73,9 @@ SiMOTO-sklad/
 │   └── constants.js # UUID статусов и атрибутов
 │
 ├── integrations/      # Интеграции
-│   └── wb_ozon_sync.js # Синхронизация WB/Ozon (скелет)
+│   └── wb_ozon_sync.js # Синхронизация WB/Ozon
 │
-├── public/            # Фронтенд (Vanilla JS, dark theme)
-├── logs/             # Логи и состояния
-├── docs/             # Автогенерированная документация
-└── test/            # Тесты (Jest)
+└── public/            # Фронтенд (Vanilla JS, dark theme)
 ```
 
 ## API эндпойнты
@@ -143,12 +136,6 @@ SiMOTO-sklad/
 
 ```bash
 npm start        # Запуск сервера
-npm test        # Запуск тестов
-npm run docs     # Генерация документации
-npm run push     # Пуш с патч-версией
-npm run push:minor  # Пуш с минорной версией
-npm run push:major  # Пуш с мажорной версией
-npm run push:auto # Автоматический пуш
 ```
 
 ## Зависимости
@@ -163,20 +150,7 @@ npm run push:auto # Автоматический пуш
 ## Документация
 
 - [API.md](docs/API.md) — Документация всех эндпойнтов
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — Архитектура системы
-- [MAINTENANCE.md](docs/MAINTENANCE.md) — Руководство по поддержке документации
-- [lib/](docs/lib/) — Описание каждого модуля
-  - [product.md](docs/lib/product.md) — Поиск товаров
-  - [print.md](docs/lib/print.md) — Печать этикеток
-- [scripts/](docs/scripts/) — Скрипты автоматизации
-  - [auto-push.md](docs/scripts/auto-push.md) — Автопуш на GitHub
-  - [docs-generator.md](docs/scripts/docs-generator.md) — Генератор документации
-- [integrations/](docs/integrations/) — Интеграции
-  - [wb_ozon_sync.md](docs/integrations/wb_ozon_sync.md) — Синхронизация WB/Ozon
-- [frontend/](docs/frontend/) — Фронтенд
-  - [app.md](docs/frontend/app.md) — Логика веб-интерфейса
-- [PLAN.md](PLAN.md) — План и структура проекта
-- [INSTRUCTION.md](INSTRUCTION.md) — Подробная инструкция
+- [Интеграции](docs/integrations/) — Синхронизация WB/Ozon
 
 ## Лицензия
 
