@@ -24,3 +24,15 @@ test/
 
 # Graphify output
 graphify-out/
+
+# Внутренние/разработческие файлы (не для GitHub)
+INSTRUCTION.md
+PLAN.md
+CHANGELOG.md
+AGENTS.md
+github-push.bat
+.prettierrc
+.opencodeignore
+
+# Кэш приложения
+cache/

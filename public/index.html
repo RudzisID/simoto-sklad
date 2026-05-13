@@ -201,18 +201,21 @@
         <div class="modal-body sticker-modal-body">
           <div class="sticker-field">
             <label for="stickerCarrier">Служба доставки</label>
+            <select id="stickerCarrier">
+              <option value="">— Выберите —</option>
+              <option value="СДЭК">СДЭК</option>
+              <option value="Почта">Почта</option>
+              <option value="Яндекс">Яндекс</option>
+              <option value="Авито">Авито</option>
+              <option value="__other__">Другое...</option>
+            </select>
             <input
               type="text"
-              id="stickerCarrier"
-              list="carrierList"
-              placeholder="СДЭК, Почта, Яндекс, Авито..."
+              id="stickerCarrierCustom"
+              class="sticker-carrier-custom"
+              placeholder="Введите службу доставки..."
+              style="display: none"
             />
-            <datalist id="carrierList">
-              <option value="СДЭК"></option>
-              <option value="Почта"></option>
-              <option value="Яндекс"></option>
-              <option value="Авито"></option>
-            </datalist>
           </div>
           <div class="sticker-field sticker-checkbox-row">
             <label class="sticker-checkbox">
@@ -248,6 +251,7 @@
     <span id="statusText" style="display: none">Готов</span>
     <span id="statusDot" style="display: none"></span>
 
+    <script src="sticker.js"></script>
     <script src="app.js"></script>
     <script>
       // Tab switching logic
@@ -303,29 +307,43 @@
 
         // Sticker modal
         const stickerModal = document.getElementById('stickerModal');
-        const stickerCarrier = document.getElementById('stickerCarrier');
+        const stickerSelect = document.getElementById('stickerCarrier');
+        const stickerCustom = document.getElementById('stickerCarrierCustom');
         const stickerAvito = document.getElementById('stickerAvito');
 
-        // Когда выбираем "Авито" как службу — автоматически снимаем чекбокс
-        stickerCarrier.addEventListener('input', () => {
-          if (stickerCarrier.value.trim() === 'Авито') {
+        function updateStickerAvitoState() {
+          var carrier = stickerSelect.value;
+          if (carrier === '__other__') {
+            carrier = stickerCustom.value.trim();
+          }
+          if (carrier === 'Авито') {
             stickerAvito.checked = false;
             stickerAvito.disabled = true;
           } else {
             stickerAvito.disabled = false;
           }
-        });
-        // При загрузке проверить начальное значение
-        if (stickerCarrier.value.trim() === 'Авито') {
-          stickerAvito.disabled = true;
         }
 
-        document.getElementById('stickerCancel').addEventListener('click', () => {
+        // При смене select: показать/скрыть custom input
+        stickerSelect.addEventListener('change', function () {
+          if (stickerSelect.value === '__other__') {
+            stickerCustom.style.display = '';
+            stickerCustom.focus();
+          } else {
+            stickerCustom.style.display = 'none';
+            stickerCustom.value = '';
+          }
+          updateStickerAvitoState();
+        });
+        // При вводе в custom input
+        stickerCustom.addEventListener('input', updateStickerAvitoState);
+
+        document.getElementById('stickerCancel').addEventListener('click', function () {
           stickerModal.classList.add('hidden');
         });
         document.getElementById('stickerCreate').addEventListener('click', generateSticker);
         // Close on overlay click
-        stickerModal.addEventListener('click', (e) => {
+        stickerModal.addEventListener('click', function (e) {
           if (e.target === stickerModal) stickerModal.classList.add('hidden');
         });
       });

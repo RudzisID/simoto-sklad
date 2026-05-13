@@ -1987,6 +1987,10 @@ span[id$='Dot']:not(#statusDot),
   border-color: var(--accent);
 }
 
+.sticker-carrier-custom {
+  margin-top: -4px;
+}
+
 .sticker-checkbox-row {
   flex-direction: row;
   align-items: center;
