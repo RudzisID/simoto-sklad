@@ -127,7 +127,6 @@
     <!-- Tab Content: Маркет -->
     <div class="tab-content" id="tab-market" style="display: none">
       <div class="market-container">
-        <h2>Маркет</h2>
         <div class="market-search">
           <p class="hint">Поиск товара по OEM-коду (Код в МС, артикул в WB и Ozon)</p>
           <div class="search-row">
@@ -479,6 +478,7 @@
           html += '<div class="ms-cell">';
           if (ms) {
             var msDescClean = ms.descriptionClean || ms.description || '';
+            html += renderImageThumbs(ms.images, 'ms');
             html +=
               '<h4 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Описание</h4>';
             html +=
@@ -498,6 +498,7 @@
           html += '<div class="ozon-cell">';
           if (ozon && !ozon.error) {
             var ozonDescClean = ozon.descriptionClean || ozon.description || '';
+            html += renderImageThumbs(ozon.images, 'ozon');
             html +=
               '<h4 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Описание</h4>';
             html +=
@@ -517,6 +518,7 @@
           html += '<div class="wb-cell">';
           if (wb && !wb.error) {
             var wbDescClean = wb.descriptionClean || wb.description || '';
+            html += renderImageThumbs(wb.images, 'wb');
             html +=
               '<h4 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Описание</h4>';
             html +=
@@ -547,6 +549,52 @@
           }
           function esc(v) {
             return String(v == null ? '' : v).replace(/"/g, '&quot;');
+          }
+
+          // ── Helper: render image thumbnails row ──
+          function renderImageThumbs(images, platform) {
+            if (!images || images.length === 0) return '';
+            var html = '';
+            html +=
+              '<h4 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:6px;margin-top:10px;text-transform:uppercase;letter-spacing:0.5px;">Изображения</h4>';
+            html += '<div class="images-row" id="' + platform + '-images">';
+            for (var i = 0; i < images.length; i++) {
+              var img = images[i];
+              var thumbUrl = '';
+              var fullUrl = '';
+              if (platform === 'ms') {
+                // MS image URLs требуют авторизации — используем proxy
+                var msToken = (typeof localStorage !== 'undefined' ? localStorage.getItem('ms_token') : '') || '';
+                thumbUrl = '/api/proxy/ms-image?url=' + encodeURIComponent(img.miniature || '') + '&token=' + encodeURIComponent(msToken);
+                fullUrl = '/api/proxy/ms-image?url=' + encodeURIComponent(img.download || '') + '&token=' + encodeURIComponent(msToken);
+              } else if (platform === 'wb') {
+                thumbUrl = img.c246x328 || img.url || '';
+                fullUrl = img.url || img.c516x688 || '';
+              } else {
+                // ozon — images are URL strings
+                thumbUrl = typeof img === 'string' ? img : (img.url || '');
+                fullUrl = thumbUrl;
+              }
+              if (!thumbUrl) continue;
+              html += '<div class="thumb-wrap">';
+              html += '<div class="thumb-img-container">';
+              html += '<img class="thumb" src="' + esc(thumbUrl) + '" alt="' + esc('Фото ' + (i + 1)) + '" data-full="' + esc(fullUrl) + '" />';
+              html += '</div>';
+              html += '<div class="thumb-popup">';
+              html += '<img src="' + esc(fullUrl) + '" alt="' + esc('Фото ' + (i + 1)) + '" />';
+              html += '</div>';
+              html += '<div class="thumb-actions">';
+              html += '<button class="thumb-btn replace" title="Заменить" data-idx="' + i + '" data-platform="' + platform + '">🔄</button>';
+              html += '<button class="thumb-btn delete" title="Удалить" data-idx="' + i + '" data-platform="' + platform + '">✕</button>';
+              html += '</div>';
+              html += '</div>';
+            }
+            // Add button for new image
+            html += '<div class="thumb-wrap add-new">';
+            html += '<button class="thumb-btn add" title="Добавить изображение" data-platform="' + platform + '">＋</button>';
+            html += '</div>';
+            html += '</div>';
+            return html;
           }
 
           // Build flat lists with canonical names
@@ -720,6 +768,20 @@
             ta.addEventListener('input', function () {
               this.style.height = 'auto';
               this.style.height = this.scrollHeight + 'px';
+            });
+          });
+
+          // Hover-zoom: умное позиционирование popup (сверху, если есть место, иначе снизу)
+          resultsDiv.querySelectorAll('.thumb-wrap').forEach(function (wrap) {
+            wrap.addEventListener('mouseenter', function () {
+              var rect = wrap.getBoundingClientRect();
+              var popupHeight = 420; // 400px + отступы
+              var spaceAbove = rect.top;
+              if (spaceAbove < popupHeight) {
+                wrap.classList.add('popup-bottom');
+              } else {
+                wrap.classList.remove('popup-bottom');
+              }
             });
           });
         } catch (error) {

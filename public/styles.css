@@ -2048,26 +2048,14 @@ span[id$='Dot']:not(#statusDot),
 
 .market-container {
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
   padding: 20px;
   width: 100%;
   max-width: 100%;
   color: var(--text);
 }
 
-.market-container h2 {
-  font-size: 1.2rem;
-  margin-bottom: 16px;
-  color: var(--text-muted);
-}
-
 .market-search {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
   background: var(--bg-card);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -2119,9 +2107,6 @@ span[id$='Dot']:not(#statusDot),
 }
 
 #marketResults {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
   margin-top: 20px;
   color: var(--text-muted);
 }
@@ -2238,6 +2223,188 @@ span[id$='Dot']:not(#statusDot),
   cursor: not-allowed;
   opacity: 0.5;
   transition: all 0.2s ease;
+}
+
+/* ── Images row (thumbnails in market product view) ── */
+.images-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.thumb-wrap {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.thumb-img-container {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.25s ease;
+  cursor: pointer;
+}
+
+/* ── Popup-увеличение при наведении ── */
+.thumb-popup {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: 400px;
+  height: 400px;
+  background: rgba(10, 10, 10, 0.95);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.thumb-popup img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.thumb-popup img {
+  display: block;
+  max-width: 392px;   /* 400 - 2*4 padding */
+  max-height: 392px;
+  width: auto;
+  height: auto;
+  border-radius: calc(var(--radius-sm) - 2px);
+}
+
+/* Popup снизу (когда сверху не помещается) */
+.thumb-wrap.popup-bottom .thumb-popup {
+  bottom: auto;
+  top: calc(100% + 10px);
+}
+
+.thumb-wrap:hover .thumb-popup {
+  display: flex;
+}
+
+.thumb-wrap:hover {
+  overflow: visible;
+  z-index: 100;
+}
+
+.thumb-popup img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.thumb-wrap:hover .thumb-popup {
+  display: block;
+}
+
+.thumb-wrap:hover {
+  overflow: visible;
+  z-index: 100;
+}
+
+/* Overlay actions on hover */
+.thumb-actions {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.thumb-wrap:hover .thumb-actions {
+  opacity: 1;
+}
+
+/* Thumbnail action buttons */
+.thumb-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.thumb-btn.replace {
+  background: rgba(249, 115, 22, 0.8);
+  color: #fff;
+}
+
+.thumb-btn.replace:hover {
+  background: var(--accent);
+}
+
+.thumb-btn.delete {
+  background: rgba(239, 68, 68, 0.8);
+  color: #fff;
+}
+
+.thumb-btn.delete:hover {
+  background: var(--error);
+}
+
+.thumb-btn.add {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.4rem;
+  border-radius: var(--radius-sm);
+}
+
+.thumb-btn.add:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+/* Add-new placeholder */
+.thumb-wrap.add-new {
+  border: 2px dashed var(--border);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.thumb-wrap.add-new:hover {
+  border-color: var(--accent);
+  background: rgba(249, 115, 22, 0.05);
 }
 
 /* Cell styling for market rows */

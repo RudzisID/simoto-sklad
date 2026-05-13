@@ -119,6 +119,26 @@ async function fetchWBData(codes, token) {
         let wbPrice = firstSize.price ? firstSize.price / 100 : 0
         const barcode = firstSize.skus?.[0] || ''
 
+        // Extract images from card.photos (WB: photos — верхнеуровневый массив фото)
+        const wbImages = []
+        var mediaStr = JSON.stringify(found.media)
+        debug(`[WB] media for ${code}: ${mediaStr ? mediaStr.substring(0, 300) : 'undefined/null'}`)
+        var photosStr = JSON.stringify(found.photos)
+        debug(`[WB] photos for ${code}: ${photosStr ? photosStr.substring(0, 300) : 'undefined/null'}`)
+        const wbPhotos = found.photos || []
+        if (Array.isArray(wbPhotos) && wbPhotos.length > 0) {
+          for (const photo of wbPhotos) {
+            wbImages.push({
+              url: photo.big || photo.url || '',
+              c246x328: photo.c246x328 || '',
+              c516x688: photo.c516x688 || '',
+            })
+          }
+          success(`[WB] Extracted ${wbImages.length} images for ${code}`)
+        } else {
+          warn(`[WB] No images found for ${code} (photos: ${typeof found.photos}, media: ${typeof found.media})`)
+        }
+
         // Try to get retail price from Prices API (more accurate)
         if (found.nmID) {
           const retailPrice = await fetchWBPrice(token, found.nmID)
@@ -139,6 +159,7 @@ async function fetchWBData(codes, token) {
           description: found.description || '',
           characteristics: found.characteristics || [],
           subjectName: found.subjectName || '',
+          images: wbImages,
         })
       } else {
         results.push({ 
@@ -239,6 +260,9 @@ async function fetchOzonData(codes, clientId, apiKey) {
       // ── Шаг 4: Получаем характеристики товара ──
       const attrData = await fetchOzonAttributes(clientId, apiKey, productId)
 
+      // ── Извлекаем изображения ──
+      const ozonImages = details.images || []
+
       results.push({
         code: details.offer_id || code,
         title: details.name || 'N/A',
@@ -249,6 +273,7 @@ async function fetchOzonData(codes, clientId, apiKey) {
         description: description,
         attributes: attrData.attributes,
         dimensions: attrData.dimensions,
+        images: ozonImages,
       })
     } catch (e) {
       error(`[Ozon] Error searching ${code}: ${e.message}`)

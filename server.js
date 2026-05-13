@@ -1204,6 +1204,7 @@ app.get('/api/market/product', async (req, res) => {
       description: msProduct.description || '',
       descriptionClean: formatDescriptionForDisplay(msProduct.description),
       attributes: msProduct.attributes || [],
+      images: [],
     } : null
 
     const wbData = (wbResults && wbResults.length > 0) ? {
@@ -1231,6 +1232,8 @@ app.get('/api/market/product', async (req, res) => {
     res.status(500).json({ error: e.message })
   }
 })
+
+// MS images не отображаются — API требует авторизации (HTTP 415 при проксировании)
 
 // ──────────────────────────────────────────
 // Push: Обновление товара в МойСклад
