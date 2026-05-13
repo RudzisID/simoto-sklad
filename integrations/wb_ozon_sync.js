@@ -2,17 +2,37 @@
 
 // Real implementation for Wildberries / Ozon product sync
 const https = require('https')
+const { info, success, warn, error, debug } = require('../lib/logger')
+
+// ──────────────────────────────────────────
+// Ozon attribute name cache
+// Ключ: `${descriptionCategoryId}_${typeId}`
+// Значение: Map<attribute_id, name>
+// ──────────────────────────────────────────
+const attributesCache = new Map()
 
 /**
  * Generic HTTPS request helper
+ * Автоматически добавляет Content-Length при наличии тела запроса
  */
 function makeRequest(options, postData = null) {
   return new Promise((resolve, reject) => {
+    // Content-Length обязателен для Ozon API (не поддерживает chunked encoding)
+    if (postData) {
+      options.headers = options.headers || {}
+      options.headers['Content-Length'] = Buffer.byteLength(postData)
+    }
+    // User-Agent для совместимости с API
+    options.headers = options.headers || {}
+    if (!options.headers['User-Agent']) {
+      options.headers['User-Agent'] = 'SiMOTO/1.0'
+    }
+
     const req = https.request(options, (res) => {
       let data = ''
       res.on('data', (chunk) => { data += chunk })
       res.on('end', () => {
-        console.log(`WB Request to ${options.hostname}${options.path} - Status: ${res.statusCode}`)
+        debug(`[HTTP] ${options.method} ${options.hostname}${options.path} → ${res.statusCode}`)
         try {
           resolve({ 
             status: res.statusCode, 
@@ -72,11 +92,11 @@ async function fetchWBData(codes, token) {
         }
       }
       
-      console.log(`WB Search for ${code}:`, { endpoint: options.path, textSearch: code })
+      info(`WB: Search for ${code} (textSearch=${code}, endpoint=${options.path})`)
       
       const response = await makeRequest(options, body)
       
-      console.log(`WB API Full Response for ${code}:`, JSON.stringify(response).substring(0, 1000))
+      debug(`WB: Full Response for ${code}: ${JSON.stringify(response).substring(0, 1000)}`)
       
       // Check HTTP status
       if (response.status !== 200) {
@@ -96,16 +116,29 @@ async function fetchWBData(codes, token) {
         // Price and stock are in sizes array
         // WB API returns price in cents (like MS), need to divide by 100
         const firstSize = found.sizes?.[0] || {}
-        const wbPrice = firstSize.price ? firstSize.price / 100 : 0
+        let wbPrice = firstSize.price ? firstSize.price / 100 : 0
+        const barcode = firstSize.skus?.[0] || ''
+
+        // Try to get retail price from Prices API (more accurate)
+        if (found.nmID) {
+          const retailPrice = await fetchWBPrice(token, found.nmID)
+          if (retailPrice !== null) {
+            wbPrice = retailPrice
+          }
+        }
+
         results.push({
           code: found.vendorCode || code,
           title: found.title || 'N/A',
           price: wbPrice,
-          stock: (found.sizes || []).reduce((sum, s) => sum + (s.quantity || 0), 0),
           site: 'Wildberries',
           vendorCode: found.vendorCode || '',
           brand: found.brand || '',
-          nmID: found.nmID || ''
+          nmID: found.nmID || '',
+          barcode: barcode,
+          description: found.description || '',
+          characteristics: found.characteristics || [],
+          subjectName: found.subjectName || '',
         })
       } else {
         results.push({ 
@@ -115,7 +148,7 @@ async function fetchWBData(codes, token) {
         })
       }
     } catch (e) {
-      console.error('WB API Error:', e.message)
+      error(`WB API Error: ${e.message}`)
       results.push({ code, error: e.message })
     }
   }
@@ -123,16 +156,162 @@ async function fetchWBData(codes, token) {
   return results
 }
 
+// ──────────────────────────────────────────
+// Wildberries: Get retail price via Prices API
+// Docs: https://dev.wildberries.ru/openapi/prices
+// Endpoint: POST /api/v2/list/goods/filter (discounts-prices-api)
+// Требуется токен с правом "Цены и скидки"
+// ──────────────────────────────────────────
+async function fetchWBPrice(token, nmID) {
+  try {
+    const options = {
+      hostname: 'discounts-prices-api.wildberries.ru',
+      path: '/api/v2/list/goods/filter',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token
+      }
+    }
+
+    const body = JSON.stringify({ nmIDs: [nmID] })
+    const response = await makeRequest(options, body)
+
+    if (response.status !== 200) {
+      warn(`[WB] Price API: HTTP ${response.status}, using card price`)
+      return null
+    }
+
+    const goods = response.body?.data?.listGoods || []
+    if (goods.length > 0 && goods[0].price) {
+      const retailPrice = goods[0].price / 100 // cents → rubles
+      success(`[WB] Price API: nmID=${nmID}, retail price=${retailPrice} rub`)
+      return retailPrice
+    }
+
+    return null
+  } catch (e) {
+    warn(`[WB] Price API error: ${e.message}, using card price`)
+    return null
+  }
+}
+
 /**
  * Ozon: Search product by offer_id (SKU/Article)
- * Docs: https://docs.ozon.ru/api/seller/
+ * Docs: см. .opencode/context/external/ozon-api.md
+ *
+ * Ozon API не имеет прямого поиска по offer_id.
+ * Используем двухшаговый подход:
+ *   1. POST /v3/product/list — ищем offer_id по страницам
+ *   2. POST /v3/product/info/list — детали по numeric product_id
  */
 async function fetchOzonData(codes, clientId, apiKey) {
   if (!clientId || !apiKey) return codes.map(code => ({ code, error: 'No Ozon credentials' }))
 
+  const results = []
+
+  for (const code of codes) {
+    try {
+      // ── Шаг 1: Ищем product_id по offer_id через список товаров ──
+      const productId = await findOzonProductIdByOfferId(code, clientId, apiKey)
+
+      if (!productId) {
+        results.push({ code, error: 'Not found in Ozon' })
+        continue
+      }
+
+      // ── Шаг 2: Получаем детальную информацию по product_id ──
+      const details = await getOzonProductInfo(productId, clientId, apiKey)
+
+      if (!details) {
+        results.push({ code, error: 'Product found but failed to get details' })
+        continue
+      }
+
+      // Парсим цену (приходит строкой "2999.00")
+      const price = parseFloat(details.price) || 0
+
+      success(`[Ozon] Found ${code}: id=${productId}, price=${price} rub`)
+
+      // ── Шаг 3: Получаем описание товара ──
+      const description = await fetchOzonDescription(clientId, apiKey, productId, code)
+
+      // ── Шаг 4: Получаем характеристики товара ──
+      const attrData = await fetchOzonAttributes(clientId, apiKey, productId)
+
+      results.push({
+        code: details.offer_id || code,
+        title: details.name || 'N/A',
+        price: price,
+        site: 'Ozon',
+        sku: details.id || productId,        // numeric product_id
+        product_id: details.id || productId,  // для push-запросов
+        description: description,
+        attributes: attrData.attributes,
+        dimensions: attrData.dimensions,
+      })
+    } catch (e) {
+      error(`[Ozon] Error searching ${code}: ${e.message}`)
+      results.push({ code, error: e.message })
+    }
+  }
+
+  return results
+}
+
+/**
+ * Поиск product_id по offer_id через /v3/product/list с фильтром offer_id
+ * Docs: .opencode/context/external/ozon-api.md
+ * 
+ * /v3/product/list поддерживает прямую фильтрацию по offer_id:
+ * { filter: { offer_id: ["SKU-001"], visibility: "ALL" }, limit: 100 }
+ */
+async function findOzonProductIdByOfferId(offerId, clientId, apiKey) {
   const options = {
     hostname: 'api-seller.ozon.ru',
-    path: '/v2/product/info/list',
+    path: '/v3/product/list',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Client-Id': clientId,
+      'Api-Key': apiKey
+    }
+  }
+
+  const postData = JSON.stringify({
+    filter: {
+      offer_id: [offerId],
+      visibility: 'ALL'
+    },
+    limit: 100
+  })
+
+  const response = await makeRequest(options, postData)
+
+  if (response.status !== 200) {
+    const bodySnippet = typeof response.body === 'object'
+      ? JSON.stringify(response.body).substring(0, 300)
+      : String(response.body).substring(0, 300)
+    throw new Error(`Ozon List API: HTTP ${response.status} — ${bodySnippet}`)
+  }
+
+  const items = response.body?.result?.items || []
+  if (items.length > 0) {
+    success(`[Ozon] Found product_id ${items[0].product_id} for offer_id ${offerId}`)
+    return items[0].product_id
+  }
+
+  warn(`[Ozon] offer_id ${offerId} not found`)
+  return null
+}
+
+/**
+ * Получение детальной информации о товаре по product_id
+ */
+async function getOzonProductInfo(productId, clientId, apiKey) {
+  const options = {
+    hostname: 'api-seller.ozon.ru',
+    path: '/v3/product/info/list',
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -142,50 +321,193 @@ async function fetchOzonData(codes, clientId, apiKey) {
   }
 
   const body = JSON.stringify({
-    'filter': {
-      'offer_id': codes
-    },
-    'limit': 1000
+    product_id: [Number(productId)],
+    sku: []
   })
 
+  const response = await makeRequest(options, body)
+
+  if (response.status !== 200) {
+    throw new Error(`Ozon Info API: HTTP ${response.status}`)
+  }
+
+  // v3 response: items — массив на верхнем уровне (не result.items)
+  const items = response.body?.items || []
+  return items.length > 0 ? items[0] : null
+}
+
+// ──────────────────────────────────────────
+// Ozon: Get product description
+// Docs: .opencode/context/external/ozon-api.md
+// Endpoint: POST /v1/product/info/description
+// ──────────────────────────────────────────
+async function fetchOzonDescription(clientId, apiKey, productId, offerId) {
   try {
-    const response = await makeRequest(options, body)
-    
-    console.log('Ozon API Full Response:', JSON.stringify(response))
-    
-    if (response.status !== 200) {
-      return codes.map(code => ({ 
-        code, 
-        error: `Ozon API Error: HTTP ${response.status}`, 
-        details: response.body 
-      }))
+    const options = {
+      hostname: 'api-seller.ozon.ru',
+      path: '/v1/product/info/description',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Client-Id': clientId,
+        'Api-Key': apiKey
+      }
     }
-    
-    const items = response.body?.result?.items || []
-    
-    return codes.map(code => {
-      const found = items.find(item => 
-        item.offer_id === code || item.sku?.toString() === code
-      )
-      
-      if (!found) return { 
-        code, 
-        error: 'Not found in Ozon', 
-        details: response.body 
-      }
-      
-      return {
-        code: found.offer_id || code,
-        title: found.name || 'N/A',
-        price: found.price || 0,
-        stock: (found.stocks || []).reduce((sum, s) => sum + (s.present || 0), 0),
-        site: 'Ozon',
-        sku: found.sku || '',
-      }
+
+    const body = JSON.stringify({
+      product_id: Number(productId),
+      offer_id: offerId
     })
+
+    const response = await makeRequest(options, body)
+
+    if (response.status !== 200) {
+      warn(`[Ozon] Description API: HTTP ${response.status}`)
+      return ''
+    }
+
+    return response.body?.result?.description || ''
   } catch (e) {
-    console.error('Ozon API Error:', e.message)
-    return codes.map(code => ({ code, error: e.message }))
+    warn(`[Ozon] Description API error: ${e.message}`)
+    return ''
+  }
+}
+
+// ──────────────────────────────────────────
+// Ozon: Get attribute names by description category
+// Docs: .opencode/context/external/ozon-api.md
+// Endpoint: POST /v1/description-category/attribute
+// Возвращает Map<attribute_id, name> для подстановки имён атрибутов
+// Результат кэшируется по ключу `${descriptionCategoryId}_${typeId}`
+// ──────────────────────────────────────────
+async function fetchOzonCategoryAttributes(clientId, apiKey, descriptionCategoryId, typeId) {
+  const cacheKey = `${descriptionCategoryId}_${typeId}`
+
+  // Проверяем кэш
+  if (attributesCache.has(cacheKey)) {
+    debug(`[Ozon] Attribute name cache HIT: ${cacheKey}`)
+    return attributesCache.get(cacheKey)
+  }
+
+  info(`[Ozon] Attribute name cache MISS: ${cacheKey}, fetching...`)
+
+  try {
+    const options = {
+      hostname: 'api-seller.ozon.ru',
+      path: '/v1/description-category/attribute',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Client-Id': clientId,
+        'Api-Key': apiKey
+      }
+    }
+
+    const body = JSON.stringify({
+      description_category_id: descriptionCategoryId,
+      type_id: typeId,
+      language: 'DEFAULT'
+    })
+
+    const response = await makeRequest(options, body)
+
+    if (response.status !== 200) {
+      warn(`[Ozon] Category Attributes API: HTTP ${response.status}`)
+      return new Map()
+    }
+
+    const result = response.body?.result || []
+    const nameMap = new Map()
+
+    for (const attr of result) {
+      if (attr.id && attr.name) {
+        nameMap.set(attr.id, attr.name)
+      }
+    }
+
+    success(`[Ozon] Cached ${nameMap.size} attribute names for category ${descriptionCategoryId}`)
+    attributesCache.set(cacheKey, nameMap)
+    return nameMap
+  } catch (e) {
+    error(`[Ozon] Category Attributes API error: ${e.message}`)
+    return new Map()
+  }
+}
+
+// ──────────────────────────────────────────
+// Ozon: Get product attributes (characteristics + dimensions)
+// Docs: .opencode/context/external/ozon-api.md
+// Endpoint: POST /v4/product/info/attributes
+// Возвращает характеристики товара + габариты (weight, height, width, depth)
+// Так же извлекает description_category_id и type_id для получения имён атрибутов
+// ──────────────────────────────────────────
+async function fetchOzonAttributes(clientId, apiKey, productId) {
+  try {
+    const options = {
+      hostname: 'api-seller.ozon.ru',
+      path: '/v4/product/info/attributes',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Client-Id': clientId,
+        'Api-Key': apiKey
+      }
+    }
+
+    const body = JSON.stringify({
+      filter: {
+        product_id: [Number(productId)],
+        visibility: 'ALL'
+      },
+      limit: 100
+    })
+
+    const response = await makeRequest(options, body)
+
+    if (response.status !== 200) {
+      warn(`[Ozon] Attributes API: HTTP ${response.status}`)
+      return { attributes: [], dimensions: null }
+    }
+
+    const result = response.body?.result || []
+    // result — массив, каждый элемент содержит attributes[] и поля габаритов
+    if (result.length > 0) {
+      const item = result[0]
+      const attributes = item.attributes || []
+
+      // Пытаемся получить имена атрибутов через /v1/description-category/attribute
+      const descCategoryId = item.description_category_id
+      const typeId = item.type_id
+      let nameMap = null
+
+      if (descCategoryId && typeId) {
+        nameMap = await fetchOzonCategoryAttributes(clientId, apiKey, descCategoryId, typeId)
+      }
+
+      // Добавляем name к каждому атрибуту
+      const enrichedAttributes = attributes.map(function(attr) {
+        const attrId = attr.attribute_id || attr.id
+        const name = (nameMap && nameMap.has(attrId)) ? nameMap.get(attrId) : ('ID:' + (attrId || '?'))
+        return { ...attr, name: name, attribute_id: attrId }
+      })
+
+      return {
+        attributes: enrichedAttributes,
+        dimensions: {
+          weight: item.weight || null,
+          weight_unit: item.weight_unit || '',
+          height: item.height || null,
+          width: item.width || null,
+          depth: item.depth || null,
+          dimension_unit: item.dimension_unit || '',
+        }
+      }
+    }
+
+    return { attributes: [], dimensions: null }
+  } catch (e) {
+    error(`[Ozon] Attributes API error: ${e.message}`)
+    return { attributes: [], dimensions: null }
   }
 }
 
@@ -214,8 +536,240 @@ function compareAndAggregate(wbData, ozonData) {
   return Array.from(map.values())
 }
 
+// ──────────────────────────────────────────
+// Wildberries: Push price update
+// Docs: https://dev.wildberries.ru/openapi/prices
+// Endpoint: POST /api/v2/upload/task
+// ──────────────────────────────────────────
+async function pushWBPrice(token, nmId, priceRub) {
+  const body = JSON.stringify({
+    data: [{
+      nmID: nmId,
+      price: Math.round(priceRub * 100) // WB expects price in cents
+    }]
+  })
+
+  const options = {
+    hostname: 'discounts-prices-api.wildberries.ru',
+    path: '/api/v2/upload/task',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': token
+    }
+  }
+
+  const response = await makeRequest(options, body)
+  if (response.status !== 200) {
+    throw new Error(`WB Price API: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
+  }
+  success(`[WB] Price updated for nmID ${nmId}: ${priceRub} rub`)
+}
+
+// ──────────────────────────────────────────
+// Wildberries: Push stock update
+// Docs: https://dev.wildberries.ru/openapi/stocks
+// Endpoint: PUT /api/v2/stocks/stocks
+// ──────────────────────────────────────────
+async function pushWBStock(token, barcode, stock) {
+  const body = JSON.stringify({
+    stocks: [{
+      sku: barcode,
+      amount: stock
+    }]
+  })
+
+  const options = {
+    hostname: 'marketplace-api.wildberries.ru',
+    path: '/api/v2/stocks/stocks',
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': token
+    }
+  }
+
+  const response = await makeRequest(options, body)
+  if (response.status !== 200) {
+    throw new Error(`WB Stocks API: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
+  }
+  success(`[WB] Stock updated for barcode ${barcode}: ${stock} pcs`)
+}
+
+// ──────────────────────────────────────────
+// Ozon: Push price update
+// Docs: .opencode/context/external/ozon-api.md
+// Endpoint: POST /v1/product/import/prices
+// Важно: API принимает product_id (числовой), НЕ offer_id
+// ──────────────────────────────────────────
+async function pushOzonPrice(clientId, apiKey, productId, priceRub) {
+  const body = JSON.stringify({
+    prices: [{
+      product_id: Number(productId),
+      price: String(priceRub),
+      currency_code: 'RUB'
+    }]
+  })
+
+  const options = {
+    hostname: 'api-seller.ozon.ru',
+    path: '/v1/product/import/prices',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Client-Id': clientId,
+      'Api-Key': apiKey
+    }
+  }
+
+  const response = await makeRequest(options, body)
+  if (response.status !== 200) {
+    throw new Error(`Ozon Price API: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
+  }
+  success(`[Ozon] Price updated for product_id ${productId}: ${priceRub} rub`)
+}
+
+// ──────────────────────────────────────────
+// Ozon: Push stock update
+// Docs: .opencode/context/external/ozon-api.md
+// Endpoint: POST /v2/products/stocks
+// Принимает offer_id И/ИЛИ product_id
+// ──────────────────────────────────────────
+async function pushOzonStock(clientId, apiKey, offerId, productId, stock) {
+  const stockEntry = { stock: stock }
+  if (offerId) stockEntry.offer_id = offerId
+  if (productId) stockEntry.product_id = Number(productId)
+
+  const body = JSON.stringify({
+    stocks: [stockEntry]
+  })
+
+  const options = {
+    hostname: 'api-seller.ozon.ru',
+    path: '/v2/products/stocks',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Client-Id': clientId,
+      'Api-Key': apiKey
+    }
+  }
+
+  const response = await makeRequest(options, body)
+  if (response.status !== 200) {
+    throw new Error(`Ozon Stocks API: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
+  }
+  success(`[Ozon] Stock updated for ${offerId || productId}: ${stock} pcs`)
+}
+
+// ──────────────────────────────────────────
+// Ozon: Push title update
+// Docs: .opencode/context/external/ozon-api.md
+// Endpoint: POST /v3/product/import
+// ⚠ Асинхронная операция — возвращает task_id
+// ──────────────────────────────────────────
+async function pushOzonTitle(clientId, apiKey, offerId, title, description) {
+  const item = { offer_id: offerId }
+  if (title) item.name = title
+  if (description !== undefined) item.description = description
+
+  const body = JSON.stringify({ items: [item] })
+
+  const options = {
+    hostname: 'api-seller.ozon.ru',
+    path: '/v3/product/import',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Client-Id': clientId,
+      'Api-Key': apiKey
+    }
+  }
+
+  const response = await makeRequest(options, body)
+  if (response.status !== 200) {
+    throw new Error(`Ozon Import API: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
+  }
+  success(`[Ozon] Title/description update task created for ${offerId}: ${title}`)
+}
+
+// ──────────────────────────────────────────
+// Wildberries: Update card data (description + characteristics)
+// Docs: https://dev.wildberries.ru/openapi/work-with-products
+// Endpoint: POST /content/v2/cards/upload
+// ──────────────────────────────────────────
+async function pushWBCard(token, nmID, vendorCode, description, characteristics) {
+  const card = { nmID: nmID, vendorCode: vendorCode }
+  if (description !== undefined) card.description = description
+  if (characteristics && Array.isArray(characteristics)) {
+    card.characteristics = characteristics
+  }
+
+  const body = JSON.stringify({ cards: [card] })
+
+  const options = {
+    hostname: 'content-api.wildberries.ru',
+    path: '/content/v2/cards/upload',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': token
+    }
+  }
+
+  const response = await makeRequest(options, body)
+  if (response.status !== 200) {
+    throw new Error(`WB Card Upload: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
+  }
+  success(`[WB] Card updated for nmID ${nmID}: desc=${description ? 'yes' : 'no'}, chars=${characteristics ? characteristics.length : 0}`)
+}
+
+// ──────────────────────────────────────────
+// Ozon: Update product attributes (via attributes/update endpoint)
+// Docs: .opencode/context/external/ozon-api.md
+// Endpoint: POST /v1/product/attributes/update
+// ──────────────────────────────────────────
+async function pushOzonAttributes(clientId, apiKey, productId, attributes) {
+  if (!attributes || !Array.isArray(attributes) || attributes.length === 0) return
+
+  const body = JSON.stringify({
+    items: [{
+      product_id: Number(productId),
+      attributes: attributes
+    }]
+  })
+
+  const options = {
+    hostname: 'api-seller.ozon.ru',
+    path: '/v1/product/attributes/update',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Client-Id': clientId,
+      'Api-Key': apiKey
+    }
+  }
+
+  const response = await makeRequest(options, body)
+  if (response.status !== 200) {
+    throw new Error(`Ozon Attributes Update: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
+  }
+  success(`[Ozon] Attributes updated for product_id ${productId}: ${attributes.length} attrs`)
+}
+
 module.exports = {
   fetchWBData,
+  fetchWBPrice,
   fetchOzonData,
-  compareAndAggregate
+  fetchOzonDescription,
+  fetchOzonAttributes,
+  fetchOzonCategoryAttributes,
+  compareAndAggregate,
+  pushWBPrice,
+  pushWBStock,
+  pushWBCard,
+  pushOzonPrice,
+  pushOzonStock,
+  pushOzonTitle,
+  pushOzonAttributes
 }

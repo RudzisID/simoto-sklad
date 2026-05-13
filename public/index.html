@@ -1,476 +1,903 @@
 <!-- SiMOTO-Sklad v1.0.9 -->
 <html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SiMOTO</title>
-    <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
     <!-- Common Header -->
     <div class="app-header">
-        <div class="header-left">
-            <img src="logo-line.svg" alt="SiMOTO" class="header-logo">
+      <div class="header-left">
+        <img src="logo-line.svg" alt="SiMOTO" class="header-logo" />
+        <button class="token-btn" onclick="showTokenModal()">Токены</button>
+      </div>
+      <div class="header-center">
+        <div class="tab-bar">
+          <button class="tab-btn active" data-tab="sklad">Склад</button>
+          <button class="tab-btn" data-tab="market">Маркет</button>
         </div>
-        <div class="header-center">
-            <div class="tab-bar">
-                <button class="tab-btn active" data-tab="sklad">Склад</button>
-                <button class="tab-btn" data-tab="market">Маркет</button>
-            </div>
+      </div>
+      <div class="header-right">
+        <button class="sticker-btn" onclick="toggleStickerModal(true)" title="Печать наклейки">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path
+              d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"
+            ></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+          Печать стикеров
+        </button>
+        <div class="progress-container" id="progressContainer">
+          <div class="progress-bar" id="progressBar"></div>
         </div>
-        <div class="header-right">
-            <button class="token-btn" onclick="showTokenModal()">Токены</button>
-            <div class="status">
-                <span id="statusDot" class="status-dot"></span>
-                <span id="statusText">Готов</span>
-            </div>
-            <div class="progress-container" id="progressContainer">
-                <div class="progress-bar" id="progressBar"></div>
-            </div>
-        </div>
+      </div>
     </div>
 
     <!-- Tab Content: Склад -->
     <div class="tab-content" id="tab-sklad">
-        <div class="app-container">
-            <!-- Left column -->
-            <div class="left-column">
-            <!-- Input block -->
-            <div class="input-panel">
-                <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
-                <div class="button-row">
-                    <button onclick="checkNumbers()">Сканировать</button>
-                    <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display: none;">✕</button>
-                </div>
+      <div class="app-container">
+        <!-- Left column -->
+        <div class="left-column">
+          <!-- Input block -->
+          <div class="input-panel">
+            <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
+            <div class="button-row">
+              <button onclick="checkNumbers()">Сканировать</button>
+              <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display: none">
+                ✕
+              </button>
             </div>
-            </div>
-
-            <!-- Center column: Table -->
-            <div class="center-column">
-                <div class="table-panel">
-                    <div id="tableContainer">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th style="width:30px"><input type="checkbox" id="selectAll" onchange="toggleAll(this.checked)" checked></th>
-                                    <th class="sortable" onclick="sortTable('shipmentNum')">№</th>
-                                    <th class="sortable order-header" onclick="sortTable('orderName')">Заказ</th>
-                                    <th class="sortable" onclick="sortTable('sum')">Сумма</th>
-                                    <th class="sortable" onclick="sortTable('demandName')">Отгрузка</th>
-                                    <th class="sortable" onclick="sortTable('paid')">Платёж</th>
-                                    <th class="sortable" onclick="sortTable('returnSum')">Возврат</th>
-                                    <th class="sortable" onclick="sortTable('statusName')">Статус</th>
-                                    <th>Кнопки</th>
-                                </tr>
-                            </thead>
-                            <tbody id="tableBody">
-                                <tr><td colspan="9" class="empty">Введите номера и нажмите "Проверить"</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right column: Stats -->
-            <div class="right-column">
-                <!-- Bulk actions moved to right column -->
-                <div class="bulk-actions">
-                    <button onclick="createAllDemands()" class="bulk-btn demand">Отгрузка</button>
-                    <button onclick="createAllPayments()" class="bulk-btn payment">Платёж</button>
-                    <button onclick="batchAction('return')" class="bulk-btn return">Возврат</button>
-                    <button onclick="batchAction('cancel')" class="bulk-btn cancel">Отмена</button>
-                </div>
-                
-                <!-- Current stats (60%) -->
-                <div class="stats-panel stats-current">
-                    <div class="stats-header">Текущее состояние</div>
-                    <div id="statsOutput" class="stats-output"></div>
-                </div>
-                
-                <!-- After action stats (40%) -->
-                <div class="stats-panel stats-final">
-                    <div id="statsFinalOutput" class="stats-output idle">
-                        <div class="terminal-message">Ожидание массовой операции</div>
-                    </div>
-                </div>
-            </div>
+          </div>
         </div>
+
+        <!-- Center column: Table -->
+        <div class="center-column">
+          <div class="table-panel">
+            <div id="tableContainer">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width: 30px">
+                      <input
+                        type="checkbox"
+                        id="selectAll"
+                        onchange="toggleAll(this.checked)"
+                        checked
+                      />
+                    </th>
+                    <th class="sortable" onclick="sortTable('shipmentNum')">№</th>
+                    <th class="sortable order-header" onclick="sortTable('orderName')">Заказ</th>
+                    <th class="sortable" onclick="sortTable('sum')">Сумма</th>
+                    <th class="sortable" onclick="sortTable('demandName')">Отгрузка</th>
+                    <th class="sortable" onclick="sortTable('paid')">Платёж</th>
+                    <th class="sortable" onclick="sortTable('returnSum')">Возврат</th>
+                    <th class="sortable" onclick="sortTable('statusName')">Статус</th>
+                    <th>Кнопки</th>
+                  </tr>
+                </thead>
+                <tbody id="tableBody">
+                  <tr>
+                    <td colspan="9" class="empty">Введите номера и нажмите "Проверить"</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right column: Stats -->
+        <div class="right-column">
+          <!-- Bulk actions moved to right column -->
+          <div class="bulk-actions">
+            <button onclick="createAllDemands()" class="bulk-btn demand">Отгрузка</button>
+            <button onclick="createAllPayments()" class="bulk-btn payment">Платёж</button>
+            <button onclick="batchAction('return')" class="bulk-btn return">Возврат</button>
+            <button onclick="batchAction('cancel')" class="bulk-btn cancel">Отмена</button>
+          </div>
+
+          <!-- Current stats (60%) -->
+          <div class="stats-panel stats-current">
+            <div class="stats-header">Текущее состояние</div>
+            <div id="statsOutput" class="stats-output"></div>
+          </div>
+
+          <!-- After action stats (40%) -->
+          <div class="stats-panel stats-final">
+            <div id="statsFinalOutput" class="stats-output idle">
+              <div class="terminal-message">Ожидание массовой операции</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Tab Content: Маркет -->
-    <div class="tab-content" id="tab-market" style="display:none;">
-        <div class="market-container">
-            <h2>Маркет</h2>
-            <div class="market-search">
-                <p class="hint">Поиск товара по OEM-коду (Код в МС, артикул в WB и Ozon)</p>
-                <div class="search-row">
-                    <input type="text" id="oemSearchInput" placeholder="Введите OEM-код" value="7020-061600комплект">
-                    <button onclick="searchProductByOEM()" class="search-btn">Поиск</button>
-                </div>
-                <div id="marketResults"></div>
-            </div>
+    <div class="tab-content" id="tab-market" style="display: none">
+      <div class="market-container">
+        <h2>Маркет</h2>
+        <div class="market-search">
+          <p class="hint">Поиск товара по OEM-коду (Код в МС, артикул в WB и Ozon)</p>
+          <div class="search-row">
+            <input
+              type="text"
+              id="oemSearchInput"
+              placeholder="Введите OEM-код"
+              value="7020-061600комплект"
+            />
+            <button onclick="searchProductByOEM()" class="search-btn">Поиск</button>
+          </div>
+          <div id="marketResults"></div>
         </div>
+      </div>
     </div>
 
     <!-- Token Modal -->
     <div id="tokenModal" class="modal-overlay hidden">
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <h3>Токены API</h3>
-            </div>
-            <div class="modal-body">
-                <p>Введите токены для сервисов:</p>
-                <div class="token-field">
-                    <label>МойСклад:</label>
-                    <input type="text" id="msTokenInput" placeholder="Токен МойСклад">
-                </div>
-                <div class="token-field">
-                    <label>Wildberries:</label>
-                    <input type="text" id="wbTokenInput" placeholder="Токен WB (Authorization)">
-                </div>
-                <div class="token-field">
-                    <label>Ozon Client-Id:</label>
-                    <input type="text" id="ozonClientIdInput" placeholder="Client-Id от Ozon">
-                </div>
-                <div class="token-field">
-                    <label>Ozon Api-Key:</label>
-                    <input type="text" id="ozonApiKeyInput" placeholder="Api-Key от Ozon">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="tokenCancel" class="button secondary">Отмена</button>
-                <button id="tokenSave" class="button">Сохранить</button>
-            </div>
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3>Токены API</h3>
         </div>
+        <div class="modal-body">
+          <p>Введите токены для сервисов:</p>
+          <div class="token-field">
+            <label>МойСклад:</label>
+            <input type="text" id="msTokenInput" placeholder="Токен МойСклад" />
+          </div>
+          <div class="token-field">
+            <label>Wildberries:</label>
+            <input type="text" id="wbTokenInput" placeholder="Токен WB (Authorization)" />
+          </div>
+          <div class="token-field">
+            <label>Ozon Client-Id:</label>
+            <input type="text" id="ozonClientIdInput" placeholder="Client-Id от Ozon" />
+          </div>
+          <div class="token-field">
+            <label>Ozon Api-Key:</label>
+            <input type="text" id="ozonApiKeyInput" placeholder="Api-Key от Ozon" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="tokenCancel" class="button secondary">Отмена</button>
+          <button id="tokenSave" class="button">Сохранить</button>
+        </div>
+      </div>
     </div>
 
     <!-- Custom Confirm Modal -->
     <div id="confirmModal" class="modal-overlay hidden">
-        <div class="modal-dialog">
-            <div class="modal-header">
-                <h3 id="confirmTitle">Подтверждение</h3>
-            </div>
-            <div class="modal-body">
-                <p id="confirmMessage"></p>
-            </div>
-            <div class="modal-footer">
-                <button id="confirmCancel" class="button secondary">Отмена</button>
-                <button id="confirmOk" class="button">ОК</button>
-            </div>
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h3 id="confirmTitle">Подтверждение</h3>
         </div>
+        <div class="modal-body">
+          <p id="confirmMessage"></p>
+        </div>
+        <div class="modal-footer">
+          <button id="confirmCancel" class="button secondary">Отмена</button>
+          <button id="confirmOk" class="button">ОК</button>
+        </div>
+      </div>
     </div>
+
+    <!-- Sticker Modal -->
+    <div id="stickerModal" class="modal-overlay hidden">
+      <div class="modal-dialog" style="width: 340px; min-width: auto">
+        <div class="modal-header">
+          <h3>Параметры наклейки</h3>
+        </div>
+        <div class="modal-body sticker-modal-body">
+          <div class="sticker-field">
+            <label for="stickerCarrier">Служба доставки</label>
+            <input
+              type="text"
+              id="stickerCarrier"
+              list="carrierList"
+              placeholder="СДЭК, Почта, Яндекс, Авито..."
+            />
+            <datalist id="carrierList">
+              <option value="СДЭК"></option>
+              <option value="Почта"></option>
+              <option value="Яндекс"></option>
+              <option value="Авито"></option>
+            </datalist>
+          </div>
+          <div class="sticker-field sticker-checkbox-row">
+            <label class="sticker-checkbox">
+              <input type="checkbox" id="stickerAvito" checked />
+              <span class="sticker-checkbox-label">Авито <small>(второе слово)</small></span>
+            </label>
+          </div>
+          <div class="sticker-field">
+            <label for="stickerCode">Код заказа</label>
+            <input
+              type="text"
+              id="stickerCode"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              placeholder="Номер заказа"
+            />
+          </div>
+          <div class="sticker-field">
+            <label for="stickerSize">Размер наклейки</label>
+            <select id="stickerSize">
+              <option value="58x40">58 × 40 мм</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="stickerCancel" class="button secondary">Отмена</button>
+          <button id="stickerCreate" class="button">Создать</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden elements for JS compatibility (status replaced by sticker button) -->
+    <span id="statusText" style="display: none">Готов</span>
+    <span id="statusDot" style="display: none"></span>
 
     <script src="app.js"></script>
     <script>
-        // Tab switching logic
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
-            const tabEl = document.getElementById('tab-' + tabName);
-            if (tabEl) tabEl.style.display = 'block';
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
-            if (activeBtn) activeBtn.classList.add('active');
-            localStorage.setItem('simoto_active_tab', tabName);
-        }
-        // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
-            const activeTab = localStorage.getItem('simoto_active_tab') || 'sklad';
-            switchTab(activeTab);
-            // Attach tab button clicks
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-            });
-            // Token modal
-            const tokenModal = document.getElementById('tokenModal');
-            document.querySelector('.token-btn').addEventListener('click', () => {
-                tokenModal.classList.remove('hidden');
-                // Pre-fill from localStorage if exist
-                document.getElementById('msTokenInput').value = localStorage.getItem('ms_token') || '';
-                document.getElementById('wbTokenInput').value = localStorage.getItem('wb_token') || '';
-                document.getElementById('ozonClientIdInput').value = localStorage.getItem('ozon_client_id') || '';
-                document.getElementById('ozonApiKeyInput').value = localStorage.getItem('ozon_api_key') || '';
-            });
-            document.getElementById('tokenCancel').addEventListener('click', () => {
-                tokenModal.classList.add('hidden');
-            });
-            document.getElementById('tokenSave').addEventListener('click', () => {
-                const msToken = document.getElementById('msTokenInput').value;
-                const wbToken = document.getElementById('wbTokenInput').value;
-                const ozonClientId = document.getElementById('ozonClientIdInput').value;
-                const ozonApiKey = document.getElementById('ozonApiKeyInput').value;
-                
-                localStorage.setItem('ms_token', msToken);
-                localStorage.setItem('wb_token', wbToken);
-                localStorage.setItem('ozon_client_id', ozonClientId);
-                localStorage.setItem('ozon_api_key', ozonApiKey);
-                
-                tokenModal.classList.add('hidden');
-            });
-            // Close modal on overlay click
-            tokenModal.addEventListener('click', (e) => {
-                if (e.target === tokenModal) tokenModal.classList.add('hidden');
-            });
+      // Tab switching logic
+      function switchTab(tabName) {
+        document.querySelectorAll('.tab-content').forEach((el) => (el.style.display = 'none'));
+        const tabEl = document.getElementById('tab-' + tabName);
+        if (tabEl) tabEl.style.display = 'block';
+        document.querySelectorAll('.tab-btn').forEach((btn) => btn.classList.remove('active'));
+        const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+        if (activeBtn) activeBtn.classList.add('active');
+        localStorage.setItem('simoto_active_tab', tabName);
+      }
+      // Initialize
+      document.addEventListener('DOMContentLoaded', () => {
+        const activeTab = localStorage.getItem('simoto_active_tab') || 'sklad';
+        switchTab(activeTab);
+        // Attach tab button clicks
+        document.querySelectorAll('.tab-btn').forEach((btn) => {
+          btn.addEventListener('click', () => switchTab(btn.dataset.tab));
         });
-        // Market search logic
-        async function searchProductByOEM() {
-            const oem = document.getElementById('oemSearchInput').value.trim();
-            if (!oem) return;
-            
-            const resultsDiv = document.getElementById('marketResults');
-            // Show loading state
-            resultsDiv.innerHTML = '<div class="search-status"><span class="search-spinner"></span> Поиск кода: <strong>' + oem + '</strong></div>';
+        // Token modal
+        const tokenModal = document.getElementById('tokenModal');
+        document.querySelector('.token-btn').addEventListener('click', () => {
+          tokenModal.classList.remove('hidden');
+          // Pre-fill from localStorage if exist
+          document.getElementById('msTokenInput').value = localStorage.getItem('ms_token') || '';
+          document.getElementById('wbTokenInput').value = localStorage.getItem('wb_token') || '';
+          document.getElementById('ozonClientIdInput').value =
+            localStorage.getItem('ozon_client_id') || '';
+          document.getElementById('ozonApiKeyInput').value =
+            localStorage.getItem('ozon_api_key') || '';
+        });
+        document.getElementById('tokenCancel').addEventListener('click', () => {
+          tokenModal.classList.add('hidden');
+        });
+        document.getElementById('tokenSave').addEventListener('click', () => {
+          const msToken = document.getElementById('msTokenInput').value;
+          const wbToken = document.getElementById('wbTokenInput').value;
+          const ozonClientId = document.getElementById('ozonClientIdInput').value;
+          const ozonApiKey = document.getElementById('ozonApiKeyInput').value;
 
-            const token = localStorage.getItem('ms_token') || '';
-            if (!token) {
-                resultsDiv.innerHTML = '<div class="search-status error">Ошибка: Необходим токен МойСклад. Нажмите "Токены" в шапке.</div>';
-                return;
-            }
+          localStorage.setItem('ms_token', msToken);
+          localStorage.setItem('wb_token', wbToken);
+          localStorage.setItem('ozon_client_id', ozonClientId);
+          localStorage.setItem('ozon_api_key', ozonApiKey);
 
-            try {
-                const wbToken = localStorage.getItem('wb_token') || '';
-                const ozonClientId = localStorage.getItem('ozon_client_id') || '';
-                const ozonApiKey = localStorage.getItem('ozon_api_key') || '';
+          tokenModal.classList.add('hidden');
+        });
+        // Close modal on overlay click
+        tokenModal.addEventListener('click', (e) => {
+          if (e.target === tokenModal) tokenModal.classList.add('hidden');
+        });
 
-                const response = await fetch(`/api/market/product?code=${encodeURIComponent(oem)}`, {
-                    headers: { 
-                        'x-api-token': token,
-                        'x-wb-token': wbToken,
-                        'x-ozon-client-id': ozonClientId,
-                        'x-ozon-api-key': ozonApiKey
-                    }
-                });
-                const data = await response.json();
+        // Sticker modal
+        const stickerModal = document.getElementById('stickerModal');
+        const stickerCarrier = document.getElementById('stickerCarrier');
+        const stickerAvito = document.getElementById('stickerAvito');
 
-                if (!response.ok) {
-                    throw new Error(data.error || 'Ошибка сервера');
-                }
-
-                // Render results - Full width 3-column layout
-                let html = '<div class="product-comparison full-width">';
-                
-                // MoySklad Column (editable, same level as others)
-                html += '<div class="product-card ms"><h3>МойСклад</h3>';
-                if (data.moysklad) {
-                    html += `<p><strong>${data.moysklad.name}</strong></p>`;
-                    html += `<p>Код: ${data.moysklad.code}</p>`;
-                    if (data.moysklad.article) html += `<p>Артикул: ${data.moysklad.article}</p>`;
-                    
-                    // Editable fields for MS (same design as WB/Ozon)
-                    html += '<div class="edit-fields">';
-                    html += `<label>Цена (руб): <input type="number" id="ms-price" value="${data.moysklad.price || 0}" step="0.01" class="edit-input"></label>`;
-                    html += `<label>Остаток: <input type="number" id="ms-stock" value="${data.moysklad.stock || 0}" class="edit-input"></label>`;
-                    html += `<label>Название: <input type="text" id="ms-title" value="${data.moysklad.name || ''}" class="edit-input full-width"></label>`;
-                    html += '</div>';
-                    
-                    html += `<button onclick="pushToMS('${data.moysklad.id}')" class="push-btn ms-btn">📤 Отправить в МС</button>`;
-                } else {
-                    html += '<p class="not-found">Товар не найден</p>';
-                }
-                html += '</div>';
-
-                // Wildberries Column (editable)
-                html += '<div class="product-card wb"><h3>Wildberries</h3>';
-                if (data.wildberries) {
-                    if (data.wildberries.error) {
-                        html += `<p class="error">Ошибка: ${data.wildberries.error}</p>`;
-                    } else {
-                        html += `<p><strong>${data.wildberries.title || 'N/A'}</strong></p>`;
-                        html += `<p>Артикул (vendorCode): <strong>${data.wildberries.vendorCode || data.wildberries.code}</strong></p>`;
-                        if (data.wildberries.brand) html += `<p>Бренд: ${data.wildberries.brand}</p>`;
-                        if (data.wildberries.nmID) html += `<p>nmID: ${data.wildberries.nmID}</p>`;
-                        
-                        // Editable fields for WB
-                        html += '<div class="edit-fields">';
-                        html += `<label>Цена (руб): <input type="number" id="wb-price" value="${data.wildberries.price || 0}" step="0.01" class="edit-input"></label>`;
-                        html += `<label>Остаток: <input type="number" id="wb-stock" value="${data.wildberries.stock || 0}" class="edit-input"></label>`;
-                        html += `<label>Название: <input type="text" id="wb-title" value="${data.wildberries.title || ''}" class="edit-input full-width"></label>`;
-                        html += '</div>';
-                        
-                        html += `<button onclick="pushToWB('${data.wildberries.vendorCode || data.wildberries.code}')" class="push-btn wb-btn">📤 Отправить в WB</button>`;
-                    }
-                } else {
-                    html += '<p class="not-found">Товар не найден</p>';
-                }
-                html += '</div>';
-
-                // Ozon Column (editable, same design as WB)
-                html += '<div class="product-card ozon"><h3>Ozon</h3>';
-                if (data.ozon) {
-                    if (data.ozon.error) {
-                        html += `<p class="error">Ошибка: ${data.ozon.error}</p>`;
-                    } else {
-                        html += `<p><strong>${data.ozon.title || 'N/A'}</strong></p>`;
-                        html += `<p>Код (offer_id): <strong>${data.ozon.code}</strong></p>`;
-                        if (data.ozon.sku) html += `<p>SKU: ${data.ozon.sku}</p>`;
-                        
-                        // Editable fields for Ozon (same design as WB)
-                        html += '<div class="edit-fields">';
-                        html += `<label>Цена (руб): <input type="number" id="ozon-price" value="${data.ozon.price || 0}" step="0.01" class="edit-input"></label>`;
-                        html += `<label>Остаток: <input type="number" id="ozon-stock" value="${data.ozon.stock || 0}" class="edit-input"></label>`;
-                        html += `<label>Название: <input type="text" id="ozon-title" value="${data.ozon.title || ''}" class="edit-input full-width"></label>`;
-                        html += '</div>';
-                        
-                        html += `<button onclick="pushToOzon('${data.ozon.code}')" class="push-btn ozon-btn">📤 Отправить в Ozon</button>`;
-                    }
-                } else {
-                    html += '<p class="not-found">Товар не найден</p>';
-                }
-                html += '</div>';
-
-                html += '</div>';
-                resultsDiv.innerHTML = html;
-
-            } catch (error) {
-                resultsDiv.innerHTML = `<div class="search-status error">Ошибка: ${error.message}</div>`;
-            }
+        // Когда выбираем "Авито" как службу — автоматически снимаем чекбокс
+        stickerCarrier.addEventListener('input', () => {
+          if (stickerCarrier.value.trim() === 'Авито') {
+            stickerAvito.checked = false;
+            stickerAvito.disabled = true;
+          } else {
+            stickerAvito.disabled = false;
+          }
+        });
+        // При загрузке проверить начальное значение
+        if (stickerCarrier.value.trim() === 'Авито') {
+          stickerAvito.disabled = true;
         }
-        
-        // Push updated data to MoySklad
-        async function pushToMS(productId) {
-            if (!productId) return;
-            
-            const price = parseFloat(document.getElementById('ms-price').value) || 0;
-            const stock = parseInt(document.getElementById('ms-stock').value) || 0;
-            const title = document.getElementById('ms-title').value.trim();
-            
-            const resultsDiv = document.getElementById('marketResults');
-            const statusDiv = document.createElement('div');
-            statusDiv.className = 'search-status';
-            statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в МойСклад...';
-            resultsDiv.prepend(statusDiv);
-            
-            try {
-                const msToken = localStorage.getItem('ms_token') || '';
-                if (!msToken) throw new Error('Нет токена МойСклад');
-                
-                const response = await fetch(`/api/market/push/ms`, {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'x-api-token': msToken
-                    },
-                    body: JSON.stringify({
-                        productId: productId,
-                        price: price,
-                        stock: stock,
-                        title: title
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
-                
-                statusDiv.className = 'search-status success';
-                statusDiv.innerHTML = `✅ Данные успешно отправлены в МойСклад`;
-                
-                // Refresh search after 2 seconds
-                setTimeout(() => searchProductByOEM(), 2000);
-                
-            } catch (error) {
-                statusDiv.className = 'search-status error';
-                statusDiv.innerHTML = `❌ Ошибка отправки в МойСклад: ${error.message}`;
-            }
+
+        document.getElementById('stickerCancel').addEventListener('click', () => {
+          stickerModal.classList.add('hidden');
+        });
+        document.getElementById('stickerCreate').addEventListener('click', generateSticker);
+        // Close on overlay click
+        stickerModal.addEventListener('click', (e) => {
+          if (e.target === stickerModal) stickerModal.classList.add('hidden');
+        });
+      });
+      // Market search logic
+      async function searchProductByOEM() {
+        const oem = document.getElementById('oemSearchInput').value.trim();
+        if (!oem) return;
+
+        const resultsDiv = document.getElementById('marketResults');
+        // Show loading state
+        resultsDiv.innerHTML =
+          '<div class="search-status"><span class="search-spinner"></span> Поиск кода: <strong>' +
+          oem +
+          '</strong></div>';
+
+        const token = localStorage.getItem('ms_token') || '';
+        if (!token) {
+          resultsDiv.innerHTML =
+            '<div class="search-status error">Ошибка: Необходим токен МойСклад. Нажмите "Токены" в шапке.</div>';
+          return;
         }
-        
-        // Push updated data to Wildberries
-        async function pushToWB(vendorCode) {
-            if (!vendorCode) return;
-            
-            const price = parseFloat(document.getElementById('wb-price').value) || 0;
-            const stock = parseInt(document.getElementById('wb-stock').value) || 0;
-            const title = document.getElementById('wb-title').value.trim();
-            
-            const resultsDiv = document.getElementById('marketResults');
-            const statusDiv = document.createElement('div');
-            statusDiv.className = 'search-status';
-            statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в WB...';
-            resultsDiv.prepend(statusDiv);
-            
-            try {
-                const wbToken = localStorage.getItem('wb_token') || '';
-                if (!wbToken) throw new Error('Нет токена WB');
-                
-                const response = await fetch('/api/market/push/wb', {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'x-wb-token': wbToken
-                    },
-                    body: JSON.stringify({
-                        vendorCode: vendorCode,
-                        price: price,
-                        stock: stock,
-                        title: title
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
-                
-                statusDiv.className = 'search-status success';
-                statusDiv.innerHTML = `✅ Данные успешно отправлены в WB для ${vendorCode}`;
-                
-                // Refresh search after 2 seconds
-                setTimeout(() => searchProductByOEM(), 2000);
-                
-            } catch (error) {
-                statusDiv.className = 'search-status error';
-                statusDiv.innerHTML = `❌ Ошибка отправки в WB: ${error.message}`;
+
+        try {
+          const wbToken = localStorage.getItem('wb_token') || '';
+          const ozonClientId = localStorage.getItem('ozon_client_id') || '';
+          const ozonApiKey = localStorage.getItem('ozon_api_key') || '';
+
+          const response = await fetch(`/api/market/product?code=${encodeURIComponent(oem)}`, {
+            headers: {
+              'x-api-token': token,
+              'x-wb-token': wbToken,
+              'x-ozon-client-id': ozonClientId,
+              'x-ozon-api-key': ozonApiKey
             }
-        }
-        
-        // Push updated data to Ozon
-        async function pushToOzon(offerId) {
-            if (!offerId) return;
-            
-            const price = parseFloat(document.getElementById('ozon-price').value) || 0;
-            const stock = parseInt(document.getElementById('ozon-stock').value) || 0;
-            const title = document.getElementById('ozon-title').value.trim();
-            
-            const resultsDiv = document.getElementById('marketResults');
-            const statusDiv = document.createElement('div');
-            statusDiv.className = 'search-status';
-            statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в Ozon...';
-            resultsDiv.prepend(statusDiv);
-            
-            try {
-                const ozonClientId = localStorage.getItem('ozon_client_id') || '';
-                const ozonApiKey = localStorage.getItem('ozon_api_key') || '';
-                if (!ozonClientId || !ozonApiKey) throw new Error('Нет ключей Ozon');
-                
-                const response = await fetch('/api/market/push/ozon', {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'x-ozon-client-id': ozonClientId,
-                        'x-ozon-api-key': ozonApiKey
-                    },
-                    body: JSON.stringify({
-                        offerId: offerId,
-                        price: price,
-                        stock: stock,
-                        title: title
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
-                
-                statusDiv.className = 'search-status success';
-                statusDiv.innerHTML = `✅ Данные успешно отправлены в Ozon для ${offerId}`;
-                
-                // Refresh search after 2 seconds
-                setTimeout(() => searchProductByOEM(), 2000);
-                
-            } catch (error) {
-                statusDiv.className = 'search-status error';
-                statusDiv.innerHTML = `❌ Ошибка отправки в Ozon: ${error.message}`;
+          });
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error || 'Ошибка сервера');
+          }
+
+          // Render results - Grid layout: shared fields, then rows of 3 columns
+          var ms = data.moysklad;
+          var ozon = data.ozon;
+          var wb = data.wildberries;
+          var html = '<div class="market-grid">';
+
+          // ── Header row: название + цена (3 колонки) ──
+          html += '<div class="market-row header-row">';
+
+          // MS header
+          html += '<div class="ms-cell">';
+          if (ms) {
+            html += '<h3>МойСклад</h3>';
+            html +=
+              '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">Код: ' +
+              ms.code +
+              (ms.article ? ' | Арт: ' + ms.article : '') +
+              '</p>';
+            html += '<div class="edit-fields" style="margin:0;">';
+            html +=
+              '<label>Цена (руб): <input type="number" id="ms-price" value="' +
+              (ms.price || 0) +
+              '" step="0.01" class="edit-input"></label>';
+            html +=
+              '<label>Название: <input type="text" id="ms-title" value="' +
+              (ms.name || '').replace(/"/g, '&quot;') +
+              '" class="edit-input full-width"></label>';
+            html += '</div>';
+          } else {
+            html += '<h3>МойСклад</h3><p class="not-found">Товар не найден</p>';
+          }
+          html += '</div>';
+
+          // Ozon header
+          html += '<div class="ozon-cell">';
+          if (ozon && !ozon.error) {
+            html += '<h3>Ozon</h3>';
+            html +=
+              '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">offer_id: ' +
+              ozon.code +
+              (ozon.product_id ? ' | ID: ' + ozon.product_id : '') +
+              '</p>';
+            html += '<div class="edit-fields" style="margin:0;">';
+            html +=
+              '<label>Цена (руб): <input type="number" id="ozon-price" value="' +
+              (ozon.price || 0) +
+              '" step="0.01" class="edit-input"></label>';
+            html +=
+              '<label>Название: <input type="text" id="ozon-title" value="' +
+              (ozon.title || '').replace(/"/g, '&quot;') +
+              '" class="edit-input full-width"></label>';
+            html += '</div>';
+          } else if (ozon && ozon.error) {
+            html += '<h3>Ozon</h3><p class="error">' + ozon.error + '</p>';
+          } else {
+            html += '<h3>Ozon</h3><p class="not-found">Товар не найден</p>';
+          }
+          html += '</div>';
+
+          // WB header
+          html += '<div class="wb-cell">';
+          if (wb && !wb.error) {
+            html += '<h3>Wildberries</h3>';
+            html +=
+              '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">vendorCode: ' +
+              (wb.vendorCode || wb.code) +
+              (wb.brand ? ' | ' + wb.brand : '') +
+              '</p>';
+            html += '<div class="edit-fields" style="margin:0;">';
+            html +=
+              '<label>Цена (руб): <input type="number" id="wb-price" value="' +
+              (wb.price || 0) +
+              '" step="0.01" class="edit-input"></label>';
+            html +=
+              '<label>Название: <input type="text" id="wb-title" value="' +
+              (wb.title || '').replace(/"/g, '&quot;') +
+              '" class="edit-input full-width"></label>';
+            html += '</div>';
+          } else if (wb && wb.error) {
+            html += '<h3>Wildberries</h3><p class="error">' + wb.error + '</p>';
+          } else {
+            html += '<h3>Wildberries</h3><p class="not-found">Товар не найден</p>';
+          }
+          html += '</div>';
+
+          html += '</div>'; // end header-row
+
+          // ── Description row (3 колонки) ──
+          html += '<div class="market-row desc-row">';
+
+          // MS description
+          html += '<div class="ms-cell">';
+          if (ms) {
+            var msDescClean = ms.descriptionClean || ms.description || '';
+            html +=
+              '<h4 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Описание</h4>';
+            html +=
+              '<textarea class="desc-textarea ms-desc" data-original-html="' +
+              (ms.description || '').replace(/"/g, '&quot;') +
+              '" data-original-clean="' +
+              msDescClean.replace(/"/g, '&quot;') +
+              '" placeholder="Нет описания">' +
+              msDescClean.replace(/"/g, '&quot;') +
+              '</textarea>';
+            html +=
+              '<button class="improve-btn" data-platform="ms" disabled>✨ Улучшить (AI)</button>';
+          }
+          html += '</div>';
+
+          // Ozon description
+          html += '<div class="ozon-cell">';
+          if (ozon && !ozon.error) {
+            var ozonDescClean = ozon.descriptionClean || ozon.description || '';
+            html +=
+              '<h4 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Описание</h4>';
+            html +=
+              '<textarea class="desc-textarea ozon-desc" data-original-html="' +
+              (ozon.description || '').replace(/"/g, '&quot;') +
+              '" data-original-clean="' +
+              ozonDescClean.replace(/"/g, '&quot;') +
+              '" placeholder="Нет описания">' +
+              ozonDescClean.replace(/"/g, '&quot;') +
+              '</textarea>';
+            html +=
+              '<button class="improve-btn" data-platform="ozon" disabled>✨ Улучшить (AI)</button>';
+          }
+          html += '</div>';
+
+          // WB description
+          html += '<div class="wb-cell">';
+          if (wb && !wb.error) {
+            var wbDescClean = wb.descriptionClean || wb.description || '';
+            html +=
+              '<h4 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Описание</h4>';
+            html +=
+              '<textarea class="desc-textarea wb-desc" data-original-html="' +
+              (wb.description || '').replace(/"/g, '&quot;') +
+              '" data-original-clean="' +
+              wbDescClean.replace(/"/g, '&quot;') +
+              '" placeholder="Нет описания">' +
+              wbDescClean.replace(/"/g, '&quot;') +
+              '</textarea>';
+            html +=
+              '<button class="improve-btn" data-platform="wb" disabled>✨ Улучшить (AI)</button>';
+          }
+          html += '</div>';
+
+          html += '</div>'; // end desc-row
+
+          // ── Aligned Characteristics / Attributes ──
+          // Собираем атрибуты из всех систем и выравниваем по строкам
+          var aliasCanonical = {
+            'Страна-изготовитель': 'Страна производства',
+            'Количество, штук': 'Количество предметов в упаковке (шт.)'
+          };
+          var ozonSkipNames = ['Rich-контент JSON', 'Аннотация', 'Код продавца'];
+
+          function getCanonicalName(name) {
+            return aliasCanonical[name] || name;
+          }
+          function esc(v) {
+            return String(v == null ? '' : v).replace(/"/g, '&quot;');
+          }
+
+          // Build flat lists with canonical names
+          function collectAttrs(arr, systemKey, nameField, idField) {
+            var list = [];
+            (arr || []).forEach(function (a) {
+              var name = a.name || '';
+              if (!name) return;
+              if (systemKey === 'ozon' && ozonSkipNames.indexOf(name) !== -1) return;
+              var val = '';
+              if (systemKey === 'ozon') {
+                val = a.values && a.values.length > 0 ? a.values[0].value || '' : '';
+              } else if (Array.isArray(a.value)) {
+                val = a.value[0] || '';
+              } else {
+                val = a.value || '';
+              }
+              list.push({
+                canonical: getCanonicalName(name),
+                originalName: name,
+                systemKey: systemKey,
+                id: a[nameField] || a.id || a.attribute_id || '?',
+                value: val
+              });
+            });
+            return list;
+          }
+
+          var msAttrs = collectAttrs(ms ? ms.attributes : null, 'ms', 'id');
+          var ozonAttrs = collectAttrs(
+            ozon && !ozon.error ? ozon.attributes : null,
+            'ozon',
+            'attribute_id'
+          );
+          var wbAttrs = collectAttrs(
+            wb && !wb.error ? wb.characteristics || wb.attributes : null,
+            'wb',
+            'id'
+          );
+
+          // Build unified ordered name list (MS order first, then append new ones)
+          var canonicalOrder = [];
+          var nameSeen = {};
+          function addName(n) {
+            if (n && !nameSeen[n]) {
+              nameSeen[n] = true;
+              canonicalOrder.push(n);
             }
+          }
+          msAttrs.forEach(function (a) {
+            addName(a.canonical);
+          });
+          ozonAttrs.forEach(function (a) {
+            addName(a.canonical);
+          });
+          wbAttrs.forEach(function (a) {
+            addName(a.canonical);
+          });
+
+          // Build lookups by canonical name
+          function buildLookup(list) {
+            var m = {};
+            list.forEach(function (a) {
+              m[a.canonical] = a;
+            });
+            return m;
+          }
+          var msLookup = buildLookup(msAttrs);
+          var ozonLookup = buildLookup(ozonAttrs);
+          var wbLookup = buildLookup(wbAttrs);
+
+          // Render aligned rows
+          if (canonicalOrder.length > 0) {
+            html += '<div style="margin-top:8px;">';
+            html +=
+              '<h4 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;">Характеристики</h4>';
+            html += '<div class="aligned-chars">';
+            canonicalOrder.forEach(function (name) {
+              var msA = msLookup[name];
+              var ozA = ozonLookup[name];
+              var wbA = wbLookup[name];
+              html += '<div class="aligned-char-row">';
+              // MS
+              html += '<div class="aligned-char-cell' + (msA ? ' has-val' : ' empty') + '">';
+              if (msA) {
+                html += '<span class="aligned-char-name">' + esc(msA.originalName) + '</span>';
+                html +=
+                  '<textarea class="attr-value ms-attr" data-attr-id="' +
+                  esc(msA.id) +
+                  '" rows="1">' +
+                  esc(msA.value) +
+                  '</textarea>';
+              }
+              html += '</div>';
+              // Ozon
+              html += '<div class="aligned-char-cell' + (ozA ? ' has-val' : ' empty') + '">';
+              if (ozA) {
+                html += '<span class="aligned-char-name">' + esc(ozA.originalName) + '</span>';
+                html +=
+                  '<textarea class="attr-value ozon-attr" data-attr-id="' +
+                  esc(ozA.id) +
+                  '" rows="1">' +
+                  esc(ozA.value) +
+                  '</textarea>';
+              }
+              html += '</div>';
+              // WB
+              html += '<div class="aligned-char-cell' + (wbA ? ' has-val' : ' empty') + '">';
+              if (wbA) {
+                html += '<span class="aligned-char-name">' + esc(wbA.originalName) + '</span>';
+                html +=
+                  '<textarea class="attr-value wb-attr" data-attr-id="' +
+                  esc(wbA.id) +
+                  '" rows="1">' +
+                  esc(wbA.value) +
+                  '</textarea>';
+              }
+              html += '</div>';
+              html += '</div>';
+            });
+            html += '</div>';
+            html += '</div>';
+          } else {
+            html +=
+              '<p style="color:var(--text-muted);font-style:italic;margin-top:12px;">Нет характеристик</p>';
+          }
+
+          // ── Push button row (3 колонки) ──
+          html += '<div class="market-row btn-row">';
+
+          // MS push button
+          html += '<div class="ms-cell" style="display:flex;align-items:center;">';
+          if (ms) {
+            html +=
+              '<button onclick="pushToMS(\'' +
+              ms.id +
+              '\')" class="push-btn ms-btn">📤 Отправить в МС</button>';
+          }
+          html += '</div>';
+
+          // Ozon push button
+          html += '<div class="ozon-cell" style="display:flex;align-items:center;">';
+          if (ozon && !ozon.error) {
+            html +=
+              '<button onclick="pushToOzon(\'' +
+              (ozon.code || '') +
+              "', " +
+              (ozon.product_id || 0) +
+              ')" class="push-btn ozon-btn">📤 Отправить в Ozon</button>';
+          }
+          html += '</div>';
+
+          // WB push button
+          html += '<div class="wb-cell" style="display:flex;align-items:center;">';
+          if (wb && !wb.error) {
+            html +=
+              '<button onclick="pushToWB(\'' +
+              (wb.vendorCode || wb.code || '') +
+              '\')" class="push-btn wb-btn">📤 Отправить в WB</button>';
+          }
+          html += '</div>';
+
+          html += '</div>'; // end btn-row
+          html += '</div>'; // end market-grid
+          resultsDiv.innerHTML = html;
+
+          // Auto-resize all textareas to fit content height
+          resultsDiv.querySelectorAll('textarea').forEach(function (ta) {
+            ta.style.height = 'auto';
+            ta.style.height = ta.scrollHeight + 'px';
+            ta.addEventListener('input', function () {
+              this.style.height = 'auto';
+              this.style.height = this.scrollHeight + 'px';
+            });
+          });
+        } catch (error) {
+          resultsDiv.innerHTML = `<div class="search-status error">Ошибка: ${error.message}</div>`;
         }
+      }
+
+      // ── Helper: get description value (if unchanged → original HTML; if changed → clean text) ──
+      function getDescriptionValue(textarea) {
+        if (!textarea) return '';
+        var originalClean = textarea.dataset.originalClean || '';
+        var originalHtml = textarea.dataset.originalHtml || '';
+        var currentValue = textarea.value || '';
+        // If user hasn't changed it, send original HTML; otherwise send clean text
+        if (currentValue === originalClean) {
+          return originalHtml;
+        }
+        return currentValue;
+      }
+
+      // Push updated data to MoySklad
+      async function pushToMS(productId) {
+        if (!productId) return;
+
+        const price = parseFloat(document.getElementById('ms-price').value) || 0;
+        const title = document.getElementById('ms-title').value.trim();
+
+        // Collect attributes
+        var msAttrInputs = document.querySelectorAll('.ms-attr');
+        var msAttributes = Array.from(msAttrInputs).map(function (input) {
+          return { id: input.dataset.attrId, value: input.value };
+        });
+
+        // Description: check if changed, use original HTML if unchanged
+        var msTextarea = document.querySelector('.ms-desc');
+        var msDescription = getDescriptionValue(msTextarea);
+
+        const resultsDiv = document.getElementById('marketResults');
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'search-status';
+        statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в МойСклад...';
+        resultsDiv.prepend(statusDiv);
+
+        try {
+          const msToken = localStorage.getItem('ms_token') || '';
+          if (!msToken) throw new Error('Нет токена МойСклад');
+
+          const response = await fetch(`/api/market/push/ms`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-token': msToken
+            },
+            body: JSON.stringify({
+              productId: productId,
+              price: price,
+              title: title,
+              description: msDescription,
+              attributes: msAttributes
+            })
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
+
+          statusDiv.className = 'search-status success';
+          statusDiv.innerHTML = `✅ Данные успешно отправлены в МойСклад`;
+
+          // Refresh search after 2 seconds
+          setTimeout(() => searchProductByOEM(), 2000);
+        } catch (error) {
+          statusDiv.className = 'search-status error';
+          statusDiv.innerHTML = `❌ Ошибка отправки в МойСклад: ${error.message}`;
+        }
+      }
+
+      // Push updated data to Wildberries
+      async function pushToWB(vendorCode) {
+        if (!vendorCode) return;
+
+        const price = parseFloat(document.getElementById('wb-price').value) || 0;
+        const title = document.getElementById('wb-title').value.trim();
+
+        // Collect characteristics
+        var wbAttrInputs = document.querySelectorAll('.wb-attr');
+        var wbCharacteristics = Array.from(wbAttrInputs).map(function (input) {
+          return { id: parseInt(input.dataset.attrId), value: [input.value] };
+        });
+
+        // Description: check if changed, use original HTML if unchanged
+        var wbTextarea = document.querySelector('.wb-desc');
+        var wbDescription = getDescriptionValue(wbTextarea);
+
+        const resultsDiv = document.getElementById('marketResults');
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'search-status';
+        statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в WB...';
+        resultsDiv.prepend(statusDiv);
+
+        try {
+          const wbToken = localStorage.getItem('wb_token') || '';
+          if (!wbToken) throw new Error('Нет токена WB');
+
+          const response = await fetch('/api/market/push/wb', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-wb-token': wbToken
+            },
+            body: JSON.stringify({
+              vendorCode: vendorCode,
+              price: price,
+              title: title,
+              description: wbDescription,
+              characteristics: wbCharacteristics
+            })
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
+
+          statusDiv.className = 'search-status success';
+          statusDiv.innerHTML = `✅ Данные успешно отправлены в WB для ${vendorCode}`;
+
+          // Refresh search after 2 seconds
+          setTimeout(() => searchProductByOEM(), 2000);
+        } catch (error) {
+          statusDiv.className = 'search-status error';
+          statusDiv.innerHTML = `❌ Ошибка отправки в WB: ${error.message}`;
+        }
+      }
+
+      // Push updated data to Ozon
+      async function pushToOzon(offerId, productId) {
+        if (!offerId && !productId) return;
+
+        const price = parseFloat(document.getElementById('ozon-price').value) || 0;
+        const title = document.getElementById('ozon-title').value.trim();
+
+        // Collect Ozon attributes
+        var ozonAttrInputs = document.querySelectorAll('.ozon-attr');
+        var ozonAttributes = Array.from(ozonAttrInputs).map(function (input) {
+          return {
+            attribute_id: parseInt(input.dataset.attrId),
+            values: [{ value: input.value }]
+          };
+        });
+
+        // Description: check if changed, use original HTML if unchanged
+        var ozonTextarea = document.querySelector('.ozon-desc');
+        var ozonDescription = getDescriptionValue(ozonTextarea);
+
+        const resultsDiv = document.getElementById('marketResults');
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'search-status';
+        statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в Ozon...';
+        resultsDiv.prepend(statusDiv);
+
+        try {
+          const ozonClientId = localStorage.getItem('ozon_client_id') || '';
+          const ozonApiKey = localStorage.getItem('ozon_api_key') || '';
+          if (!ozonClientId || !ozonApiKey) throw new Error('Нет ключей Ozon');
+
+          const response = await fetch('/api/market/push/ozon', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-ozon-client-id': ozonClientId,
+              'x-ozon-api-key': ozonApiKey
+            },
+            body: JSON.stringify({
+              offerId: offerId,
+              productId: productId,
+              price: price,
+              title: title,
+              description: ozonDescription,
+              attributes: ozonAttributes
+            })
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
+
+          statusDiv.className = 'search-status success';
+          statusDiv.innerHTML = `✅ Данные успешно отправлены в Ozon (${offerId || productId})`;
+
+          // Refresh search after 2 seconds
+          setTimeout(() => searchProductByOEM(), 2000);
+        } catch (error) {
+          statusDiv.className = 'search-status error';
+          statusDiv.innerHTML = `❌ Ошибка отправки в Ozon: ${error.message}`;
+        }
+      }
     </script>
-</body>
+  </body>
 </html>

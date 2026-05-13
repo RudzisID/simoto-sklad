@@ -1,28 +1,56 @@
 {
-  "62476487-0213-4": {
-    "orderName": "70479",
-    "sum": 1370,
-    "paid": 1370,
+  "0120444050-0076-1": {
+    "orderName": "70475",
+    "sum": 1780,
+    "paid": 1780,
     "status": "other",
     "statusName": "Отгружен",
-    "orderId": "04242a9c-2c5e-11f1-0a80-16d8000335d7",
+    "orderId": "80ba0375-2c5c-11f1-0a80-13e60000f9ee",
     "hasDemand": true,
     "hasPayment": true,
     "hasReturn": false,
     "isCancelled": false,
-    "demandName": "67031",
-    "paymentName": "66277",
+    "demandName": "66794",
+    "paymentName": "65789",
     "returnName": null,
     "returnSum": 0,
     "cancelledSum": 0,
-    "savedAt": "2026-05-09T05:12:56.386Z",
+    "savedAt": "2026-05-13T06:13:37.838Z",
     "orderPositions": [
       {
-        "code": "0180-152000",
-        "name": "Катушка зажигания 500",
+        "code": "7020-080230",
+        "name": "Трос дублирующего рычага тормоза X8",
         "quantity": 1,
-        "price": 1370,
-        "sum": 1370
+        "price": 1780,
+        "sum": 1780
+      }
+    ],
+    "demandPositions": []
+  },
+  "0112978756-0245-1": {
+    "orderName": "70336",
+    "sum": 1077,
+    "paid": 1077,
+    "status": "other",
+    "statusName": "Отгружен",
+    "orderId": "bd2a769c-2c0e-11f1-0a80-06a0014b05a6",
+    "hasDemand": true,
+    "hasPayment": true,
+    "hasReturn": false,
+    "isCancelled": false,
+    "demandName": "66814",
+    "paymentName": "65787",
+    "returnName": null,
+    "returnSum": 0,
+    "cancelledSum": 0,
+    "savedAt": "2026-05-13T06:13:37.838Z",
+    "orderPositions": [
+      {
+        "code": "5270-150500",
+        "name": "Реле стартера без пред. (x8)",
+        "quantity": 1,
+        "price": 1077,
+        "sum": 1077
       }
     ],
     "demandPositions": []

@@ -6,11 +6,9 @@ title SiMOTO-Sklad
 :: Переход в директорию скрипта
 cd /d "%~dp0"
 
-:: ANSI цвета (через ESC-символ из PowerShell)
-for /f %%a in ('powershell -NoProfile -Command "[char]27"') do set "ESC=%%a"
-set "GREEN=%ESC%[92m"
-set "RED=%ESC%[91m"
-set "RESET=%ESC%[0m"
+:: Вспомогательная функция для цветного вывода через PowerShell
+set "PSCMD=powershell -NoProfile -Command"
+
 
 echo.
 echo ===============================================
@@ -21,30 +19,30 @@ echo.
 :: Check Node.js
 where node >nul 2>&1
 if errorlevel 1 (
-    echo [X] Node.js not found!
+    %PSCMD% "Write-Host '[X] Node.js not found!' -ForegroundColor Red"
     pause
     exit /b 1
 )
-echo [OK] Node.js found
+%PSCMD% "Write-Host '[OK] Node.js found' -ForegroundColor Green"
 
 :: Check dependencies
 if not exist "node_modules" (
-    echo [!] Installing dependencies...
+    %PSCMD% "Write-Host '[!] Installing dependencies...' -ForegroundColor Yellow"
     call npm install
     if errorlevel 1 (
-        echo [X] npm install failed!
+        %PSCMD% "Write-Host '[X] npm install failed!' -ForegroundColor Red"
         pause
         exit /b 1
     )
-    echo [OK] Dependencies installed
+    %PSCMD% "Write-Host '[OK] Dependencies installed' -ForegroundColor Green"
 ) else (
-    echo [OK] Dependencies ready
+    %PSCMD% "Write-Host '[OK] Dependencies ready' -ForegroundColor Green"
 )
 
 :: Check .env
 if not exist ".env" (
     echo GH_TOKEN= > .env
-    echo [OK] Created .env
+    %PSCMD% "Write-Host '[OK] Created .env' -ForegroundColor Green"
 )
 
 :: Create logs dir
@@ -54,11 +52,11 @@ if not exist "logs" mkdir logs
 node -p "require('./package.json').version" > "%TEMP%\ver.txt" 2>nul
 set /p curver=<"%TEMP%\ver.txt"
 del "%TEMP%\ver.txt" >nul 2>&1
-echo [i] Current version: %curver%
+%PSCMD% "Write-Host ('[i] Current version: ' + '%curver%') -ForegroundColor Cyan"
 
 :: Check for updates
 echo.
-echo [i] Checking for updates...
+%PSCMD% "Write-Host '[i] Checking for updates...' -ForegroundColor Cyan"
 node scripts/check-update.js %curver% > "%TEMP%\ver_check.txt" 2>&1
 if not exist "%TEMP%\ver_check.txt" goto start_server
 
@@ -70,9 +68,10 @@ for /f "tokens=2 delims==" %%a in ('findstr /C:"TAG_NAME" "%TEMP%\ver_check.txt"
 
 :update_prompt
 echo.
-echo %GREEN%[i] Рекомендуется установить обновление%RESET%
+%PSCMD% "Write-Host '[i] Рекомендуется установить обновление' -ForegroundColor Green"
 set "update_choice="
-set /p "update_choice=%GREEN%y%RESET%/%GREEN%да%RESET% / %RED%n%RESET%/%RED%нет%RESET%: "
+%PSCMD% -NoProfile -Command "Write-Host 'y' -ForegroundColor Green -NoNewline; Write-Host '/' -NoNewline; Write-Host 'да' -ForegroundColor Green -NoNewline; Write-Host ' / ' -NoNewline; Write-Host 'n' -ForegroundColor Red -NoNewline; Write-Host '/' -NoNewline; Write-Host 'нет' -ForegroundColor Red -NoNewline; Write-Host ': ' -NoNewline"
+set /p "update_choice="
 
 :: Normalize input: y/yes/да → y, n/no/нет/н → n
 if /i "!update_choice!"=="y"   set "update_choice=y"
@@ -91,29 +90,29 @@ goto update_prompt
 :do_update
 del "%TEMP%\ver_check.txt" >nul 2>&1
 echo.
-echo [i] Updating to version !NEW_TAG!...
+%PSCMD% "Write-Host ('[i] Updating to version ' + '!NEW_TAG!' + '...') -ForegroundColor Cyan"
 node scripts/update.js !NEW_TAG!
 if errorlevel 1 (
-    echo [X] Update failed!
+    %PSCMD% "Write-Host '[X] Update failed!' -ForegroundColor Red"
     pause
     exit /b 1
 )
-echo [OK] Updated! Restarting...
+%PSCMD% "Write-Host '[OK] Updated! Restarting...' -ForegroundColor Green"
 cmd /c start "" "%_batfile%"
 exit /b 0
 
 :skip_update
-echo [i] Update skipped. Starting current version...
+%PSCMD% "Write-Host '[i] Update skipped. Starting current version...' -ForegroundColor Cyan"
 del "%TEMP%\ver_check.txt" >nul 2>&1
 
 :start_server
 :: Start server
 echo.
-echo [i] Starting server...
+%PSCMD% "Write-Host '[i] Starting server...' -ForegroundColor Cyan"
 start http://localhost:3000
 node server.js
 
 echo.
-echo [OK] Server stopped
+%PSCMD% "Write-Host '[OK] Server stopped' -ForegroundColor Yellow"
 pause
 endlocal

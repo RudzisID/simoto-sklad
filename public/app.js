@@ -1,6 +1,6 @@
 // Frontend логика
 
-let ordersData = []
+let ordersData = [];
 
 // Порядок статусов по жизненному циклу (для циклической сортировки)
 const LIFECYCLE_STATUSES = [
@@ -25,143 +25,148 @@ const LIFECYCLE_STATUSES = [
   'Частичная отмена',
   'Отменён',
   'ОЖДАЕТ ОЗОН (КОМПЕНСИРОВАН)'
-]
+];
 
 // Получить статусы из жизненного цикла, которые есть в текущих данных
 function getLifecycleStatuses() {
-  const statusSet = new Set()
-  ordersData.forEach(order => {
-    if (order.statusName) statusSet.add(order.statusName)
-  })
-  
+  const statusSet = new Set();
+  ordersData.forEach((order) => {
+    if (order.statusName) statusSet.add(order.statusName);
+  });
+
   // Разделяем на статусы из жизненного цикла и остальные
-  const inLifecycle = []
-  const notInLifecycle = []
-  
-  statusSet.forEach(status => {
+  const inLifecycle = [];
+  const notInLifecycle = [];
+
+  statusSet.forEach((status) => {
     if (LIFECYCLE_STATUSES.includes(status)) {
-      inLifecycle.push(status)
+      inLifecycle.push(status);
     } else {
-      notInLifecycle.push(status)
+      notInLifecycle.push(status);
     }
-  })
-  
+  });
+
   // Сортируем статусы из жизненного цикла по порядку в LIFECYCLE_STATUSES
-  inLifecycle.sort((a, b) => LIFECYCLE_STATUSES.indexOf(a) - LIFECYCLE_STATUSES.indexOf(b))
-  
+  inLifecycle.sort((a, b) => LIFECYCLE_STATUSES.indexOf(a) - LIFECYCLE_STATUSES.indexOf(b));
+
   // Сортируем остальные статусы по алфавиту
-  notInLifecycle.sort((a, b) => a.localeCompare(b, 'ru'))
-  
+  notInLifecycle.sort((a, b) => a.localeCompare(b, 'ru'));
+
   // Объединяем: сначала жизненный цикл, потом остальные
-  return [...inLifecycle, ...notInLifecycle]
+  return [...inLifecycle, ...notInLifecycle];
 }
 
-let currentPage = 0
-const PAGE_SIZE = 1000
-let ordersState = {}
+let currentPage = 0;
+const PAGE_SIZE = 1000;
+let ordersState = {};
 // currentSort: column - текущая колонка, statusIndex - индекс в getLifecycleStatuses() (для статуса)
-let currentSort = { column: 'shipmentNum', asc: true, statusIndex: 0 }
-let currentController = null
-let isWorking = false
-let realtimeMode = false // Флаг для realtime добавления строк без перерисовки
-let serverCheckTimer = null // Для cleanup таймера
-let currentDuplicates = 0 // Счётчик дублей
+let currentSort = { column: 'shipmentNum', asc: true, statusIndex: 0 };
+let currentController = null;
+let isWorking = false;
+let realtimeMode = false; // Флаг для realtime добавления строк без перерисовки
+let serverCheckTimer = null; // Для cleanup таймера
+let currentDuplicates = 0; // Счётчик дублей
 
 // Custom confirm dialog
 function showConfirm(message, title = 'Подтверждение') {
   return new Promise((resolve) => {
-    const modal = document.getElementById('confirmModal')
-    const titleEl = document.getElementById('confirmTitle')
-    const msgEl = document.getElementById('confirmMessage')
-    const okBtn = document.getElementById('confirmOk')
-    const cancelBtn = document.getElementById('confirmCancel')
-    
-    titleEl.textContent = title
-    msgEl.textContent = message
-    modal.classList.remove('hidden')
-    
+    const modal = document.getElementById('confirmModal');
+    const titleEl = document.getElementById('confirmTitle');
+    const msgEl = document.getElementById('confirmMessage');
+    const okBtn = document.getElementById('confirmOk');
+    const cancelBtn = document.getElementById('confirmCancel');
+
+    titleEl.textContent = title;
+    msgEl.textContent = message;
+    modal.classList.remove('hidden');
+
     const cleanup = (result) => {
-      modal.classList.add('hidden')
-      okBtn.removeEventListener('click', onOk)
-      cancelBtn.removeEventListener('click', onCancel)
-      modal.removeEventListener('click', onOverlayClick)
-      resolve(result)
-    }
-    
-    const onOk = () => cleanup(true)
-    const onCancel = () => cleanup(false)
+      modal.classList.add('hidden');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      modal.removeEventListener('click', onOverlayClick);
+      resolve(result);
+    };
+
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
     const onOverlayClick = (e) => {
-      if (e.target === modal) cleanup(false)
-    }
-    
-    okBtn.addEventListener('click', onOk)
-    cancelBtn.addEventListener('click', onCancel)
-    modal.addEventListener('click', onOverlayClick)
-  })
+      if (e.target === modal) cleanup(false);
+    };
+
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    modal.addEventListener('click', onOverlayClick);
+  });
 }
 
 // ===== Секундомер =====
-let operationTimer = null
-let operationStartTime = null
+let operationTimer = null;
+let operationStartTime = null;
 
 function startOperationTimer() {
-  operationStartTime = Date.now()
-  if (operationTimer) clearInterval(operationTimer)
+  operationStartTime = Date.now();
+  if (operationTimer) clearInterval(operationTimer);
   operationTimer = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - operationStartTime) / 1000)
-    const mins = Math.floor(elapsed / 60)
-    const secs = elapsed % 60
-    updateTimerDisplay(`${mins}:${secs.toString().padStart(2, '0')}`)
-  }, 1000)
+    const elapsed = Math.floor((Date.now() - operationStartTime) / 1000);
+    const mins = Math.floor(elapsed / 60);
+    const secs = elapsed % 60;
+    updateTimerDisplay(`${mins}:${secs.toString().padStart(2, '0')}`);
+  }, 1000);
 }
 
 function stopOperationTimer() {
   if (operationTimer) {
-    clearInterval(operationTimer)
-    operationTimer = null
+    clearInterval(operationTimer);
+    operationTimer = null;
   }
   if (operationStartTime) {
-    const elapsed = Math.floor((Date.now() - operationStartTime) / 1000)
-    operationStartTime = null
-    return elapsed
+    const elapsed = Math.floor((Date.now() - operationStartTime) / 1000);
+    operationStartTime = null;
+    return elapsed;
   }
-  return 0
+  return 0;
 }
 
 function updateTimerDisplay(timeStr) {
-  const timerEl = document.getElementById('operationTimer')
-  if (timerEl) timerEl.textContent = timeStr
+  const timerEl = document.getElementById('operationTimer');
+  if (timerEl) timerEl.textContent = timeStr;
 }
 
 function getFormattedTime(seconds) {
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 // Check if order was already processed
 function isOrderProcessed(shipmentNum) {
-  const state = ordersState[shipmentNum]
-  if (!state || !state.lastAction) return false
-  const processedActions = ['payment_created', 'demand_created', 'return_created', 'order_cancelled']
-  return processedActions.includes(state.lastAction)
+  const state = ordersState[shipmentNum];
+  if (!state || !state.lastAction) return false;
+  const processedActions = [
+    'payment_created',
+    'demand_created',
+    'return_created',
+    'order_cancelled'
+  ];
+  return processedActions.includes(state.lastAction);
 }
 
 // ===== Функции для блока "После действий" =====
 
 // Показать результаты массовой операции
 function showBatchResults(results, elapsedTime = 0) {
-  const container = document.getElementById('statsFinalOutput')
-  const header = document.getElementById('statsFinalHeader')
-  if (!container) return
-    
+  const container = document.getElementById('statsFinalOutput');
+  const header = document.getElementById('statsFinalHeader');
+  if (!container) return;
+
   // Показываем заголовок
-  if (header) header.classList.remove('hidden')
-    
-  const { created = 0, skipped = 0, errors = 0 } = results
-  const timeStr = getFormattedTime(elapsedTime)
-    
-  container.classList.remove('idle')
+  if (header) header.classList.remove('hidden');
+
+  const { created = 0, skipped = 0, errors = 0 } = results;
+  const timeStr = getFormattedTime(elapsedTime);
+
+  container.classList.remove('idle');
   container.innerHTML = `
         <div class="terminal-line info">Массовая операция завершена</div>
         <div class="terminal-line success">Создано: ${created}</div>
@@ -172,22 +177,22 @@ function showBatchResults(results, elapsedTime = 0) {
             <div class="terminal-status-dot"></div>
             <span>Завершено</span>
         </div>
-    `
+    `;
 }
 
 // Показать результаты сканирования
 function showScanResults(results, elapsedTime = 0) {
-  const container = document.getElementById('statsFinalOutput')
-  const header = document.getElementById('statsFinalHeader')
-  if (!container) return
-    
+  const container = document.getElementById('statsFinalOutput');
+  const header = document.getElementById('statsFinalHeader');
+  if (!container) return;
+
   // Показываем заголовок
-  if (header) header.classList.remove('hidden')
-    
-  const { processed = 0, found = 0, errors = 0 } = results
-  const timeStr = getFormattedTime(elapsedTime)
-    
-  container.classList.remove('idle')
+  if (header) header.classList.remove('hidden');
+
+  const { processed = 0, found = 0, errors = 0 } = results;
+  const timeStr = getFormattedTime(elapsedTime);
+
+  container.classList.remove('idle');
   container.innerHTML = `
         <div class="terminal-line info">Сканирование завершено</div>
         <div class="terminal-line">Обработано: ${processed}</div>
@@ -198,19 +203,19 @@ function showScanResults(results, elapsedTime = 0) {
             <div class="terminal-status-dot"></div>
             <span>Сканирование завершено</span>
         </div>
-    `
+    `;
 }
 
 // Скрыть блок "После действий"
 function hideFinalStats(showTimer = true) {
-  const container = document.getElementById('statsFinalOutput')
-  const header = document.getElementById('statsFinalHeader')
-  if (!container) return
-    
+  const container = document.getElementById('statsFinalOutput');
+  const header = document.getElementById('statsFinalHeader');
+  if (!container) return;
+
   // Показываем заголовок
-  if (header) header.classList.remove('hidden')
-    
-  container.classList.remove('idle')
+  if (header) header.classList.remove('hidden');
+
+  container.classList.remove('idle');
   if (showTimer) {
     container.innerHTML = `
             <div class="terminal-line info">Выполняется...</div>
@@ -219,43 +224,43 @@ function hideFinalStats(showTimer = true) {
                 <div class="terminal-status-dot pulse"></div>
                 <span>Обработка</span>
             </div>
-        `
+        `;
   } else {
-    container.classList.add('idle')
+    container.classList.add('idle');
     container.innerHTML = `
             <div class="terminal-message">Ожидание массовой операции</div>
-        `
-    if (header) header.classList.add('hidden')
+        `;
+    if (header) header.classList.add('hidden');
   }
 }
 
 // Load token from localStorage
 function loadToken() {
   // Try new key first, then fallback to old key
-  return localStorage.getItem('ms_token') || localStorage.getItem('moyskladToken') || ''
+  return localStorage.getItem('ms_token') || localStorage.getItem('moyskladToken') || '';
 }
 
 // Save token to localStorage (called from modal now, but keep for compatibility)
 function saveToken() {
   // This function is kept for compatibility, but token is now saved via modal
-  const tokenInput = document.getElementById('tokenInput')
+  const tokenInput = document.getElementById('tokenInput');
   if (tokenInput) {
-    const token = tokenInput.value.trim()
-    localStorage.setItem('ms_token', token)
-    localStorage.setItem('moyskladToken', token) // Keep old key for compatibility
-    showStatus('Токен сохранён')
-    return token
+    const token = tokenInput.value.trim();
+    localStorage.setItem('ms_token', token);
+    localStorage.setItem('moyskladToken', token); // Keep old key for compatibility
+    showStatus('Токен сохранён');
+    return token;
   }
-  return loadToken()
+  return loadToken();
 }
 
 // Load orders state
 async function loadOrdersState() {
   try {
-    const response = await fetch('/api/orders-state')
-    ordersState = await response.json()
+    const response = await fetch('/api/orders-state');
+    ordersState = await response.json();
   } catch (e) {
-    console.error('Error loading orders state:', e)
+    console.error('Error loading orders state:', e);
   }
 }
 
@@ -266,77 +271,84 @@ async function saveOrderAction(shipmentNum, action, result, extraData = {}) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ shipmentNum, action, result, ...extraData })
-    })
+    });
   } catch (e) {
-    console.error('Error saving order action:', e)
+    console.error('Error saving order action:', e);
   }
 }
 
 // Save current scan to server (replaces previous)
 async function saveScanState() {
   if (!ordersData || ordersData.length === 0) {
-    showStatus('Нет данных для сохранения')
-    return
+    showStatus('Нет данных для сохранения');
+    return;
   }
   try {
     // Убираем тяжёлые поля перед отправкой
-    const lightOrders = ordersData.map(order => {
-      const { orderFull, demand, ...light } = order
-      return light
-    })
+    const lightOrders = ordersData.map((order) => {
+      const { orderFull, demand, ...light } = order;
+      return light;
+    });
     const response = await fetch('/api/orders-state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orders: lightOrders })
-    })
+    });
     if (!response.ok) {
-      throw new Error('HTTP ' + response.status)
+      throw new Error('HTTP ' + response.status);
     }
-    const contentType = response.headers.get('content-type')
+    const contentType = response.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
-      const text = await response.text()
-      throw new Error('Не JSON: ' + text.slice(0, 50))
+      const text = await response.text();
+      throw new Error('Не JSON: ' + text.slice(0, 50));
     }
-    const result = await response.json()
-    showStatus('Сохранено: ' + (result.count || 0) + ' заказов')
+    const result = await response.json();
+    showStatus('Сохранено: ' + (result.count || 0) + ' заказов');
   } catch (e) {
-    showStatus('Ошибка сохранения: ' + e.message)
+    showStatus('Ошибка сохранения: ' + e.message);
   }
 }
 
 // Save silently - without alerts
 async function saveScanStateSilent() {
-  if (!ordersData || ordersData.length === 0) return
+  if (!ordersData || ordersData.length === 0) return;
   try {
     // Убираем тяжёлые поля перед отправкой
-    const lightOrders = ordersData.map(order => {
-      const { orderFull, demand, ...light } = order
-      return light
-    })
+    const lightOrders = ordersData.map((order) => {
+      const { orderFull, demand, ...light } = order;
+      return light;
+    });
     await fetch('/api/orders-state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orders: lightOrders })
-    })
+    });
   } catch (e) {
     // silence
   }
 }
 
 function parseNumbers() {
-  const text = document.getElementById('numbersInput').value
-  return [...new Set(text.split('\n').map(l => l.trim()).filter(l => l))]
+  const text = document.getElementById('numbersInput').value;
+  return [
+    ...new Set(
+      text
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l)
+    )
+  ];
 }
 
 async function loadSavedOrders() {
-  await loadOrdersState()
+  await loadOrdersState();
   if (Object.keys(ordersState).length === 0) {
-    showStatus('Нет сохранённых данных')
-    return []
+    showStatus('Нет сохранённых данных');
+    return [];
   }
-  showStatus('Загружено: ' + Object.keys(ordersState).length + ' заказов')
+  showStatus('Загружено: ' + Object.keys(ordersState).length + ' заказов');
 
-  const savedOrders = []
+  const savedOrders = [];
   for (const [shipmentNum, state] of Object.entries(ordersState)) {
     savedOrders.push({
       shipmentNum,
@@ -360,22 +372,22 @@ async function loadSavedOrders() {
       cancelledSum: state.cancelledSum || 0,
       orderPositions: state.orderPositions || [],
       demandPositions: state.demandPositions || []
-    })
+    });
   }
-  return savedOrders
+  return savedOrders;
 }
 
 function loadSavedOrdersAndRender() {
-  currentPage = 0
+  currentPage = 0;
   loadOrdersState().then(() => {
-    loadSavedOrders().then(function(orders) {
-      ordersData = orders
-      renderTable()
-      updateTotals()
-      renderCurrentStats()
-      saveLastActionStats()
-    })
-  })
+    loadSavedOrders().then(function (orders) {
+      ordersData = orders;
+      renderTable();
+      updateTotals();
+      renderCurrentStats();
+      saveLastActionStats();
+    });
+  });
 }
 
 // Sort table
@@ -383,313 +395,334 @@ function sortTable(column) {
   if (column === 'statusName') {
     if (currentSort.column === column) {
       // Циклически переключаем статус: +1 по кругу
-      const statuses = getLifecycleStatuses()
+      const statuses = getLifecycleStatuses();
       if (statuses.length > 0) {
-        currentSort.statusIndex = (currentSort.statusIndex + 1) % statuses.length
+        currentSort.statusIndex = (currentSort.statusIndex + 1) % statuses.length;
       }
     } else {
       // Первая сортировка по статусу - берем первый статус из жизненного цикла
-      currentSort.column = column
-      currentSort.statusIndex = 0
+      currentSort.column = column;
+      currentSort.statusIndex = 0;
     }
   } else {
     // Для других колонок - стандартная логика asc/desc
     if (currentSort.column === column) {
-      currentSort.asc = !currentSort.asc
+      currentSort.asc = !currentSort.asc;
     } else {
-      currentSort.column = column
-      currentSort.asc = true
+      currentSort.column = column;
+      currentSort.asc = true;
     }
   }
-  renderTable()
-  updateSortIndicators()
+  renderTable();
+  updateSortIndicators();
 }
 
 function updateSortIndicators() {
-  document.querySelectorAll('th').forEach(th => {
-    th.classList.remove('asc', 'desc', 'cycle')
-    th.removeAttribute('data-cycle-status')
-  })
-  const th = document.querySelector(`th[onclick="sortTable('${currentSort.column}')"]`)
+  document.querySelectorAll('th').forEach((th) => {
+    th.classList.remove('asc', 'desc', 'cycle');
+    th.removeAttribute('data-cycle-status');
+  });
+  const th = document.querySelector(`th[onclick="sortTable('${currentSort.column}')"]`);
   if (th) {
     if (currentSort.column === 'statusName') {
-      th.classList.add('cycle')
-      const lifecycleStatuses = getLifecycleStatuses()
-      const currentStatus = lifecycleStatuses[currentSort.statusIndex] || ''
-      th.setAttribute('data-cycle-status', currentStatus)
+      th.classList.add('cycle');
+      const lifecycleStatuses = getLifecycleStatuses();
+      const currentStatus = lifecycleStatuses[currentSort.statusIndex] || '';
+      th.setAttribute('data-cycle-status', currentStatus);
     } else {
-      th.classList.add(currentSort.asc ? 'asc' : 'desc')
+      th.classList.add(currentSort.asc ? 'asc' : 'desc');
     }
   }
 }
 
 function getSortedOrders() {
-  const col = currentSort.column
-  const asc = currentSort.asc
+  const col = currentSort.column;
+  const asc = currentSort.asc;
 
   return [...ordersData].sort((a, b) => {
-    let va, vb
+    let va, vb;
 
     if (col === 'statusName') {
       // Циклическая сортировка по статусу (жизненный цикл)
-      const lifecycleStatuses = getLifecycleStatuses()
-      const targetStatus = lifecycleStatuses[currentSort.statusIndex] || ''
+      const lifecycleStatuses = getLifecycleStatuses();
+      const targetStatus = lifecycleStatuses[currentSort.statusIndex] || '';
 
       // Группируем: выбранный статус наверху, остальные по порядку жизненного цикла
       const getStatusPriority = (statusName) => {
-        if (statusName === targetStatus) return 0  // Выбранный статус - первый
-        const idx = lifecycleStatuses.indexOf(statusName)
-        return idx === -1 ? Number.MAX_SAFE_INTEGER : idx + 1  // Остальные по порядку
-      }
+        if (statusName === targetStatus) return 0; // Выбранный статус - первый
+        const idx = lifecycleStatuses.indexOf(statusName);
+        return idx === -1 ? Number.MAX_SAFE_INTEGER : idx + 1; // Остальные по порядку
+      };
 
-      const priorityA = getStatusPriority(a[col] || '')
-      const priorityB = getStatusPriority(b[col] || '')
-      va = priorityA
-      vb = priorityB
-    } else if (col === 'hasDemand' || col === 'hasPayment' || col === 'hasReturn' || col === 'isCancelled') {
+      const priorityA = getStatusPriority(a[col] || '');
+      const priorityB = getStatusPriority(b[col] || '');
+      va = priorityA;
+      vb = priorityB;
+    } else if (
+      col === 'hasDemand' ||
+      col === 'hasPayment' ||
+      col === 'hasReturn' ||
+      col === 'isCancelled'
+    ) {
       // Сортировка по булевым полям: false < true
-      va = a[col] ? 1 : 0
-      vb = b[col] ? 1 : 0
+      va = a[col] ? 1 : 0;
+      vb = b[col] ? 1 : 0;
     } else if (col === 'sum' || col === 'paid' || col === 'returnSum') {
-      va = Number(a[col]) || 0
-      vb = Number(b[col]) || 0
+      va = Number(a[col]) || 0;
+      vb = Number(b[col]) || 0;
     } else {
-      va = String(a[col] || '').toLowerCase()
-      vb = String(b[col] || '').toLowerCase()
+      va = String(a[col] || '').toLowerCase();
+      vb = String(b[col] || '').toLowerCase();
     }
 
-    if (va < vb) return asc ? -1 : 1
-    if (va > vb) return asc ? 1 : -1
-    return 0
-  })
+    if (va < vb) return asc ? -1 : 1;
+    if (va > vb) return asc ? 1 : -1;
+    return 0;
+  });
 }
 
 // Toggle all checkboxes
 function toggleAll(checked) {
-  ordersData.forEach(o => o.enabled = checked)
-  renderTable()
-  updateTotals()
-  renderCurrentStats()
+  ordersData.forEach((o) => (o.enabled = checked));
+  renderTable();
+  updateTotals();
+  renderCurrentStats();
 }
 
 function toggleEnabled(index) {
-  ordersData[index].enabled = !ordersData[index].enabled
-  updateTotals()
-  renderCurrentStats()
+  ordersData[index].enabled = !ordersData[index].enabled;
+  updateTotals();
+  renderCurrentStats();
 }
 
 // Check numbers
 async function checkNumbers() {
-  const text = document.getElementById('numbersInput').value
-  
+  const text = document.getElementById('numbersInput').value;
+
   // Подсчёт дублей (до уникализации)
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l)
-  currentDuplicates = lines.length - new Set(lines).size
-  
-  const numbers = [...new Set(lines)]
-  
-  if (numbers.length === 0) { showStatus('Введите номера'); return }
-  
-  const token = loadToken()
-  if (!token) {
-    showStatus('Ошибка: Токен не найден. Нажмите "Токены" в шапке.')
-    return
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l);
+  currentDuplicates = lines.length - new Set(lines).size;
+
+  const numbers = [...new Set(lines)];
+
+  if (numbers.length === 0) {
+    showStatus('Введите номера');
+    return;
   }
 
-  await loadOrdersState()
+  const token = loadToken();
+  if (!token) {
+    showStatus('Ошибка: Токен не найден. Нажмите "Токены" в шапке.');
+    return;
+  }
 
-  const checkBtn = document.querySelector('#numbersInput + .button-row button')
-  const abortBtn = document.getElementById('abortBtn')
-  checkBtn.disabled = true
-  checkBtn.textContent = ''
-  abortBtn.style.display = 'flex'
-  isWorking = true
-  showProgress(true)
-    
-// Сбрасываем блок "После действий" и запускаем секундомер
-   hideFinalStats(true)
-   startOperationTimer()
-   
-   // Добавляем анимацию сканирования
-   document.querySelector('.stats-final').classList.add('scanning')
+  await loadOrdersState();
+
+  const checkBtn = document.querySelector('#numbersInput + .button-row button');
+  const abortBtn = document.getElementById('abortBtn');
+  checkBtn.disabled = true;
+  checkBtn.textContent = '';
+  abortBtn.style.display = 'flex';
+  isWorking = true;
+  showProgress(true);
+
+  // Сбрасываем блок "После действий" и запускаем секундомер
+  hideFinalStats(true);
+  startOperationTimer();
+
+  // Добавляем анимацию сканирования
+  document.querySelector('.stats-final').classList.add('scanning');
 
   // Очищаем таблицу перед добавлением
-  const tbody = document.getElementById('tableBody')
-  tbody.innerHTML = ''
-  currentPage = 0
-  ordersData = []
-    
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  currentPage = 0;
+  ordersData = [];
+
   // Сбрасываем статистику перед новым сканированием (чтобы показать 0)
-  currentDuplicates = 0
-  renderCurrentStats() // Показать 0 сразу
-    
+  currentDuplicates = 0;
+  renderCurrentStats(); // Показать 0 сразу
+
   // Включаем realtime режим
-  realtimeMode = true
+  realtimeMode = true;
 
   try {
     // Создаём AbortController и AbortId для сервера
-    currentController = new AbortController()
-    const abortId = Math.random().toString(36).substring(2, 15)
-    window.__currentAbortId = abortId // Сохраняем для abortCheck()
-        
+    currentController = new AbortController();
+    const abortId = Math.random().toString(36).substring(2, 15);
+    window.__currentAbortId = abortId; // Сохраняем для abortCheck()
+
     // SSE URL с параметрами
-    const numbersParam = encodeURIComponent(numbers.join(','))
-    const url = `/api/process/stream?token=${encodeURIComponent(token)}&numbers=${numbersParam}&abortId=${abortId}`
-        
+    const numbersParam = encodeURIComponent(numbers.join(','));
+    const url = `/api/process/stream?token=${encodeURIComponent(token)}&numbers=${numbersParam}&abortId=${abortId}`;
+
     const response = await fetch(url, {
       signal: currentController.signal
-    })
-        
+    });
+
     if (!response.ok) {
-      const errData = await response.json()
-      hideProgress(false, errData.error || 'Ошибка')
-      document.querySelector('.stats-final')?.classList.remove('scanning')
-      return
+      const errData = await response.json();
+      hideProgress(false, errData.error || 'Ошибка');
+      document.querySelector('.stats-final')?.classList.remove('scanning');
+      return;
     }
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
 
     while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+      const { done, value } = await reader.read();
+      if (done) break;
 
-      buffer += decoder.decode(value, { stream: true })
-            
+      buffer += decoder.decode(value, { stream: true });
+
       // Разбиваем на события (data: {...}\n\n)
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || '' // Оставляем последнюю неполную строку
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Оставляем последнюю неполную строку
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           try {
-            const data = JSON.parse(line.slice(6))
-                        
+            const data = JSON.parse(line.slice(6));
+
             if (data.type === 'progress') {
               // Получен промежуточный результат
-              const order = data.order
-              console.log('SSE progress:', order.shipmentNum, 'positions:', order.orderPositions?.length)
-                            
+              const order = data.order;
+              console.log(
+                'SSE progress:',
+                order.shipmentNum,
+                'positions:',
+                order.orderPositions?.length
+              );
+
               const orderData = {
                 ...order,
                 enabled: true
-              }
-                            
-              ordersData.push(orderData)
-                            
+              };
+
+              ordersData.push(orderData);
+
               // Обновляем статус
-              document.getElementById('statusText').textContent = 
-                                `Загружено ${data.index}/${data.total}`
-                            
+              document.getElementById('statusText').textContent =
+                `Загружено ${data.index}/${data.total}`;
+
               // Добавляем строку в таблицу
-              appendOrderRow(orderData)
+              appendOrderRow(orderData);
 
               // Обновляем статистику после каждой строки (с force=true для realtime)
-              updateTotals()
-              renderCurrentStats(true)
+              updateTotals();
+              renderCurrentStats(true);
 
               // Небольшая задержка для визуализации (30ms) — закомментировано для скорости
               // await new Promise(r => setTimeout(r, 30))
-                            
-} else if (data.type === 'done') {
-               // Завершено
-               console.log('SSE done, total:', data.orders?.length)
-                             
-               // Останавливаем секундомер
-               const elapsed = stopOperationTimer()
-                             
-               // Отключаем realtime режим для обновления статистики
-               realtimeMode = false
-                             
-               updateTotals()
-               renderCurrentStats()
-               saveLastActionStats()
-               hideProgress(true, 'Готово: ' + ordersData.length)
-                             
-               // Сохраняем автоматически после сканирования
-               if (ordersData.length > 0) {
-                 saveScanStateSilent()
-               }
-                             
-               // Показываем результаты сканирования в блоке "После действий"
-               const totalNumbers = numbers.length
-               const errors = data.errors || 0
-               showScanResults({
-                 processed: totalNumbers,
-                 found: ordersData.length,
-                 errors: errors
-               }, elapsed)
-               
-               // Убираем анимацию сканирования
-               document.querySelector('.stats-final').classList.remove('scanning')
-} else if (data.type === 'aborted') {
-               // Прервано пользователем
-               console.log('SSE aborted, processed:', data.processed)
-                             
-               // Останавливаем секундомер
-               const elapsed = stopOperationTimer()
-                             
-               realtimeMode = false
-               updateTotals()
-               renderCurrentStats()
-               hideProgress(false, 'Прервано. Обработано: ' + data.processed)
-               showScanResults({
-                 processed: data.processed,
-                 found: ordersData.length,
-                 errors: 0
-               }, elapsed)
-               
-               // Убираем анимацию сканирования
-               document.querySelector('.stats-final').classList.remove('scanning')
+            } else if (data.type === 'done') {
+              // Завершено
+              console.log('SSE done, total:', data.orders?.length);
+
+              // Останавливаем секундомер
+              const elapsed = stopOperationTimer();
+
+              // Отключаем realtime режим для обновления статистики
+              realtimeMode = false;
+
+              updateTotals();
+              renderCurrentStats();
+              saveLastActionStats();
+              hideProgress(true, 'Готово: ' + ordersData.length);
+
+              // Сохраняем автоматически после сканирования
+              if (ordersData.length > 0) {
+                saveScanStateSilent();
+              }
+
+              // Показываем результаты сканирования в блоке "После действий"
+              const totalNumbers = numbers.length;
+              const errors = data.errors || 0;
+              showScanResults(
+                {
+                  processed: totalNumbers,
+                  found: ordersData.length,
+                  errors: errors
+                },
+                elapsed
+              );
+
+              // Убираем анимацию сканирования
+              document.querySelector('.stats-final').classList.remove('scanning');
+            } else if (data.type === 'aborted') {
+              // Прервано пользователем
+              console.log('SSE aborted, processed:', data.processed);
+
+              // Останавливаем секундомер
+              const elapsed = stopOperationTimer();
+
+              realtimeMode = false;
+              updateTotals();
+              renderCurrentStats();
+              hideProgress(false, 'Прервано. Обработано: ' + data.processed);
+              showScanResults(
+                {
+                  processed: data.processed,
+                  found: ordersData.length,
+                  errors: 0
+                },
+                elapsed
+              );
+
+              // Убираем анимацию сканирования
+              document.querySelector('.stats-final').classList.remove('scanning');
             } else if (data.type === 'error') {
-              hideProgress(false, data.error)
-              document.querySelector('.stats-final')?.classList.remove('scanning')
-              return
+              hideProgress(false, data.error);
+              document.querySelector('.stats-final')?.classList.remove('scanning');
+              return;
             }
           } catch (e) {
-            console.error('SSE parse error:', e)
+            console.error('SSE parse error:', e);
           }
         }
       }
     }
   } catch (e) {
     if (e.name === 'AbortError') {
-      hideProgress(false, 'Прервано')
-      stopOperationTimer()
+      hideProgress(false, 'Прервано');
+      stopOperationTimer();
     } else {
-      hideProgress(false, 'Ошибка: ' + e.message)
-      stopOperationTimer()
+      hideProgress(false, 'Ошибка: ' + e.message);
+      stopOperationTimer();
     }
-} finally {
-     // Отключаем realtime режим
-     realtimeMode = false
-     renderTable()
-         
-     checkBtn.disabled = false
-     checkBtn.textContent = 'Сканировать'
-     abortBtn.style.display = 'none'
-     isWorking = false
-         
-     // Очищаем abortId
-     window.__currentAbortId = null
-         
-     // Убираем анимацию сканирования (гарантированно)
-     document.querySelector('.stats-final')?.classList.remove('scanning')
-   }
+  } finally {
+    // Отключаем realtime режим
+    realtimeMode = false;
+    renderTable();
+
+    checkBtn.disabled = false;
+    checkBtn.textContent = 'Сканировать';
+    abortBtn.style.display = 'none';
+    isWorking = false;
+
+    // Очищаем abortId
+    window.__currentAbortId = null;
+
+    // Убираем анимацию сканирования (гарантированно)
+    document.querySelector('.stats-final')?.classList.remove('scanning');
+  }
 }
 
 function abortCheck() {
   if (currentController) {
-    currentController.abort()
+    currentController.abort();
     // Также уведомляем сервер для быстрого прекращения
-    const abortId = window.__currentAbortId
+    const abortId = window.__currentAbortId;
     if (abortId) {
       fetch('/api/abort', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ abortId })
-      }).catch(() => {})
+      }).catch(() => {});
     }
   }
 }
@@ -697,102 +730,120 @@ function abortCheck() {
 // Get action buttons for row
 function getRowActions(order, index) {
   // Use properties directly from order (comes from server, verified in Moysklad)
-  const hasD = order.hasDemand
-  const hasPayment = order.hasPayment
-  const hasR = order.hasReturn
-  const isCancelled = order.isCancelled
-    
-  let btns = ''
+  const hasD = order.hasDemand;
+  const hasPayment = order.hasPayment;
+  const hasR = order.hasReturn;
+  const isCancelled = order.isCancelled;
+
+  let btns = '';
 
   // Demand - создать отгрузку (если её нет и заказ не отменён)
-  btns += `<button class="action-btn demand" onclick="createDemandByNum('${order.shipmentNum}')" title="${hasD ? 'Отгрузка есть' : 'Создать отгрузку'}" ${hasD || isCancelled ? 'disabled' : ''}>📦</button>`
+  btns += `<button class="action-btn demand" onclick="createDemandByNum('${order.shipmentNum}')" title="${hasD ? 'Отгрузка есть' : 'Создать отгрузку'}" ${hasD || isCancelled ? 'disabled' : ''}>📦</button>`;
 
   // Payment - создать платёж (если есть отгрузка, нет оплаты и нет возврата)
-  btns += `<button class="action-btn success" onclick="createPaymentByNum('${order.shipmentNum}')" title="${hasPayment ? 'Оплачено' : 'Создать платёж'}" ${hasPayment || isCancelled || !hasD || hasR ? 'disabled' : ''}>💰</button>`
+  btns += `<button class="action-btn success" onclick="createPaymentByNum('${order.shipmentNum}')" title="${hasPayment ? 'Оплачено' : 'Создать платёж'}" ${hasPayment || isCancelled || !hasD || hasR ? 'disabled' : ''}>💰</button>`;
 
   // Return - возврат (если есть отгрузка, возврат не создан, заказ не отменён)
-  btns += `<button class="action-btn return" onclick="createReturnByNum('${order.shipmentNum}')" title="${hasR ? 'Возврат есть' : 'Создать возврат'}" ${hasR || isCancelled || !hasD ? 'disabled' : ''}>↩</button>`
+  btns += `<button class="action-btn return" onclick="createReturnByNum('${order.shipmentNum}')" title="${hasR ? 'Возврат есть' : 'Создать возврат'}" ${hasR || isCancelled || !hasD ? 'disabled' : ''}>↩</button>`;
 
   // Cancel - отмена (только если нет отгрузки и не отменён)
-  const canCancel = !hasD && !isCancelled
-  btns += `<button class="action-btn cancel" onclick="cancelOrderByNum('${order.shipmentNum}')" title="Отменить заказ" ${canCancel ? '' : 'disabled'}>✗</button>`
+  const canCancel = !hasD && !isCancelled;
+  btns += `<button class="action-btn cancel" onclick="cancelOrderByNum('${order.shipmentNum}')" title="Отменить заказ" ${canCancel ? '' : 'disabled'}>✗</button>`;
 
-  return btns
+  return btns;
 }
 
 // Render table
 function renderTable() {
   // Пропускаем если в realtime режиме - строки добавляются отдельно
   if (realtimeMode) {
-    console.log('DEBUG renderTable skipped, realtimeMode=true')
-    return
+    console.log('DEBUG renderTable skipped, realtimeMode=true');
+    return;
   }
-    
-  const tbody = document.getElementById('tableBody')
-  if (!tbody) return
-  tbody.innerHTML = ''
 
-  const sorted = getSortedOrders()
-  console.log('Rendering table, orders count:', sorted.length)
-  const start = currentPage * PAGE_SIZE
-  const end = start + PAGE_SIZE
-  const pageOrders = sorted.slice(start, end)
+  const tbody = document.getElementById('tableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  const sorted = getSortedOrders();
+  console.log('Rendering table, orders count:', sorted.length);
+  const start = currentPage * PAGE_SIZE;
+  const end = start + PAGE_SIZE;
+  const pageOrders = sorted.slice(start, end);
 
   if (pageOrders.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">Нет данных для текущей страницы</td></tr>'
-    return
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">Нет данных для текущей страницы</td></tr>';
+    return;
   }
 
   pageOrders.forEach((order, i) => {
-    const tr = document.createElement('tr')
+    const tr = document.createElement('tr');
     // Используем индекс внутри всей таблицы
-    const actualIndex = ordersData.findIndex(o => o.shipmentNum === order.shipmentNum)
+    const actualIndex = ordersData.findIndex((o) => o.shipmentNum === order.shipmentNum);
 
     // Номера документов и суммы
-    const demandDisplay = order.demandName ? `<span class="doc-number">${order.demandName}</span>` : '<span class="status-no">—</span>'
-    const paymentDisplay = order.paid 
-      ? `<span class="payment-sum">${order.paid} ₽</span>` 
-      : '<span class="status-no">—</span>'
-    const returnDisplay = order.returnSum 
-      ? `<span class="payment-sum">${order.returnSum} ₽</span>` 
-      : '<span class="status-no">—</span>'
+    const demandDisplay = order.demandName
+      ? `<span class="doc-number">${order.demandName}</span>`
+      : '<span class="status-no">—</span>';
+    const paymentDisplay = order.paid
+      ? `<span class="payment-sum">${order.paid} ₽</span>`
+      : '<span class="status-no">—</span>';
+    const returnDisplay = order.returnSum
+      ? `<span class="payment-sum">${order.returnSum} ₽</span>`
+      : '<span class="status-no">—</span>';
 
     // Статус документа - показываем directly из API statusName
-    let statusDisplay = ''
-    const statusName = order.statusName || ''
-    const status = order.status || ''
+    let statusDisplay = '';
+    const statusName = order.statusName || '';
+    const status = order.status || '';
 
     // Просто показываем статус из API
-    let cssClass = 'status-no'
-    if (status === 'return' || statusName.includes('Возврат')) cssClass = 'status-return'
-    else if (status === 'cancelled' || statusName.includes('Отмен')) cssClass = 'status-error'
-    else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж')) cssClass = 'status-shipped'
-    else if (status === 'delayed' || statusName.includes('отсрочк')) cssClass = 'status-delayed'
+    let cssClass = 'status-no';
+    if (status === 'return' || statusName.includes('Возврат')) cssClass = 'status-return';
+    else if (status === 'cancelled' || statusName.includes('Отмен')) cssClass = 'status-error';
+    else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж'))
+      cssClass = 'status-shipped';
+    else if (status === 'delayed' || statusName.includes('отсрочк')) cssClass = 'status-delayed';
 
     // Подсвечивать строку красным при ошибке
     if (order.lastAction && order.lastAction.includes('_error')) {
-      cssClass = 'status-error'
-      tr.classList.add('row-error')
+      cssClass = 'status-error';
+      tr.classList.add('row-error');
     }
 
     // Визуальное отличие для заказов найденных по точному номеру заказа МС
     if (order.foundBy === 'name') {
-      tr.classList.add('row-by-name')
+      tr.classList.add('row-by-name');
     }
 
-    const displayText = statusName || 'Новый'
-    statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>'
+    const displayText = statusName || 'Новый';
+    statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>';
 
     // Статус заказа
-    let statusClass = 'status-other'
-    let statusText = order.statusName || 'Новый'
-    if (order.status === 'shipped') { statusClass = 'status-shipped'; statusText = 'Отгружен' }
-    else if (order.status === 'delayed') { statusClass = 'status-delayed'; statusText = 'С отсрочкой' }
-    else if (order.hasReturn) { statusClass = 'status-return'; statusText = 'Возврат' }
-    else if (order.isCancelled) { statusClass = 'status-error'; statusText = 'Отменён' }
-    else if (order.status === 'cancelled') { statusClass = 'status-error'; statusText = 'Отменён' }
-    else if (order.statusName && order.statusName.includes('Отмен')) { statusClass = 'status-error'; statusText = 'Отменён' }
-    else if (order.statusName && order.statusName.includes('Возврат')) { statusClass = 'status-return'; statusText = 'Возврат' }
+    let statusClass = 'status-other';
+    let statusText = order.statusName || 'Новый';
+    if (order.status === 'shipped') {
+      statusClass = 'status-shipped';
+      statusText = 'Отгружен';
+    } else if (order.status === 'delayed') {
+      statusClass = 'status-delayed';
+      statusText = 'С отсрочкой';
+    } else if (order.hasReturn) {
+      statusClass = 'status-return';
+      statusText = 'Возврат';
+    } else if (order.isCancelled) {
+      statusClass = 'status-error';
+      statusText = 'Отменён';
+    } else if (order.status === 'cancelled') {
+      statusClass = 'status-error';
+      statusText = 'Отменён';
+    } else if (order.statusName && order.statusName.includes('Отмен')) {
+      statusClass = 'status-error';
+      statusText = 'Отменён';
+    } else if (order.statusName && order.statusName.includes('Возврат')) {
+      statusClass = 'status-return';
+      statusText = 'Возврат';
+    }
 
     tr.innerHTML = `
             <td><input type="checkbox" ${order.enabled ? 'checked' : ''} onchange="toggleEnabled(${actualIndex})"></td>
@@ -804,72 +855,80 @@ function renderTable() {
             <td>${returnDisplay}</td>
             <td>${statusDisplay}</td>
             <td>${getRowActions(order, actualIndex)}</td>
-        `
+        `;
 
-    tbody.appendChild(tr)
+    tbody.appendChild(tr);
 
     // Дополнительная секция с деталями позиций заказа
-    const orderPos = order.orderPositions || []
-    const demandPos = order.demandPositions || []
-    const allPositions = [...orderPos, ...demandPos]
+    const orderPos = order.orderPositions || [];
+    const demandPos = order.demandPositions || [];
+    const allPositions = [...orderPos, ...demandPos];
 
     if (allPositions.length > 0) {
-      const posTr = document.createElement('tr')
-      posTr.className = 'positions-row'
-      const cells = '<td colspan="9" class="positions-cell">' +
-                 allPositions.map(p => {
-                  const code = p.code ? `[${p.code}] ` : ''
-                  const name = p.name || 'Наименование'
-                  const price = p.price != null ? p.price : 0
-                  const qty = p.quantity != null ? p.quantity : 0
-                  const sum = p.sum != null ? p.sum : (price * qty)
-                  const printBtn = p.code ?
-                    `<button class="print-btn" onclick="printSticker('${(p.code || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>` : ''
-                  return `<div>${code}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`
-                }).join('') + '</td>'
-      posTr.innerHTML = cells
-      tbody.appendChild(posTr)
+      const posTr = document.createElement('tr');
+      posTr.className = 'positions-row';
+      const cells =
+        '<td colspan="9" class="positions-cell">' +
+        allPositions
+          .map((p) => {
+            const code = p.code ? `[${p.code}] ` : '';
+            const name = p.name || 'Наименование';
+            const price = p.price != null ? p.price : 0;
+            const qty = p.quantity != null ? p.quantity : 0;
+            const sum = p.sum != null ? p.sum : price * qty;
+            const printBtn = p.code
+              ? `<button class="print-btn" onclick="printSticker('${(p.code || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>`
+              : '';
+            return `<div>${code}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`;
+          })
+          .join('') +
+        '</td>';
+      posTr.innerHTML = cells;
+      tbody.appendChild(posTr);
     }
-  })
+  });
 
-  renderPaginationInfo(sorted.length)
+  renderPaginationInfo(sorted.length);
 }
 
 // Добавить одну строку в таблицу (append mode для realtime)
 function appendOrderRow(order) {
-  console.log('DEBUG appendOrderRow called for:', order.shipmentNum)
-  const tbody = document.getElementById('tableBody')
+  console.log('DEBUG appendOrderRow called for:', order.shipmentNum);
+  const tbody = document.getElementById('tableBody');
   if (!tbody) {
-    console.error('tableBody not found!')
-    return
+    console.error('tableBody not found!');
+    return;
   }
-  console.log('DEBUG tbody rows before:', tbody.children.length)
-  const actualIndex = ordersData.findIndex(o => o.shipmentNum === order.shipmentNum)
+  console.log('DEBUG tbody rows before:', tbody.children.length);
+  const actualIndex = ordersData.findIndex((o) => o.shipmentNum === order.shipmentNum);
 
-  const tr = document.createElement('tr')
-  tr.className = 'fadeInDown' // Магическая анимация из библиотеки
+  const tr = document.createElement('tr');
+  tr.className = 'fadeInDown'; // Магическая анимация из библиотеки
   // Явно устанавливаем анимацию для гарантии применения
-  tr.style.animation = 'fadeInDown 0.3s ease-out forwards'
-  tr.style.webkitAnimation = 'fadeInDown 0.3s ease-out forwards'
+  tr.style.animation = 'fadeInDown 0.3s ease-out forwards';
+  tr.style.webkitAnimation = 'fadeInDown 0.3s ease-out forwards';
 
   // Статус
-  const statusName = order.statusName || ''
-  const status = order.status || ''
-  let cssClass = 'status-no'
-  if (status === 'return' || statusName.includes('Возврат')) cssClass = 'status-return'
-  else if (status === 'cancelled' || statusName.includes('Отмен')) cssClass = 'status-error'
-  else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж')) cssClass = 'status-shipped'
-  else if (status === 'delayed' || statusName.includes('отсрочк')) cssClass = 'status-delayed'
+  const statusName = order.statusName || '';
+  const status = order.status || '';
+  let cssClass = 'status-no';
+  if (status === 'return' || statusName.includes('Возврат')) cssClass = 'status-return';
+  else if (status === 'cancelled' || statusName.includes('Отмен')) cssClass = 'status-error';
+  else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж'))
+    cssClass = 'status-shipped';
+  else if (status === 'delayed' || statusName.includes('отсрочк')) cssClass = 'status-delayed';
 
-  const demandDisplay = order.demandName ? `<span class="demand-code">${order.demandName}</span>` : '<span class="status-no">—</span>'
-  const paymentDisplay = order.paid 
-    ? `<span class="payment-sum">${order.paid} ₽</span>` 
-    : '<span class="status-no">—</span>'
-  const returnDisplay = order.returnSum 
-    ? `<span class="payment-sum">${order.returnSum} ₽</span>` 
-    : '<span class="status-no">—</span>'
-  const displayText = statusName || 'Новый'
-  const statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>'
+  const demandDisplay = order.demandName
+    ? `<span class="demand-code">${order.demandName}</span>`
+    : '<span class="status-no">—</span>';
+  const paymentDisplay = order.paid
+    ? `<span class="payment-sum">${order.paid} ₽</span>`
+    : '<span class="status-no">—</span>';
+  const returnDisplay = order.returnSum
+    ? `<span class="payment-sum">${order.returnSum} ₽</span>`
+    : '<span class="status-no">—</span>';
+  const displayText = statusName || 'Новый';
+  const statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>';
 
   tr.innerHTML = `
         <td><input type="checkbox" ${order.enabled ? 'checked' : ''} onchange="toggleEnabled(${actualIndex})"></td>
@@ -881,83 +940,88 @@ function appendOrderRow(order) {
         <td>${returnDisplay}</td>
         <td>${statusDisplay}</td>
         <td>${getRowActions(order, actualIndex)}</td>
-    `
+    `;
 
   // Добавляем строку в конец таблицы
-  tbody.appendChild(tr)
+  tbody.appendChild(tr);
 
   // Дополнительная секция с деталями позиций заказа (для SSE режима)
-  const orderPos = order.orderPositions || []
-  const demandPos = order.demandPositions || []
-  const allPositions = [...orderPos, ...demandPos]
+  const orderPos = order.orderPositions || [];
+  const demandPos = order.demandPositions || [];
+  const allPositions = [...orderPos, ...demandPos];
 
   if (allPositions.length > 0) {
-    const posTr = document.createElement('tr')
-    posTr.className = 'positions-row'
-    const cells = '<td colspan="9" class="positions-cell">' +
-      allPositions.map(p => {
-        const code = p.code ? `[${p.code}] ` : ''
-        const name = p.name || 'Наименование'
-        const price = p.price != null ? p.price : 0
-        const qty = p.quantity != null ? p.quantity : 0
-        const sum = p.sum != null ? p.sum : (price * qty)
-        const printBtn = p.code ?
-          `<button class="print-btn" onclick="printSticker('${(p.code || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>` : ''
-        return `<div>${code}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`
-      }).join('') + '</td>'
-    posTr.innerHTML = cells
-    tbody.appendChild(posTr)
+    const posTr = document.createElement('tr');
+    posTr.className = 'positions-row';
+    const cells =
+      '<td colspan="9" class="positions-cell">' +
+      allPositions
+        .map((p) => {
+          const code = p.code ? `[${p.code}] ` : '';
+          const name = p.name || 'Наименование';
+          const price = p.price != null ? p.price : 0;
+          const qty = p.quantity != null ? p.quantity : 0;
+          const sum = p.sum != null ? p.sum : price * qty;
+          const printBtn = p.code
+            ? `<button class="print-btn" onclick="printSticker('${(p.code || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>`
+            : '';
+          return `<div>${code}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`;
+        })
+        .join('') +
+      '</td>';
+    posTr.innerHTML = cells;
+    tbody.appendChild(posTr);
   }
 }
 
 function renderPaginationInfo(total) {
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const info = document.getElementById('pageInfo')
-  const controls = document.getElementById('paginationControls')
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const info = document.getElementById('pageInfo');
+  const controls = document.getElementById('paginationControls');
   // Не показывать пагинацию если записей меньше чем PAGE_SIZE
   if (total <= PAGE_SIZE) {
-    if (controls) controls.style.display = 'none'
-    return
+    if (controls) controls.style.display = 'none';
+    return;
   }
-  if (info) info.textContent = `Страница ${currentPage + 1} из ${totalPages}`
-  if (controls) controls.style.display = 'block'
+  if (info) info.textContent = `Страница ${currentPage + 1} из ${totalPages}`;
+  if (controls) controls.style.display = 'block';
 }
 
 function goPrevPage() {
   if (currentPage > 0) {
-    currentPage--
-    renderTable()
+    currentPage--;
+    renderTable();
   }
 }
 
 function goNextPage() {
-  const totalPages = Math.max(1, Math.ceil(ordersData.length / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(ordersData.length / PAGE_SIZE));
   if (currentPage < totalPages - 1) {
-    currentPage++
-    renderTable()
+    currentPage++;
+    renderTable();
   }
 }
 
 function updateTotals() {
-  const enabled = ordersData.filter(o => o.enabled)
-  const toCreate = enabled.filter(o => o.hasDemand && !o.hasPayment).length
-  const totalSum = enabled.reduce((sum, o) => sum + (Number(o.sum) || 0), 0)
+  const enabled = ordersData.filter((o) => o.enabled);
+  const toCreate = enabled.filter((o) => o.hasDemand && !o.hasPayment).length;
+  const totalSum = enabled.reduce((sum, o) => sum + (Number(o.sum) || 0), 0);
 
-  const totalCountEl = document.getElementById('totalCount')
-  const toCreateCountEl = document.getElementById('toCreateCount')
-  const totalSumEl = document.getElementById('totalSum')
-    
-  if (totalCountEl) totalCountEl.textContent = enabled.length
-  if (toCreateCountEl) toCreateCountEl.textContent = toCreate
-  if (totalSumEl) totalSumEl.textContent = totalSum.toLocaleString() + ' ₽'
-    
+  const totalCountEl = document.getElementById('totalCount');
+  const toCreateCountEl = document.getElementById('toCreateCount');
+  const totalSumEl = document.getElementById('totalSum');
+
+  if (totalCountEl) totalCountEl.textContent = enabled.length;
+  if (toCreateCountEl) toCreateCountEl.textContent = toCreate;
+  if (totalSumEl) totalSumEl.textContent = totalSum.toLocaleString() + ' ₽';
+
   // Не перерисовываем таблицу в realtime режиме
-  if (!realtimeMode) renderTable()
+  if (!realtimeMode) renderTable();
 }
 
 // Calculate statistics
 function calculateStats(orderList) {
-  const list = (orderList || ordersData).filter(o => o.enabled)
+  const list = (orderList || ordersData).filter((o) => o.enabled);
   // Не перерисовываем таблицу тут - только считаем статистику
   const stats = {
     total: list.length,
@@ -971,117 +1035,117 @@ function calculateStats(orderList) {
     cancelledSum: 0,
     errorCount: 0,
     notFoundCount: 0,
-    
+
     // Вариант A: Раздельный подсчёт (оба могут быть)
     returnCount_A: 0,
     returnSum_A: 0,
     cancelledCount_A: 0,
     cancelledSum_A: 0,
-        
+
     // Вариант B: Return приоритет
     returnCount_B: 0,
     returnSum_B: 0,
     cancelledCount_B: 0,
     cancelledSum_B: 0,
-        
+
     // Вариант C: Отмена приоритет
     returnCount_C: 0,
     returnSum_C: 0,
     cancelledCount_C: 0,
-    cancelledSum_C: 0,
-  }
-    
-  list.forEach(o => {
-    const sum = Number(o.sum) || 0
+    cancelledSum_C: 0
+  };
+
+  list.forEach((o) => {
+    const sum = Number(o.sum) || 0;
     if (o.hasDemand) {
-      stats.demandCount++
-      stats.demandSum += sum
+      stats.demandCount++;
+      stats.demandSum += sum;
     }
     if (o.paid > 0) {
-      stats.paymentCount++
-      stats.paymentSum += (o.paid || 0)
+      stats.paymentCount++;
+      stats.paymentSum += o.paid || 0;
     }
     if (o.hasReturn) {
-      stats.returnCount++
+      stats.returnCount++;
       // Используем только фактическую сумму возврата, без fallback на всю сумму заказа
-      stats.returnSum += Number(o.returnSum) || 0
+      stats.returnSum += Number(o.returnSum) || 0;
     } else if (o.isCancelled) {
       // Если есть возврат — не дублируем в отменах (иначе сумма заказа считается дважды)
-      stats.cancelledCount++
+      stats.cancelledCount++;
       // Используем сумму отмены (если есть), иначе всю сумму заказа
-      stats.cancelledSum += Number(o.cancelledSum) || sum
+      stats.cancelledSum += Number(o.cancelledSum) || sum;
     }
     if (o.lastAction && o.lastAction.includes('_error')) {
-      stats.errorCount++
+      stats.errorCount++;
     }
     if (o.status === 'not_found' || o.statusName === 'Не найден') {
-      stats.notFoundCount++
+      stats.notFoundCount++;
     }
-    
+
     // Вариант A: Раздельный (oba mogut byt true)
     if (o.hasReturn) {
-      stats.returnCount_A++
-      stats.returnSum_A += Number(o.returnSum) || 0
+      stats.returnCount_A++;
+      stats.returnSum_A += Number(o.returnSum) || 0;
     }
     if (o.isCancelled) {
-      stats.cancelledCount_A++
-      stats.cancelledSum_A += Number(o.cancelledSum) || sum
+      stats.cancelledCount_A++;
+      stats.cancelledSum_A += Number(o.cancelledSum) || sum;
     }
-        
+
     // Вариант B: Return имеет приоритет
     if (o.hasReturn) {
-      stats.returnCount_B++
-      stats.returnSum_B += Number(o.returnSum) || 0
+      stats.returnCount_B++;
+      stats.returnSum_B += Number(o.returnSum) || 0;
     } else if (o.isCancelled) {
-      stats.cancelledCount_B++
-      stats.cancelledSum_B += Number(o.cancelledSum) || sum
+      stats.cancelledCount_B++;
+      stats.cancelledSum_B += Number(o.cancelledSum) || sum;
     }
-        
+
     // Вариант C: Отмена имеет приоритет
     if (o.isCancelled) {
-      stats.cancelledCount_C++
-      stats.cancelledSum_C += Number(o.cancelledSum) || sum
+      stats.cancelledCount_C++;
+      stats.cancelledSum_C += Number(o.cancelledSum) || sum;
     } else if (o.hasReturn) {
-      stats.returnCount_C++
-      stats.returnSum_C += Number(o.returnSum) || 0
+      stats.returnCount_C++;
+      stats.returnSum_C += Number(o.returnSum) || 0;
     }
-  })
-    
-  return stats
+  });
+
+  return stats;
 }
 
 // Render current stats
 // force - принудительно обновить даже в realtime режиме
 function renderCurrentStats(force = false) {
   // Не перерисовываем таблицу в realtime режиме (кроме случая force)
-  if (realtimeMode && !force) return
-    
-  console.log('DEBUG renderCurrentStats called, ordersData length:', ordersData?.length)
+  if (realtimeMode && !force) return;
+
+  console.log('DEBUG renderCurrentStats called, ordersData length:', ordersData?.length);
   try {
-    const stats = calculateStats()
-    console.log('DEBUG stats:', stats)
-    const container = document.getElementById('statsOutput')
-    console.log('DEBUG container:', container)
+    const stats = calculateStats();
+    console.log('DEBUG stats:', stats);
+    const container = document.getElementById('statsOutput');
+    console.log('DEBUG container:', container);
     if (!container) {
-      console.log('DEBUG: statsOutput not found')
-      return
+      console.log('DEBUG: statsOutput not found');
+      return;
     }
-        
-    const fmt = n => n.toLocaleString()
-    const fmtSum = n => (n && n > 0) ? fmt(n) + ' ₽' : '-'
+
+    const fmt = (n) => n.toLocaleString();
+    const fmtSum = (n) => (n && n > 0 ? fmt(n) + ' ₽' : '-');
     // Для Возвратов - всегда показывать сумму (без прочерка)
-    const fmtReturnSum = n => n ? fmt(n) + ' ₽' : '-'
-        
-    const demandSum = stats.demandSum || 0
-    const returnSum = stats.returnSum || 0
-    const cancelledSum = stats.cancelledSum || 0
-    const paymentSum = stats.paymentSum || 0
-        
-    const totalAccounted = paymentSum + returnSum + cancelledSum
-    const isMatch = Math.abs(demandSum - totalAccounted) < 1
-    const matchIcon = isMatch ? '✓' : '✗'
-    const matchClass = isMatch ? 'success' : 'error'
-        
+    const fmtReturnSum = (n) => (n ? fmt(n) + ' ₽' : '-');
+
+    const demandSum = stats.demandSum || 0;
+    const returnSum = stats.returnSum || 0;
+    const cancelledSum = stats.cancelledSum || 0;
+    const paymentSum = stats.paymentSum || 0;
+
+    const totalAccounted = paymentSum + returnSum + cancelledSum;
+    const isMatch = Math.abs(demandSum - totalAccounted) < 1;
+    const matchIcon = isMatch ? '✓' : '✗';
+    const matchClass = isMatch ? 'success' : 'error';
+
     container.innerHTML = `
             <div class="stat-row"><span class="stat-label">Отгрузок:</span><span class="stat-value success">${stats.demandCount || 0}</span><span class="stat-sum">${fmtSum(demandSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Оплачено:</span><span class="stat-value success">${stats.paymentCount || 0}</span><span class="stat-sum">${fmtSum(paymentSum)}</span></div>
@@ -1106,53 +1170,57 @@ function renderCurrentStats(force = false) {
                     <span class="calc-sum">${fmtSum(demandSum)}</span>
                     <span class="calc-icon ${matchClass}">${matchIcon}</span>
                 </div>
-                ${!isMatch ? `<div class="calc-formula">
+                ${
+                  !isMatch
+                    ? `<div class="calc-formula">
                     <span class="calc-op">Разница: </span>
                     <span class="calc-sum ${matchClass}">${fmtSum(Math.abs(demandSum - totalAccounted))} ₽</span>
-                </div>` : ''}
+                </div>`
+                    : ''
+                }
             </div>
-        `
+        `;
   } catch (e) {
-    console.log('DEBUG renderCurrentStats error:', e.message, e.stack)
+    console.log('DEBUG renderCurrentStats error:', e.message, e.stack);
   }
 }
 
 // Last action stats for comparison
-let lastActionStats = null
+let lastActionStats = null;
 
 function saveLastActionStats() {
-  lastActionStats = calculateStats()
+  lastActionStats = calculateStats();
 }
 
 function renderFinalStats() {
-  const container = document.getElementById('statsFinalOutput')
-  if (!container) return
-    
-  const now = calculateStats()
-  const was = lastActionStats
-    
+  const container = document.getElementById('statsFinalOutput');
+  if (!container) return;
+
+  const now = calculateStats();
+  const was = lastActionStats;
+
   if (!was) {
-    container.innerHTML = '<div class="stat-row"><span class="stat-label">Нет данных</span></div>'
-    return
+    container.innerHTML = '<div class="stat-row"><span class="stat-label">Нет данных</span></div>';
+    return;
   }
-    
-  const fmt = n => n.toLocaleString()
-  const fmtSum = n => (n && n > 0) ? fmt(n) + ' ₽' : '-'
-    
+
+  const fmt = (n) => n.toLocaleString();
+  const fmtSum = (n) => (n && n > 0 ? fmt(n) + ' ₽' : '-');
+
   const diffCount = (label, wasVal, nowVal) => {
-    const diffVal = nowVal - wasVal
-    const cls = diffVal > 0 ? 'success' : (diffVal < 0 ? 'error' : '')
-    const arrow = diffVal > 0 ? '↑' : (diffVal < 0 ? '↓' : '—')
-    return `<div class="stat-row"><span class="stat-label">${label}:</span><span class="stat-value ${cls}">${fmt(wasVal)} → ${fmt(nowVal)} ${arrow}</span></div>`
-  }
-  
+    const diffVal = nowVal - wasVal;
+    const cls = diffVal > 0 ? 'success' : diffVal < 0 ? 'error' : '';
+    const arrow = diffVal > 0 ? '↑' : diffVal < 0 ? '↓' : '—';
+    return `<div class="stat-row"><span class="stat-label">${label}:</span><span class="stat-value ${cls}">${fmt(wasVal)} → ${fmt(nowVal)} ${arrow}</span></div>`;
+  };
+
   const diffSum = (label, wasVal, nowVal) => {
-    const diffVal = nowVal - wasVal
-    const cls = diffVal > 0 ? 'success' : (diffVal < 0 ? 'error' : '')
-    const arrow = diffVal > 0 ? '↑' : (diffVal < 0 ? '↓' : '—')
-    return `<div class="stat-row"><span class="stat-label">${label}:</span><span class="stat-value ${cls}">${fmtSum(wasVal)} → ${fmtSum(nowVal)} ${arrow}</span></div>`
-  }
-    
+    const diffVal = nowVal - wasVal;
+    const cls = diffVal > 0 ? 'success' : diffVal < 0 ? 'error' : '';
+    const arrow = diffVal > 0 ? '↑' : diffVal < 0 ? '↓' : '—';
+    return `<div class="stat-row"><span class="stat-label">${label}:</span><span class="stat-value ${cls}">${fmtSum(wasVal)} → ${fmtSum(nowVal)} ${arrow}</span></div>`;
+  };
+
   container.innerHTML = `
         <div class="stat-section-title">Изменения после действия:</div>
         ${diffCount('Отгрузок', was.demandCount, now.demandCount)}
@@ -1163,43 +1231,43 @@ function renderFinalStats() {
         ${diffSum('Сумма возвратов', was.returnSum, now.returnSum)}
         ${diffCount('Отменено', was.cancelledCount, now.cancelledCount)}
         ${diffSum('Сумма отмен', was.cancelledSum, now.cancelledSum)}
-    `
+    `;
 }
 
 // Single order actions
 async function createPaymentByNum(shipmentNum) {
-  await createSingleAction(shipmentNum, 'payment')
+  await createSingleAction(shipmentNum, 'payment');
 }
 
 async function createDemandByNum(shipmentNum) {
-  await createSingleAction(shipmentNum, 'demand')
+  await createSingleAction(shipmentNum, 'demand');
 }
 
 async function createReturnByNum(shipmentNum) {
-  await createSingleAction(shipmentNum, 'return')
+  await createSingleAction(shipmentNum, 'return');
 }
 
 async function cancelOrderByNum(shipmentNum) {
-  await createSingleAction(shipmentNum, 'cancel')
+  await createSingleAction(shipmentNum, 'cancel');
 }
 
 async function createPartialPaymentByNum(shipmentNum) {
-  await createSingleAction(shipmentNum, 'partial_payment')
+  await createSingleAction(shipmentNum, 'partial_payment');
 }
 
 // Print sticker for product by code
 async function printSticker(code) {
-  const token = loadToken()
+  const token = loadToken();
   if (!token) {
-    showStatus('Ошибка: Токен не найден. Нажмите "Токены" в шапке.')
-    return
+    showStatus('Ошибка: Токен не найден. Нажмите "Токены" в шапке.');
+    return;
   }
-  
+
   // Show timer in "After action stats" block
-  const statsOutput = document.getElementById('statsFinalOutput')
-  const statsFinal = document.querySelector('.stats-final')
+  const statsOutput = document.getElementById('statsFinalOutput');
+  const statsFinal = document.querySelector('.stats-final');
   if (statsOutput && statsFinal) {
-    statsFinal.classList.remove('idle')
+    statsFinal.classList.remove('idle');
     statsOutput.innerHTML = `
       <div class="terminal-line info">Генерация PDF стикера...</div>
       <div class="terminal-line time-line">Время: <span id="pdfTimer">0:00</span></div>
@@ -1207,20 +1275,20 @@ async function printSticker(code) {
         <div class="terminal-status-dot pulse"></div>
         <span>Ожидание МойСклад</span>
       </div>
-    `
-    
+    `;
+
     // Start timer
-    let seconds = 0
+    let seconds = 0;
     const timerInterval = setInterval(() => {
-      seconds++
-      const minutes = Math.floor(seconds / 60)
-      const secs = seconds % 60
-      const timerEl = document.getElementById('pdfTimer')
+      seconds++;
+      const minutes = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      const timerEl = document.getElementById('pdfTimer');
       if (timerEl) {
-        timerEl.textContent = `${minutes}:${secs < 10 ? '0' : ''}${secs}`
+        timerEl.textContent = `${minutes}:${secs < 10 ? '0' : ''}${secs}`;
       }
-    }, 1000)
-    
+    }, 1000);
+
     try {
       const response = await fetch('/api/print-sticker', {
         method: 'POST',
@@ -1229,99 +1297,205 @@ async function printSticker(code) {
           'X-API-Token': token
         },
         body: JSON.stringify({ code })
-      })
-      
-      clearInterval(timerInterval)
-      
+      });
+
+      clearInterval(timerInterval);
+
       // Check response type
-      const contentType = response.headers.get('content-type') || ''
-      
+      const contentType = response.headers.get('content-type') || '';
+
       if (contentType.includes('application/pdf')) {
         // Server returned PDF directly - create blob URL and open
-        const blob = await response.blob()
-        const pdfUrl = URL.createObjectURL(blob)
-        window.open(pdfUrl, '_blank')
-        
+        const blob = await response.blob();
+        const pdfUrl = URL.createObjectURL(blob);
+        window.open(pdfUrl, '_blank');
+
         // Clean up blob URL after some time
-        setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000)
-        
+        setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
+
         statsOutput.innerHTML = `
           <div class="terminal-line success">PDF стикера готов</div>
           <div class="terminal-line">Открыт в новом окне</div>
-        `
+        `;
         setTimeout(() => {
-          statsFinal.classList.add('idle')
-        }, 3000)
+          statsFinal.classList.add('idle');
+        }, 3000);
       } else {
         // Server returned JSON
-        const data = await response.json()
-        
+        const data = await response.json();
+
         if (data.pdfUrl) {
           // Open PDF in new tab - MoySklad generates and hosts the file
-          window.open(data.pdfUrl, '_blank')
+          window.open(data.pdfUrl, '_blank');
           statsOutput.innerHTML = `
             <div class="terminal-line success">PDF стикера готов</div>
             <div class="terminal-line">Открыт в новом окне</div>
-          `
+          `;
           setTimeout(() => {
-            statsFinal.classList.add('idle')
-          }, 3000)
+            statsFinal.classList.add('idle');
+          }, 3000);
         } else {
-          console.error('Print error:', data.error)
+          console.error('Print error:', data.error);
           statsOutput.innerHTML = `
             <div class="terminal-line error">Ошибка: ${data.error}</div>
-          `
+          `;
         }
       }
     } catch (e) {
-      clearInterval(timerInterval)
-      console.error('Network error printing sticker:', e.message)
+      clearInterval(timerInterval);
+      console.error('Network error printing sticker:', e.message);
       statsOutput.innerHTML = `
         <div class="terminal-line error">Сетевая ошибка: ${e.message}</div>
-      `
+      `;
     }
-    } else {
-      // Fallback if elements not found
-      try {
-        const response = await fetch('/api/print-sticker', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-Token': token
-          },
+  } else {
+    // Fallback if elements not found
+    try {
+      const response = await fetch('/api/print-sticker', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Token': token
+        },
         body: JSON.stringify({ code })
-        })
-        
-        // Check response type
-        const contentType = response.headers.get('content-type') || ''
-        
-        if (contentType.includes('application/pdf')) {
-          // Server returned PDF directly
-          const blob = await response.blob()
-          const pdfUrl = URL.createObjectURL(blob)
-          window.open(pdfUrl, '_blank')
-          setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000)
+      });
+
+      // Check response type
+      const contentType = response.headers.get('content-type') || '';
+
+      if (contentType.includes('application/pdf')) {
+        // Server returned PDF directly
+        const blob = await response.blob();
+        const pdfUrl = URL.createObjectURL(blob);
+        window.open(pdfUrl, '_blank');
+        setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
+      } else {
+        // Server returned JSON
+        const data = await response.json();
+
+        if (data.pdfUrl) {
+          window.open(data.pdfUrl, '_blank');
         } else {
-          // Server returned JSON
-          const data = await response.json()
-          
-          if (data.pdfUrl) {
-            window.open(data.pdfUrl, '_blank')
-          } else {
-            console.error('Print error:', data.error)
-          }
+          console.error('Print error:', data.error);
         }
-      } catch (e) {
-        console.error('Network error printing sticker:', e.message)
       }
+    } catch (e) {
+      console.error('Network error printing sticker:', e.message);
     }
+  }
+}
+
+// ===== Sticker modal (печать наклеек 58×40) =====
+
+function toggleStickerModal(show) {
+  const modal = document.getElementById('stickerModal');
+  if (!modal) return;
+  modal.classList.toggle('hidden', !show);
+}
+
+function generateSticker() {
+  const carrier = document.getElementById('stickerCarrier').value.trim();
+  const avitoChecked = document.getElementById('stickerAvito').checked;
+  const code = document.getElementById('stickerCode').value.trim();
+  const size = document.getElementById('stickerSize').value; // "58x40"
+
+  if (!carrier) {
+    alert('Пожалуйста, выберите или введите службу доставки!');
+    return;
+  }
+  if (!code) {
+    alert('Пожалуйста, введите код заказа!');
+    return;
+  }
+
+  // Build sticker text: carrier + optional "Авито"
+  let line1 = carrier;
+  if (avitoChecked && carrier !== 'Авито') {
+    line1 += ' Авито';
+  }
+
+  // Close modal
+  toggleStickerModal(false);
+
+  // Determine dimensions from size value
+  const [w, h] = size.split('x');
+
+  // Open new window with sticker HTML
+  const printWindow = window.open('', '_blank', 'width=600,height=450');
+
+  const stickerHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Наклейка ${w}×${h}</title>
+  <style>
+    @page {
+      size: ${w}mm ${h}mm;
+      margin: 0;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: ${w}mm;
+      height: ${h}mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-family: Arial, Helvetica, sans-serif;
+      background: white;
+      overflow: hidden;
+    }
+    .label {
+      text-align: center;
+      width: 100%;
+      padding: 0 3mm;
+    }
+    .carrier {
+      font-size: 14pt;
+      font-weight: bold;
+      margin-bottom: 2mm;
+      line-height: 1.2;
+      word-break: break-word;
+      color: #000;
+    }
+    .divider {
+      width: 75%;
+      height: 1px;
+      background: #000;
+      margin: 1mm auto;
+    }
+    .code {
+      font-size: 18pt;
+      font-weight: 900;
+      letter-spacing: 1px;
+      color: #000;
+    }
+  </style>
+</head>
+<body>
+  <div class="label">
+    <div class="carrier">${line1}</div>
+    <div class="divider"></div>
+    <div class="code">${code}</div>
+  </div>
+</body>
+</html>
+  `;
+
+  printWindow.document.open();
+  printWindow.document.write(stickerHtml);
+  printWindow.document.close();
 }
 
 async function createSingleAction(shipmentNum, actionType) {
-  const token = saveToken()
-  if (!token) { alert('Введите токен API'); return }
+  const token = saveToken();
+  if (!token) {
+    alert('Введите токен API');
+    return;
+  }
 
-  showProgress(true)
+  showProgress(true);
 
   // Правильное маппирование endpoint-ов
   const endpointMap = {
@@ -1330,551 +1504,597 @@ async function createSingleAction(shipmentNum, actionType) {
     return: '/api/create-return',
     cancel: '/api/cancel-order',
     partial_payment: '/api/create-partial-payment'
-  }
-  const endpoint = endpointMap[actionType] || `/api/create-${actionType}`
+  };
+  const endpoint = endpointMap[actionType] || `/api/create-${actionType}`;
 
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Token': token },
       body: JSON.stringify({ shipmentNum })
-    })
+    });
 
-    const data = await response.json()
+    const data = await response.json();
 
     if (data.error) {
-      hideProgress(false, 'Ошибка')
-      await saveOrderAction(shipmentNum, `${actionType}_error`, data.error)
-      alert('Ошибка: ' + data.error)
+      hideProgress(false, 'Ошибка');
+      await saveOrderAction(shipmentNum, `${actionType}_error`, data.error);
+      alert('Ошибка: ' + data.error);
     } else {
-      const successNames = { payment: 'Платёж', demand: 'Отгрузка', return: 'Возврат', cancel: 'Заказ' }
-      const resultName = data.paymentName || data.demandName || data.returnName || 'успешно'
-      hideProgress(true, `${successNames[actionType]} создан`)
-      await saveOrderAction(shipmentNum, `${actionType}_created`, resultName)
+      const successNames = {
+        payment: 'Платёж',
+        demand: 'Отгрузка',
+        return: 'Возврат',
+        cancel: 'Заказ'
+      };
+      const resultName = data.paymentName || data.demandName || data.returnName || 'успешно';
+      hideProgress(true, `${successNames[actionType]} создан`);
+      await saveOrderAction(shipmentNum, `${actionType}_created`, resultName);
 
       // Обновляем статус заказа прямо в таблице
-      const orderIndex = ordersData.findIndex(o => o.shipmentNum === shipmentNum)
+      const orderIndex = ordersData.findIndex((o) => o.shipmentNum === shipmentNum);
       if (orderIndex !== -1) {
         if (actionType === 'payment') {
-          ordersData[orderIndex].hasPayment = true
-          ordersData[orderIndex].statusName = 'Оплачен'
-          ordersData[orderIndex].paid = ordersData[orderIndex].sum
+          ordersData[orderIndex].hasPayment = true;
+          ordersData[orderIndex].statusName = 'Оплачен';
+          ordersData[orderIndex].paid = ordersData[orderIndex].sum;
         } else if (actionType === 'demand') {
-          ordersData[orderIndex].hasDemand = true
-          ordersData[orderIndex].statusName = 'Отгрузка создана'
-          saveOrderAction(data.shipmentNum, 'demand_created', data.demandName)
+          ordersData[orderIndex].hasDemand = true;
+          ordersData[orderIndex].statusName = 'Отгрузка создана';
+          saveOrderAction(data.shipmentNum, 'demand_created', data.demandName);
         } else if (actionType === 'return') {
-          ordersData[orderIndex].hasReturn = true
-          ordersData[orderIndex].statusName = 'Возврат'
-          ordersData[orderIndex].returnSum = data.returnSum || 0
-          saveOrderAction(data.shipmentNum, 'return_created', data.returnName, { returnSum: data.returnSum || 0 })
+          ordersData[orderIndex].hasReturn = true;
+          ordersData[orderIndex].statusName = 'Возврат';
+          ordersData[orderIndex].returnSum = data.returnSum || 0;
+          saveOrderAction(data.shipmentNum, 'return_created', data.returnName, {
+            returnSum: data.returnSum || 0
+          });
         } else if (actionType === 'cancel') {
-          ordersData[orderIndex].isCancelled = true
-          ordersData[orderIndex].statusName = 'Отменён'
+          ordersData[orderIndex].isCancelled = true;
+          ordersData[orderIndex].statusName = 'Отменён';
           // Сохраняем сумму отмены (вся сумма заказа)
-          ordersData[orderIndex].cancelledSum = ordersData[orderIndex].sum || 0
-          saveOrderAction(data.shipmentNum, 'order_cancelled', 'ok', { cancelledSum: ordersData[orderIndex].sum || 0 })
+          ordersData[orderIndex].cancelledSum = ordersData[orderIndex].sum || 0;
+          saveOrderAction(data.shipmentNum, 'order_cancelled', 'ok', {
+            cancelledSum: ordersData[orderIndex].sum || 0
+          });
         } else if (actionType === 'partial_payment') {
-          ordersData[orderIndex].hasPayment = true
-          ordersData[orderIndex].statusName = 'Частично оплачен'
-          ordersData[orderIndex].paid = data.paymentSum || (ordersData[orderIndex].sum - (ordersData[orderIndex].returnSum || 0))
-          ordersData[orderIndex].paymentName = data.paymentName || null
-          saveOrderAction(data.shipmentNum, 'partial_payment_created', data.paymentName, { returnSum: ordersData[orderIndex].returnSum || 0 })
+          ordersData[orderIndex].hasPayment = true;
+          ordersData[orderIndex].statusName = 'Частично оплачен';
+          ordersData[orderIndex].paid =
+            data.paymentSum || ordersData[orderIndex].sum - (ordersData[orderIndex].returnSum || 0);
+          ordersData[orderIndex].paymentName = data.paymentName || null;
+          saveOrderAction(data.shipmentNum, 'partial_payment_created', data.paymentName, {
+            returnSum: ordersData[orderIndex].returnSum || 0
+          });
         }
-        ordersData[orderIndex].lastAction = `${actionType}_created`
-                 
-        renderTable()
-        updateTotals()
-        renderCurrentStats()
-        renderFinalStats()
+        ordersData[orderIndex].lastAction = `${actionType}_created`;
+
+        renderTable();
+        updateTotals();
+        renderCurrentStats();
+        renderFinalStats();
       }
     }
   } catch (e) {
-    hideProgress(false, 'Ошибка: ' + e.message)
+    hideProgress(false, 'Ошибка: ' + e.message);
   }
 }
 
 // Refresh specific orders data after batch operation
 async function refreshSpecificOrders(numbers) {
-  const token = loadToken()
-  if (!token || numbers.length === 0) return
-  
-  const numbersParam = encodeURIComponent(numbers.join(','))
-  const url = `/api/process/stream?token=${encodeURIComponent(token)}&numbers=${numbersParam}`
-  
+  const token = loadToken();
+  if (!token || numbers.length === 0) return;
+
+  const numbersParam = encodeURIComponent(numbers.join(','));
+  const url = `/api/process/stream?token=${encodeURIComponent(token)}&numbers=${numbersParam}`;
+
   try {
-    const response = await fetch(url)
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    
+    const response = await fetch(url);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
     while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-      
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           try {
-            const data = JSON.parse(line.slice(6))
+            const data = JSON.parse(line.slice(6));
             if (data.type === 'progress') {
-              const order = data.order
+              const order = data.order;
               // Заменяем в ordersData СВЕЖИМИ данными
-              const index = ordersData.findIndex(o => o.shipmentNum === order.shipmentNum)
+              const index = ordersData.findIndex((o) => o.shipmentNum === order.shipmentNum);
               if (index !== -1) {
-                ordersData[index] = { ...ordersData[index], ...order, enabled: true }
+                ordersData[index] = { ...ordersData[index], ...order, enabled: true };
               }
             }
           } catch (e) {}
         }
       }
     }
-    
+
     // Перерисовываем с актуальными данными
-    realtimeMode = false
-    renderTable()
-    updateTotals()
-    renderCurrentStats()
+    realtimeMode = false;
+    renderTable();
+    updateTotals();
+    renderCurrentStats();
   } catch (e) {
-    console.error('Refresh error:', e)
+    console.error('Refresh error:', e);
   }
 }
 
 // Batch action with SSE streaming
 async function batchAction(actionType) {
-   const token = saveToken()
-   if (!token) { alert('Введите токен API'); return }
+  const token = saveToken();
+  if (!token) {
+    alert('Введите токен API');
+    return;
+  }
 
-   const actionNames = { demand: 'отгрузки', payment: 'платежи', return: 'возвраты', cancel: 'отмены' }
-   if (!await showConfirm(`Создать ${actionNames[actionType]} для отмеченных?`)) return
+  const actionNames = {
+    demand: 'отгрузки',
+    payment: 'платежи',
+    return: 'возвраты',
+    cancel: 'отмены'
+  };
+  if (!(await showConfirm(`Создать ${actionNames[actionType]} для отмеченных?`))) return;
 
-   const orders = ordersData.filter(o => o.enabled)
-   if (orders.length === 0) { alert('Нет отмеченных заказов'); return }
+  const orders = ordersData.filter((o) => o.enabled);
+  if (orders.length === 0) {
+    alert('Нет отмеченных заказов');
+    return;
+  }
 
-   showProgress(true)
-   const numbers = orders.map(o => o.shipmentNum)
-  
-   // Запускаем секундомер и показываем блок
-   hideFinalStats(true)
-   startOperationTimer()
-   
-   // Добавляем анимацию сканирования
-   document.querySelector('.stats-final').classList.add('scanning')
-   
+  showProgress(true);
+  const numbers = orders.map((o) => o.shipmentNum);
+
+  // Запускаем секундомер и показываем блок
+  hideFinalStats(true);
+  startOperationTimer();
+
+  // Добавляем анимацию сканирования
+  document.querySelector('.stats-final').classList.add('scanning');
+
   // Очищаем таблицу и показываем строки в реальном времени
-   const tbody = document.getElementById('tableBody')
-   tbody.innerHTML = ''
-   currentPage = 0
-   
-   // Включаем realtime режим
-   realtimeMode = true
-   
-   try {
-     // Создаём AbortController и AbortId для сервера
-     currentController = new AbortController()
-     const abortId = Math.random().toString(36).substring(2, 15)
-     window.__currentAbortId = abortId
-         
-       // ── POST с checkData (результаты первого сканирования) ──
-       // Раньше был GET /api/batch/stream?numbers=...&action=...&abortId=...
-       // Сервер делал повторный re-check всех заказов (~4-5 API-запросов на заказ).
-       // Теперь POST передаёт checkData — данные уже получены при "Сканировать",
-       // сервер использует их напрямую, экономя ~8000-10000 запросов на 2000 заказов.
-       // POST вместо GET выбран из-за большого объёма checkData (не влезает в URL).
-       const body = {
-         token,
-         numbers,
-         action: actionType,
-         abortId,
-         checkData: orders.map(o => ({
-           shipmentNum: o.shipmentNum,
-           orderId: o.orderId,
-           statusName: o.statusName,
-           canPayment: o.canPayment,
-           canDemand: o.canDemand,
-           canReturn: o.canReturn,
-           canCancel: o.canCancel,
-           demandName: o.demandName,
-           orderName: o.orderName,
-           sum: o.sum,
-           paid: o.paid
-         }))
-       }
-       const url = '/api/batch/stream'
-          
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: currentController.signal
-      })
-        
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  currentPage = 0;
+
+  // Включаем realtime режим
+  realtimeMode = true;
+
+  try {
+    // Создаём AbortController и AbortId для сервера
+    currentController = new AbortController();
+    const abortId = Math.random().toString(36).substring(2, 15);
+    window.__currentAbortId = abortId;
+
+    // ── POST с checkData (результаты первого сканирования) ──
+    // Раньше был GET /api/batch/stream?numbers=...&action=...&abortId=...
+    // Сервер делал повторный re-check всех заказов (~4-5 API-запросов на заказ).
+    // Теперь POST передаёт checkData — данные уже получены при "Сканировать",
+    // сервер использует их напрямую, экономя ~8000-10000 запросов на 2000 заказов.
+    // POST вместо GET выбран из-за большого объёма checkData (не влезает в URL).
+    const body = {
+      token,
+      numbers,
+      action: actionType,
+      abortId,
+      checkData: orders.map((o) => ({
+        shipmentNum: o.shipmentNum,
+        orderId: o.orderId,
+        statusName: o.statusName,
+        canPayment: o.canPayment,
+        canDemand: o.canDemand,
+        canReturn: o.canReturn,
+        canCancel: o.canCancel,
+        demandName: o.demandName,
+        orderName: o.orderName,
+        sum: o.sum,
+        paid: o.paid
+      }))
+    };
+    const url = '/api/batch/stream';
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: currentController.signal
+    });
+
     if (!response.ok) {
-      const errData = await response.json()
-      hideProgress(false, errData.error || 'Ошибка')
-      document.querySelector('.stats-final')?.classList.remove('scanning')
-      return
+      const errData = await response.json();
+      hideProgress(false, errData.error || 'Ошибка');
+      document.querySelector('.stats-final')?.classList.remove('scanning');
+      return;
     }
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-        
-    let created = 0
-    let skipped = 0
-    let errors = 0
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    let created = 0;
+    let skipped = 0;
+    let errors = 0;
 
     while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+      const { done, value } = await reader.read();
+      if (done) break;
 
-      buffer += decoder.decode(value, { stream: true })
-            
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           try {
-            const data = JSON.parse(line.slice(6))
-                        
+            const data = JSON.parse(line.slice(6));
+
             if (data.type === 'progress') {
-              const result = data.result
-              const orderIndex = ordersData.findIndex(o => o.shipmentNum === result.shipmentNum)
-              if (orderIndex === -1) continue
+              const result = data.result;
+              const orderIndex = ordersData.findIndex((o) => o.shipmentNum === result.shipmentNum);
+              if (orderIndex === -1) continue;
 
               if (result.status === 'created') {
-                created++
+                created++;
                 if (actionType === 'demand') {
-                  ordersData[orderIndex].hasDemand = true
-                  ordersData[orderIndex].statusName = 'Отгрузка создана'
-                  ordersData[orderIndex].lastAction = 'demand_created'
-                  ordersData[orderIndex].demandName = result.demandName || null
-                  saveOrderAction(result.shipmentNum, 'demand_created', result.demandName)
+                  ordersData[orderIndex].hasDemand = true;
+                  ordersData[orderIndex].statusName = 'Отгрузка создана';
+                  ordersData[orderIndex].lastAction = 'demand_created';
+                  ordersData[orderIndex].demandName = result.demandName || null;
+                  saveOrderAction(result.shipmentNum, 'demand_created', result.demandName);
                 } else if (actionType === 'payment') {
-                  ordersData[orderIndex].hasPayment = true
-                  ordersData[orderIndex].statusName = 'Оплачен'
-                  ordersData[orderIndex].paid = ordersData[orderIndex].sum
-                  ordersData[orderIndex].lastAction = 'payment_created'
-                  ordersData[orderIndex].paymentName = result.paymentName || null
-                  saveOrderAction(result.shipmentNum, 'payment_created', result.paymentName)
+                  ordersData[orderIndex].hasPayment = true;
+                  ordersData[orderIndex].statusName = 'Оплачен';
+                  ordersData[orderIndex].paid = ordersData[orderIndex].sum;
+                  ordersData[orderIndex].lastAction = 'payment_created';
+                  ordersData[orderIndex].paymentName = result.paymentName || null;
+                  saveOrderAction(result.shipmentNum, 'payment_created', result.paymentName);
                 } else if (actionType === 'return') {
-                  ordersData[orderIndex].hasReturn = true
-                  ordersData[orderIndex].statusName = 'Возврат'
-                  ordersData[orderIndex].lastAction = 'return_created'
-                  ordersData[orderIndex].returnName = result.returnName || null
-                  ordersData[orderIndex].returnSum = result.returnSum || 0
-                  saveOrderAction(result.shipmentNum, 'return_created', result.returnName, { returnSum: result.returnSum || 0 })
+                  ordersData[orderIndex].hasReturn = true;
+                  ordersData[orderIndex].statusName = 'Возврат';
+                  ordersData[orderIndex].lastAction = 'return_created';
+                  ordersData[orderIndex].returnName = result.returnName || null;
+                  ordersData[orderIndex].returnSum = result.returnSum || 0;
+                  saveOrderAction(result.shipmentNum, 'return_created', result.returnName, {
+                    returnSum: result.returnSum || 0
+                  });
                 } else if (actionType === 'cancel') {
-                  ordersData[orderIndex].isCancelled = true
-                  ordersData[orderIndex].statusName = 'Отменён'
-                  ordersData[orderIndex].lastAction = 'order_cancelled'
-                  ordersData[orderIndex].cancelledSum = ordersData[orderIndex].sum || 0
-                  saveOrderAction(result.shipmentNum, 'order_cancelled', 'success', { cancelledSum: ordersData[orderIndex].sum || 0 })
+                  ordersData[orderIndex].isCancelled = true;
+                  ordersData[orderIndex].statusName = 'Отменён';
+                  ordersData[orderIndex].lastAction = 'order_cancelled';
+                  ordersData[orderIndex].cancelledSum = ordersData[orderIndex].sum || 0;
+                  saveOrderAction(result.shipmentNum, 'order_cancelled', 'success', {
+                    cancelledSum: ordersData[orderIndex].sum || 0
+                  });
                 } else if (actionType === 'partial_payment') {
-                  ordersData[orderIndex].hasPayment = true
-                  ordersData[orderIndex].statusName = 'Частично оплачен'
-                  ordersData[orderIndex].paid = result.paymentSum || (ordersData[orderIndex].sum - (ordersData[orderIndex].returnSum || 0))
-                  ordersData[orderIndex].lastAction = 'partial_payment_created'
-                  ordersData[orderIndex].paymentName = result.paymentName || null
-                  saveOrderAction(result.shipmentNum, 'partial_payment_created', result.paymentName)
+                  ordersData[orderIndex].hasPayment = true;
+                  ordersData[orderIndex].statusName = 'Частично оплачен';
+                  ordersData[orderIndex].paid =
+                    result.paymentSum ||
+                    ordersData[orderIndex].sum - (ordersData[orderIndex].returnSum || 0);
+                  ordersData[orderIndex].lastAction = 'partial_payment_created';
+                  ordersData[orderIndex].paymentName = result.paymentName || null;
+                  saveOrderAction(
+                    result.shipmentNum,
+                    'partial_payment_created',
+                    result.paymentName
+                  );
                 }
               } else if (result.status === 'skipped') {
-                skipped++
+                skipped++;
               } else if (result.status === 'error') {
-                errors++
-                ordersData[orderIndex].lastAction = actionType + '_error'
-                ordersData[orderIndex].statusName = 'Ошибка'
-                saveOrderAction(result.shipmentNum, actionType + '_error', result.error)
+                errors++;
+                ordersData[orderIndex].lastAction = actionType + '_error';
+                ordersData[orderIndex].statusName = 'Ошибка';
+                saveOrderAction(result.shipmentNum, actionType + '_error', result.error);
               }
 
               // Обновляем статус
-              const stats = data.stats || { created, skipped, errors }
+              const stats = data.stats || { created, skipped, errors };
               document.getElementById('statusText').textContent =
-                                `Обработано ${data.index}/${data.total} (${stats.created} создано)`
+                `Обработано ${data.index}/${data.total} (${stats.created} создано)`;
 
               // Добавляем строку в таблицу
-              appendOrderRow(ordersData[orderIndex])
+              appendOrderRow(ordersData[orderIndex]);
 
               // Обновляем статистику после каждой строки (с force=true для realtime)
-              renderCurrentStats(true)
+              renderCurrentStats(true);
+            } else if (data.type === 'done') {
+              const stats = data.stats || { created, skipped, errors };
 
-                            
-} else if (data.type === 'done') {
-                const stats = data.stats || { created, skipped, errors }
-                                
-                // Останавливаем секундомер
-                const elapsed = stopOperationTimer()
-                                
-                // Собираем все изменённые номера (успех + ошибки)
-                const processedNumbers = data.orders
-                  .filter(o => o.status === 'created' || o.status === 'error')
-                  .map(o => o.shipmentNum)
-                
-                // Данные уже обновлены в SSE цикле (строки 1373-1398)
-                // НЕ вызываем refreshSpecificOrders, чтобы избежать лишнего запроса и "замораживания" UI
-                realtimeMode = false
-                renderTable()
-                updateTotals()
-                renderCurrentStats()
-                
-                saveLastActionStats()
-                // Сохраняем обновлённые статусы на сервер
-                saveScanStateSilent()
-                hideProgress(true, `Создано: ${stats.created}, пропущено: ${stats.skipped}, ошибок: ${stats.errors}`)
-                                
-                // Показываем результаты в блоке "После действий"
-                showBatchResults(stats, elapsed)
-                
-                // Убираем анимацию сканирования
-                document.querySelector('.stats-final').classList.remove('scanning')
-              } else if (data.type === 'aborted') {
-                const stats = data.stats || { created, skipped, errors }
+              // Останавливаем секундомер
+              const elapsed = stopOperationTimer();
 
-                // Останавливаем секундомер
-                const elapsed = stopOperationTimer()
+              // Собираем все изменённые номера (успех + ошибки)
+              const processedNumbers = data.orders
+                .filter((o) => o.status === 'created' || o.status === 'error')
+                .map((o) => o.shipmentNum);
 
-                realtimeMode = false
-                renderTable()
-                updateTotals()
-                renderCurrentStats()
+              // Данные уже обновлены в SSE цикле (строки 1373-1398)
+              // НЕ вызываем refreshSpecificOrders, чтобы избежать лишнего запроса и "замораживания" UI
+              realtimeMode = false;
+              renderTable();
+              updateTotals();
+              renderCurrentStats();
 
-                saveLastActionStats()
-                // Сохраняем обновлённые статусы на сервер
-                saveScanStateSilent()
-                // Показываем сообщение о прерывании (батч не завершён, часть заказов не обработана)
-                hideProgress(false, `Прервано. Обработано: ${data.processed}, создано: ${stats.created}`)
+              saveLastActionStats();
+              // Сохраняем обновлённые статусы на сервер
+              saveScanStateSilent();
+              hideProgress(
+                true,
+                `Создано: ${stats.created}, пропущено: ${stats.skipped}, ошибок: ${stats.errors}`
+              );
 
-                // Показываем результаты в блоке "После действий"
-                showBatchResults(stats, elapsed)
+              // Показываем результаты в блоке "После действий"
+              showBatchResults(stats, elapsed);
 
-                // Убираем анимацию сканирования
-                document.querySelector('.stats-final').classList.remove('scanning')
-              }
+              // Убираем анимацию сканирования
+              document.querySelector('.stats-final').classList.remove('scanning');
+            } else if (data.type === 'aborted') {
+              const stats = data.stats || { created, skipped, errors };
+
+              // Останавливаем секундомер
+              const elapsed = stopOperationTimer();
+
+              realtimeMode = false;
+              renderTable();
+              updateTotals();
+              renderCurrentStats();
+
+              saveLastActionStats();
+              // Сохраняем обновлённые статусы на сервер
+              saveScanStateSilent();
+              // Показываем сообщение о прерывании (батч не завершён, часть заказов не обработана)
+              hideProgress(
+                false,
+                `Прервано. Обработано: ${data.processed}, создано: ${stats.created}`
+              );
+
+              // Показываем результаты в блоке "После действий"
+              showBatchResults(stats, elapsed);
+
+              // Убираем анимацию сканирования
+              document.querySelector('.stats-final').classList.remove('scanning');
+            }
           } catch (e) {
-            console.error('SSE parse error:', e)
+            console.error('SSE parse error:', e);
           }
         }
       }
     }
   } catch (e) {
-    hideProgress(false, 'Ошибка: ' + e.message)
-    stopOperationTimer()
-} finally {
-     realtimeMode = false
-     stopOperationTimer()
-     renderTable()
-     
-     // Убираем анимацию сканирования (гарантированно)
-     document.querySelector('.stats-final')?.classList.remove('scanning')
-   }
+    hideProgress(false, 'Ошибка: ' + e.message);
+    stopOperationTimer();
+  } finally {
+    realtimeMode = false;
+    stopOperationTimer();
+    renderTable();
+
+    // Убираем анимацию сканирования (гарантированно)
+    document.querySelector('.stats-final')?.classList.remove('scanning');
+  }
 }
 
-async function createAllDemands() { batchAction('demand') }
-async function createAllPayments() { batchAction('payment') }
+async function createAllDemands() {
+  batchAction('demand');
+}
+async function createAllPayments() {
+  batchAction('payment');
+}
 
 // Progress
 function showProgress(working = true) {
-  const container = document.getElementById('progressContainer')
-  const bar = document.getElementById('progressBar')
-  const statusText = document.getElementById('statusText')
+  const container = document.getElementById('progressContainer');
+  const bar = document.getElementById('progressBar');
+  const statusText = document.getElementById('statusText');
 
-  container.classList.add('active')
-  bar.className = 'progress-bar' + (working ? ' working' : '')
-  statusText.textContent = working ? 'Работает...' : 'Завершение...'
+  container.classList.add('active');
+  bar.className = 'progress-bar' + (working ? ' working' : '');
+  statusText.textContent = working ? 'Работает...' : 'Завершение...';
 }
 
 function showStatus(message) {
-  const statusText = document.getElementById('statusText')
-  statusText.textContent = message
-  console.log('STATUS:', message)
+  const statusText = document.getElementById('statusText');
+  statusText.textContent = message;
+  console.log('STATUS:', message);
 }
 
 function hideProgress(success = true, message = '') {
-  const container = document.getElementById('progressContainer')
-  const bar = document.getElementById('progressBar')
-  const statusText = document.getElementById('statusText')
+  const container = document.getElementById('progressContainer');
+  const bar = document.getElementById('progressBar');
+  const statusText = document.getElementById('statusText');
 
-  bar.className = 'progress-bar ' + (success ? 'success' : 'error')
-  statusText.textContent = message || (success ? 'Готово' : 'Ошибка')
+  bar.className = 'progress-bar ' + (success ? 'success' : 'error');
+  statusText.textContent = message || (success ? 'Готово' : 'Ошибка');
 
   setTimeout(() => {
-    container.classList.remove('active')
-    bar.className = 'progress-bar'
-  }, 3000)
+    container.classList.remove('active');
+    bar.className = 'progress-bar';
+  }, 3000);
 }
 
 // Start server (new console)
 async function startServer() {
   // Очистить предыдущий таймер
   if (serverCheckTimer) {
-    clearInterval(serverCheckTimer)
-    serverCheckTimer = null
+    clearInterval(serverCheckTimer);
+    serverCheckTimer = null;
   }
 
-  showProgress(true)
-  document.getElementById('statusText').textContent = 'Запуск...'
+  showProgress(true);
+  document.getElementById('statusText').textContent = 'Запуск...';
 
   try {
-    const healthResp = await fetch('/api/health').catch(() => null)
+    const healthResp = await fetch('/api/health').catch(() => null);
 
     if (healthResp && healthResp.ok) {
-      hideProgress(true, 'Сервер уже запущен')
-      document.getElementById('statusText').textContent = 'Сервер работает'
-      return
+      hideProgress(true, 'Сервер уже запущен');
+      document.getElementById('statusText').textContent = 'Сервер работает';
+      return;
     }
 
     // Start via API
-    const resp = await fetch('/api/start', { method: 'POST' })
-    const data = await resp.json()
+    const resp = await fetch('/api/start', { method: 'POST' });
+    const data = await resp.json();
 
     if (data.success) {
       // Wait for server to start
-      let attempts = 0
+      let attempts = 0;
       serverCheckTimer = setInterval(async () => {
-        attempts++
+        attempts++;
         try {
-          const r = await fetch('/api/health')
+          const r = await fetch('/api/health');
           if (r.ok) {
-            clearInterval(serverCheckTimer)
-            serverCheckTimer = null
-            hideProgress(true, 'Сервер запущен')
-            checkServerStatus()
+            clearInterval(serverCheckTimer);
+            serverCheckTimer = null;
+            hideProgress(true, 'Сервер запущен');
+            checkServerStatus();
           }
         } catch (e) {}
         if (attempts > 15) {
-          clearInterval(serverCheckTimer)
-          serverCheckTimer = null
-          hideProgress(false, 'Не удалось запустить')
+          clearInterval(serverCheckTimer);
+          serverCheckTimer = null;
+          hideProgress(false, 'Не удалось запустить');
         }
-      }, 1000)
+      }, 1000);
     } else {
-      hideProgress(false, 'Ошибка запуска')
+      hideProgress(false, 'Ошибка запуска');
     }
   } catch (e) {
     if (serverCheckTimer) {
-      clearInterval(serverCheckTimer)
-      serverCheckTimer = null
+      clearInterval(serverCheckTimer);
+      serverCheckTimer = null;
     }
-    hideProgress(false, 'Ошибка: ' + e.message)
+    hideProgress(false, 'Ошибка: ' + e.message);
   }
 }
 
 // Restart server
 async function restartServer() {
-  if (!await showConfirm('Перезапустить сервер?')) return
+  if (!(await showConfirm('Перезапустить сервер?'))) return;
 
   // Очистить предыдущий таймер
   if (serverCheckTimer) {
-    clearInterval(serverCheckTimer)
-    serverCheckTimer = null
+    clearInterval(serverCheckTimer);
+    serverCheckTimer = null;
   }
 
-  showProgress(true)
-  document.getElementById('statusText').textContent = 'Перезапуск...'
+  showProgress(true);
+  document.getElementById('statusText').textContent = 'Перезапуск...';
 
   try {
-    await fetch('/api/restart', { method: 'POST' })
+    await fetch('/api/restart', { method: 'POST' });
 
     // Wait for new server
-    let attempts = 0
+    let attempts = 0;
     serverCheckTimer = setInterval(async () => {
-      attempts++
+      attempts++;
       try {
-        const r = await fetch('/api/health')
+        const r = await fetch('/api/health');
         if (r.ok) {
-          clearInterval(serverCheckTimer)
-          serverCheckTimer = null
-          hideProgress(true, 'Сервер перезапущен')
-          checkServerStatus()
+          clearInterval(serverCheckTimer);
+          serverCheckTimer = null;
+          hideProgress(true, 'Сервер перезапущен');
+          checkServerStatus();
         }
       } catch (e) {}
       if (attempts > 15) {
-        clearInterval(serverCheckTimer)
-        serverCheckTimer = null
-        hideProgress(false, 'Не удалось перезапустить')
+        clearInterval(serverCheckTimer);
+        serverCheckTimer = null;
+        hideProgress(false, 'Не удалось перезапустить');
       }
-    }, 1000)
+    }, 1000);
   } catch (e) {
     if (serverCheckTimer) {
-      clearInterval(serverCheckTimer)
-      serverCheckTimer = null
+      clearInterval(serverCheckTimer);
+      serverCheckTimer = null;
     }
-    hideProgress(false, 'Ошибка: ' + e.message)
+    hideProgress(false, 'Ошибка: ' + e.message);
   }
 }
 
 async function checkServerStatus() {
-  const statusDot = document.getElementById('statusDot')
-  const statusText = document.getElementById('statusText')
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
   try {
-    const data = await (await fetch('/api/health')).json()
+    const data = await (await fetch('/api/health')).json();
     if (data.status === 'ok') {
-      statusDot.classList.add('ok')
-      statusText.textContent = 'Сервер работает'
+      statusDot.classList.add('ok');
+      statusText.textContent = 'Сервер работает';
     }
   } catch (e) {
-    statusText.textContent = 'Сервер недоступен'
+    statusText.textContent = 'Сервер недоступен';
   }
 }
 
 // Logs
 async function loadLogs() {
-  const consoleEl = document.getElementById('consoleOutput')
-  consoleEl.innerHTML = '<span class="log-info">Загрузка...</span>'
+  const consoleEl = document.getElementById('consoleOutput');
+  consoleEl.innerHTML = '<span class="log-info">Загрузка...</span>';
 
   try {
-    const data = await (await fetch('/api/logs')).json()
+    const data = await (await fetch('/api/logs')).json();
     if (data.error) {
-      consoleEl.innerHTML = `<span class="log-error">${data.error}</span>`
-      return
+      consoleEl.innerHTML = `<span class="log-error">${data.error}</span>`;
+      return;
     }
     if (!data.logs) {
-      consoleEl.innerHTML = '<span class="log-time">Нет логов</span>'
-      return
+      consoleEl.innerHTML = '<span class="log-time">Нет логов</span>';
+      return;
     }
 
-    const lines = data.logs.split('\n').filter(l => l).slice(-50)
-    consoleEl.innerHTML = lines.map(line => {
-      const timeMatch = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/)
-      const time = timeMatch ? timeMatch[1] : ''
-      let content = line.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\s*/, '')
-      let cls = 'log-info'
-      if (content.includes('error') || content.includes('Ошибка')) cls = 'log-error'
-      else if (content.includes('создан') || content.includes('Завершено')) cls = 'log-success'
-      else if (content.includes('===')) cls = 'log-warn'
-      return `<div><span class="log-time">${time}</span> <span class="${cls}">${content}</span></div>`
-    }).join('')
+    const lines = data.logs
+      .split('\n')
+      .filter((l) => l)
+      .slice(-50);
+    consoleEl.innerHTML = lines
+      .map((line) => {
+        const timeMatch = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/);
+        const time = timeMatch ? timeMatch[1] : '';
+        let content = line.replace(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\s*/, '');
+        let cls = 'log-info';
+        if (content.includes('error') || content.includes('Ошибка')) cls = 'log-error';
+        else if (content.includes('создан') || content.includes('Завершено')) cls = 'log-success';
+        else if (content.includes('===')) cls = 'log-warn';
+        return `<div><span class="log-time">${time}</span> <span class="${cls}">${content}</span></div>`;
+      })
+      .join('');
 
-    consoleEl.scrollTop = consoleEl.scrollHeight
+    consoleEl.scrollTop = consoleEl.scrollHeight;
   } catch (e) {
-    consoleEl.innerHTML = `<span class="log-error">${e.message}</span>`
+    consoleEl.innerHTML = `<span class="log-error">${e.message}</span>`;
   }
 }
 
 // Init
 document.addEventListener('DOMContentLoaded', async () => {
-  loadToken()
-  checkServerStatus()
+  loadToken();
+  checkServerStatus();
 
   // Загружаем сохранённые заказы при старте
-  await loadSavedOrdersAndRender()
-})
+  await loadSavedOrdersAndRender();
+});
 
 // Очистка сохранённых данных
 async function clearSavedData() {
-  if (!await showConfirm('Очистить все сохранённые данные?')) return
+  if (!(await showConfirm('Очистить все сохранённые данные?'))) return;
   try {
-    const response = await fetch('/api/orders-state', { method: 'DELETE' })
-    const result = await response.json()
-    ordersData = []
-    renderTable()
-    updateTotals()
-    showStatus('Данные очищены')
+    const response = await fetch('/api/orders-state', { method: 'DELETE' });
+    const result = await response.json();
+    ordersData = [];
+    renderTable();
+    updateTotals();
+    showStatus('Данные очищены');
   } catch (e) {
-    showStatus('Ошибка: ' + e.message)
+    showStatus('Ошибка: ' + e.message);
   }
 }

@@ -18,7 +18,8 @@ const { createPayment } = require('./lib/payment')
 const { createDemand } = require('./lib/demand')
 const { createReturn } = require('./lib/return')
 const { cancelOrder } = require('./lib/cancel')
-const { findProductByCode } = require('./lib/product')
+const { findProductByCode, getProductFullByCode } = require('./lib/product')
+const { getApi } = require('./lib/api-utils')
 const { exportStickerPdf } = require('./lib/print')
 const wbOzonSync = require('./integrations/wb_ozon_sync')
 
@@ -91,10 +92,14 @@ const colors = {
 // Определение цвета по содержимому сообщения
 function getColor(message) {
   if (message.includes('Ошибка') || message.includes('error') || message.includes('ERROR')) return colors.red
-  if (message.includes('успешно') || message.includes('created') || message.includes('Успех')) return colors.green
-  if (message.includes('Пропущен') || message.includes('skipped')) return colors.yellow
-  if (message.includes('Завершено') || message.includes('completed')) return colors.cyan
-  if (message.includes('Начало') || message.includes('batch')) return colors.magenta
+  if (message.includes('успешно') || message.includes('created') || message.includes('Успех') ||
+      message.includes('Найдено') || message.includes('Проверен') || message.includes('Found')) return colors.green
+  if (message.includes('Пропущен') || message.includes('skipped') || message.includes('возврат')) return colors.yellow
+  if (message.includes('Завершено') || message.includes('completed') || message.includes('Поиск')) return colors.cyan
+  if (message.includes('Начало') || message.includes('batch') || message.includes('отмен') ||
+      message.includes('Сервер запущен')) return colors.magenta
+  if (message.includes('Фильтр') || message.includes('WB') || message.includes('Ozon') ||
+      message.includes('Market') || message.includes('[HTTP]')) return colors.blue
   return colors.white
 }
 
@@ -1002,6 +1007,113 @@ app.get('/api/debug-state', (req, res) => {
   })
 })
 
+// ──────────────────────────────────────────
+// Shared attributes: поиск общих полей по названиям
+// Возвращает [{ name, systems: { ms: { id, value, found }, ozon: {...}, wb: {...} } }]
+// ──────────────────────────────────────────
+function findSharedAttributes(msProduct, wbProduct, ozonProduct) {
+  const whitelist = [
+    'Страна производства',
+    'Бренд',
+    'Материал',
+    'Пол',
+    'Сезон',
+    'Состав',
+    'Комплектация',
+    'Количество предметов в упаковке (шт.)',
+  ]
+
+  // Алиасы: названия атрибутов, которые означают одно и то же в разных системах
+  const aliasMap = {
+    'Страна производства': ['Страна-изготовитель'],
+    'Количество предметов в упаковке (шт.)': ['Количество, штук'],
+  }
+
+  // Собираем мапу name → { id, value } для каждой системы
+  function buildMap(attributes) {
+    const map = {}
+    if (!attributes || !Array.isArray(attributes)) return map
+    for (const attr of attributes) {
+      const name = attr.name || ''
+      const value = attr.value !== undefined ? String(attr.value) : ''
+      if (name) {
+        // У некоторых систем value может быть вложенным (массив объектов)
+        let resolvedValue = value
+        if (Array.isArray(attr.value)) {
+          resolvedValue = attr.value.map(function(v) {
+            return typeof v === 'object' ? (v.value || '') : v
+          }).filter(Boolean).join(', ')
+        }
+        map[name] = { id: attr.id || attr.attribute_id || null, value: resolvedValue }
+      }
+    }
+    return map
+  }
+
+  // Вспомогательная функция поиска в мапе с учётом алиасов
+  function findInMap(map, name) {
+    if (map[name]) return map[name]
+    // Проверяем алиасы: ищем, чьим алиасом является name
+    for (const [canonical, aliases] of Object.entries(aliasMap)) {
+      if (aliases.indexOf(name) !== -1) {
+        // name это алиас для canonical — ищем canonical
+        return map[canonical]
+      }
+      // Или name это canonical — проверяем алиасы
+      if (name === canonical) {
+        for (const alias of aliases) {
+          if (map[alias]) return map[alias]
+        }
+      }
+    }
+    return undefined
+  }
+
+  const msAttrs = buildMap(msProduct ? msProduct.attributes : null)
+  const wbAttrs = buildMap(wbProduct ? (wbProduct.characteristics || wbProduct.attributes) : null)
+  const ozonAttrs = buildMap(ozonProduct ? (ozonProduct.attributes || []) : null)
+
+  const result = []
+
+  for (const name of whitelist) {
+    // Ищем сначала по прямому имени, потом по алиасам
+    let ms = msAttrs[name] || findInMap(msAttrs, name)
+    let wb = wbAttrs[name] || findInMap(wbAttrs, name)
+    let ozon = ozonAttrs[name] || findInMap(ozonAttrs, name)
+
+    // Пропускаем, если нет ни в одной системе
+    if (!ms && !wb && !ozon) continue
+
+    result.push({
+      name: name,
+      systems: {
+        ms: ms ? { id: ms.id, value: ms.value, found: true } : { id: null, value: '', found: false },
+        ozon: ozon ? { id: ozon.id, value: ozon.value, found: true } : { id: null, value: '', found: false },
+        wb: wb ? { id: wb.id, value: wb.value, found: true } : { id: null, value: '', found: false }
+      }
+    })
+  }
+
+  return result
+}
+
+// ──────────────────────────────────────────
+// Очистка HTML-описания для отображения
+// Убирает теги, заменяет <br>/</p> на \n, схлопывает пробелы
+// ──────────────────────────────────────────
+function formatDescriptionForDisplay(rawHtml) {
+  if (!rawHtml || typeof rawHtml !== 'string') return rawHtml || ''
+  return rawHtml
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<p\b[^>]*>/gi, '')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+/g, ' ')
+    .trim()
+}
+
 // Serve static files from public folder
 app.use(express.static(path.join(moduleRoot, 'public')))
 
@@ -1031,9 +1143,27 @@ app.get('/api/market/product', async (req, res) => {
     process.env.MOYSKLAD_TOKEN = msToken
     initApi(msToken)
 
-    // 2. Search in MoySklad
-    const msProduct = await findProductByCode(oemCode.trim())
+    // 2. Search in MoySklad (with salePrices expanded)
+    const msProduct = await getProductFullByCode(oemCode.trim())
     
+    // Debug logging for MS price
+    let msPrice = 0
+    if (msProduct) {
+      log(`[Market] MS Direct API: ${msProduct.name}, salePrices: ${JSON.stringify(msProduct.salePrices)}`)
+      if (msProduct.salePrices && msProduct.salePrices.length > 0) {
+        const rawCents = msProduct.salePrices[0].value
+        msPrice = rawCents / 100
+        log(`[Market] MS Price Debug: raw=${rawCents}, calculated=${msPrice}`)
+      } else if (msProduct.price) {
+        msPrice = msProduct.price / 100
+        log(`[Market] MS Price fallback: ${msPrice} rub (no salePrices array)`)
+      }
+      log(`[Market] MS Price Final: ${msPrice} rub`)
+
+      // Include salePrices meta for push
+      msProduct._priceTypeMeta = msProduct.salePrices?.[0]?.priceType?.meta || null
+    }
+
     // 3. Search in WB (if token provided)
     let wbResults = []
     let wbError = null
@@ -1063,18 +1193,35 @@ app.get('/api/market/product', async (req, res) => {
     }
 
     // 5. Prepare response
+    const msData = msProduct ? {
+      id: msProduct.id,
+      name: msProduct.name,
+      code: msProduct.code,
+      article: msProduct.article || '',
+      price: msPrice,
+      stock: msProduct.quantity || 0,
+      _priceTypeMeta: msProduct._priceTypeMeta,
+      description: msProduct.description || '',
+      descriptionClean: formatDescriptionForDisplay(msProduct.description),
+      attributes: msProduct.attributes || [],
+    } : null
+
+    const wbData = (wbResults && wbResults.length > 0) ? {
+      ...wbResults[0],
+      descriptionClean: formatDescriptionForDisplay(wbResults[0].description)
+    } : null
+
+    const ozonData = (ozonResults && ozonResults.length > 0) ? {
+      ...ozonResults[0],
+      descriptionClean: formatDescriptionForDisplay(ozonResults[0].description)
+    } : null
+
     const result = {
       oem: oemCode,
-      moysklad: msProduct ? {
-        id: msProduct.id,
-        name: msProduct.name,
-        code: msProduct.code,
-        article: msProduct.article || '',
-        price: msProduct.price || 0,
-        stock: msProduct.quantity || 0,
-      } : null,
-      wildberries: wbResults && wbResults.length > 0 ? wbResults[0] : null,
-      ozon: ozonResults && ozonResults.length > 0 ? ozonResults[0] : null,
+      moysklad: msData,
+      wildberries: wbData,
+      ozon: ozonData,
+      sharedAttributes: findSharedAttributes(msData, wbData, ozonData),
       _debug: { wbError, ozonError } // Debug info
     }
 
@@ -1085,13 +1232,138 @@ app.get('/api/market/product', async (req, res) => {
   }
 })
 
+// ──────────────────────────────────────────
+// Push: Обновление товара в МойСклад
+// ──────────────────────────────────────────
+app.post('/api/market/push/ms', async (req, res) => {
+  const msToken = req.headers['x-api-token']
+  const { productId, price, title, description, attributes } = req.body
+
+  if (!msToken) return res.status(401).json({ error: 'Требуется токен МойСклад' })
+  if (!productId) return res.status(400).json({ error: 'Нет ID товара' })
+
+  try {
+    process.env.MOYSKLAD_TOKEN = msToken
+    initApi(msToken)
+    const API = getApi()
+
+    // Get current product to find priceType
+    const product = await API.GET('entity/product/' + productId, { expand: 'salePrices' })
+
+    const updateData = {}
+    if (title) updateData.name = title
+    if (description !== undefined) updateData.description = description
+    if (attributes && Array.isArray(attributes) && attributes.length > 0) {
+      updateData.attributes = attributes.map(function(a) {
+        return { id: a.id, value: a.value }
+      })
+    }
+    if (price !== undefined && price > 0) {
+      const priceType = product.salePrices?.[0]?.priceType
+      updateData.salePrices = [{
+        value: Math.round(price * 100),
+        priceType: priceType || { meta: { href: 'entity/pricetype/default', type: 'pricetype', mediaType: 'application/json' } }
+      }]
+    }
+
+    await API.PUT('entity/product/' + productId, updateData)
+    log(`[Market] MS push: updated ${productId}`)
+    res.json({ success: true, message: '✅ Товар обновлён в МойСклад' })
+  } catch (e) {
+    log(`[Market] MS push error: ${e.message}`)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ──────────────────────────────────────────
+// Push: Обновление товара в Wildberries
+// ──────────────────────────────────────────
+app.post('/api/market/push/wb', async (req, res) => {
+  const wbToken = req.headers['x-wb-token']
+  const { vendorCode, price, title, description, characteristics } = req.body
+
+  if (!wbToken) return res.status(401).json({ error: 'Требуется токен WB' })
+  if (!vendorCode) return res.status(400).json({ error: 'Нет vendorCode' })
+
+  try {
+    // 1. Find product in WB to get nmID
+    const wbResults = await wbOzonSync.fetchWBData([vendorCode], wbToken)
+    if (!wbResults || wbResults.length === 0 || wbResults[0].error) {
+      return res.status(404).json({ error: wbResults?.[0]?.error || 'Товар не найден в WB' })
+    }
+
+    const nmId = wbResults[0].nmID
+    if (!nmId) return res.status(400).json({ error: 'nmID не получен для товара' })
+
+    const updates = []
+
+    // 2. Update price via WB Prices API
+    if (price !== undefined && price > 0) {
+      updates.push(wbOzonSync.pushWBPrice(wbToken, nmId, price))
+    }
+
+    // 3. Update card data (description + characteristics) via Content API
+    if (description !== undefined || (characteristics && characteristics.length > 0)) {
+      updates.push(wbOzonSync.pushWBCard(wbToken, nmId, vendorCode, description, characteristics))
+    }
+
+    await Promise.all(updates)
+    log(`[Market] WB push: updated ${vendorCode} (nmId: ${nmId})`)
+    res.json({ success: true, message: '✅ Товар обновлён в Wildberries' })
+  } catch (e) {
+    log(`[Market] WB push error: ${e.message}`)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ──────────────────────────────────────────
+// Push: Обновление товара в Ozon
+// ──────────────────────────────────────────
+app.post('/api/market/push/ozon', async (req, res) => {
+  const ozonClientId = req.headers['x-ozon-client-id']
+  const ozonApiKey = req.headers['x-ozon-api-key']
+  const { offerId, productId, price, title, description, attributes } = req.body
+
+  if (!ozonClientId || !ozonApiKey) return res.status(401).json({ error: 'Требуются Client-Id и Api-Key Ozon' })
+  if (!offerId && !productId) return res.status(400).json({ error: 'Нет offerId или productId' })
+
+  try {
+    const updates = []
+
+    // 1. Update price — требуется числовой product_id
+    if (price !== undefined && price > 0) {
+      if (!productId) return res.status(400).json({ error: 'Для обновления цены нужен productId (числовой ID товара в Ozon). Перезагрузите результаты поиска.' })
+      updates.push(wbOzonSync.pushOzonPrice(ozonClientId, ozonApiKey, productId, price))
+    }
+
+    // 2. Update title + description через асинхронный импорт (task_id)
+    //    /v3/product/import принимает name и description одновременно
+    if (title || description) {
+      updates.push(wbOzonSync.pushOzonTitle(ozonClientId, ozonApiKey, offerId, title, description))
+    }
+
+    // 3. Update attributes (характеристики) через /v1/product/attributes/update
+    if (attributes && Array.isArray(attributes) && attributes.length > 0 && productId) {
+      updates.push(wbOzonSync.pushOzonAttributes(ozonClientId, ozonApiKey, productId, attributes))
+    }
+
+    await Promise.all(updates)
+    log(`[Market] Ozon push: updated ${offerId}`)
+    res.json({ success: true, message: '✅ Товар обновлён в Ozon' })
+  } catch (e) {
+    log(`[Market] Ozon push error: ${e.message}`)
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // Start server
 const server = app.listen(PORT, () => {
   log(`=== Сервер запущен на http://localhost:${PORT} ===`, {
     pid: process.pid,
     keepLogsDays: LOG_DAYS_KEEP
   })
-  console.log(`Откройте http://localhost:${PORT} в браузере`)
+  const { serverStarted } = require('./lib/logger')
+  serverStarted(PORT)
 })
 
 // Handle server errors (e.g., EADDRINUSE)
