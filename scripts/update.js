@@ -36,69 +36,56 @@ function setup() {
 
 // Download ZIP from GitHub archive URL (direct download, no API)
 function downloadZip() {
-  return new Promise((resolve, reject) => {
-    const url = `https://github.com/RudzisID/simoto-sklad/archive/refs/tags/${tag}.zip`
-    console.log('[i] Downloading: ' + url)
+  const url = `https://github.com/RudzisID/simoto-sklad/archive/refs/tags/${tag}.zip`
+  console.log('[i] Downloading: ' + url)
+  return download(url, zipPath)
+}
 
-    const file = fs.createWriteStream(zipPath)
+// Download a file from URL to destination (handles redirects recursively)
+// Each call creates its own WriteStream — avoids piping to destroyed streams
+function download(url, dest) {
+  return new Promise((resolve, reject) => {
+    const abortTimer = setTimeout(() => {
+      request.destroy()
+      if (fs.existsSync(dest)) fs.unlinkSync(dest)
+      reject(new Error('Download timeout (120s)'))
+    }, 120000)
+
+    const file = fs.createWriteStream(dest)
+    file.on('error', (err) => {
+      clearTimeout(abortTimer)
+      if (fs.existsSync(dest)) fs.unlinkSync(dest)
+      reject(err)
+    })
+
     const request = https.get(url, (res) => {
       // Handle redirects (GitHub may redirect to CDN)
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         file.close()
-        if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath)
+        if (fs.existsSync(dest)) fs.unlinkSync(dest)
+        clearTimeout(abortTimer)
         console.log('[i] Redirecting to: ' + res.headers.location)
-        return download(res.headers.location, file, zipPath).then(resolve).catch(reject)
+        // Create a NEW stream in the recursive call — don't reuse closed one
+        return download(res.headers.location, dest).then(resolve).catch(reject)
       }
       if (res.statusCode !== 200) {
         file.close()
-        if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath)
+        if (fs.existsSync(dest)) fs.unlinkSync(dest)
+        clearTimeout(abortTimer)
         return reject(new Error('HTTP ' + res.statusCode))
       }
       console.log('[i] Downloading ZIP...')
       res.pipe(file)
       file.on('finish', () => {
         file.close()
-        const stats = fs.statSync(zipPath)
+        clearTimeout(abortTimer)
+        const stats = fs.statSync(dest)
         console.log('[i] Downloaded ' + (stats.size / 1024 / 1024).toFixed(1) + ' MB')
         resolve()
       })
     })
     request.on('error', (err) => {
-      file.close()
-      if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath)
-      reject(err)
-    })
-    request.setTimeout(60000, () => {
-      request.destroy()
-      file.close()
-      if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath)
-      reject(new Error('Download timeout'))
-    })
-  })
-}
-
-// Handle redirect for download
-function download(url, file, dest) {
-  return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        file.close()
-        if (fs.existsSync(dest)) fs.unlinkSync(dest)
-        return download(res.headers.location, file, dest).then(resolve).catch(reject)
-      }
-      if (res.statusCode !== 200) {
-        file.close()
-        if (fs.existsSync(dest)) fs.unlinkSync(dest)
-        return reject(new Error('HTTP ' + res.statusCode))
-      }
-      res.pipe(file)
-      file.on('finish', () => {
-        file.close()
-        const stats = fs.statSync(dest)
-        console.log('[i] Downloaded ' + (stats.size / 1024 / 1024).toFixed(1) + ' MB')
-        resolve()
-      })
-    }).on('error', (err) => {
+      clearTimeout(abortTimer)
       file.close()
       if (fs.existsSync(dest)) fs.unlinkSync(dest)
       reject(err)
@@ -111,14 +98,7 @@ function extractZip() {
   console.log('[i] Extracting ZIP...')
   try {
     execSync(
-      'powershell -NoProfile -Command "' +
-        'Add-Type -AssemblyName System.IO.Compression.FileSystem; ' +
-        '[System.IO.Compression.ZipFile]::ExtractToDirectory(\'' +
-        zipPath.replace(/'/g, "''") +
-        "', '" +
-        extractPath.replace(/'/g, "''") +
-        "')" +
-        '"',
+      `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractPath}' -Force"`,
       { stdio: 'pipe', timeout: 120000 }
     )
   } catch (e) {

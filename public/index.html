@@ -12,7 +12,7 @@
     <div class="app-header">
       <div class="header-left">
         <img src="logo-line.svg" alt="SiMOTO" class="header-logo" />
-        <button class="token-btn" onclick="showTokenModal()">Токены</button>
+        <button class="btn btn-accent" onclick="showTokenModal()">Токены</button>
       </div>
       <div class="header-center">
         <div class="tab-bar">
@@ -21,7 +21,7 @@
         </div>
       </div>
       <div class="header-right">
-        <button class="sticker-btn" onclick="toggleStickerModal(true)" title="Печать наклейки">
+        <button class="btn btn-accent sticker-btn" onclick="toggleStickerModal(true)" title="Печать наклейки">
           <svg
             width="16"
             height="16"
@@ -55,7 +55,7 @@
           <div class="input-panel">
             <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
             <div class="button-row">
-              <button onclick="checkNumbers()">Сканировать</button>
+              <button class="btn btn-accent btn-lg btn-block" onclick="checkNumbers()">Сканировать</button>
               <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display: none">
                 ✕
               </button>
@@ -102,10 +102,10 @@
         <div class="right-column">
           <!-- Bulk actions moved to right column -->
           <div class="bulk-actions">
-            <button onclick="createAllDemands()" class="bulk-btn demand">Отгрузка</button>
-            <button onclick="createAllPayments()" class="bulk-btn payment">Платёж</button>
-            <button onclick="batchAction('return')" class="bulk-btn return">Возврат</button>
-            <button onclick="batchAction('cancel')" class="bulk-btn cancel">Отмена</button>
+            <button onclick="createAllDemands()" class="btn btn-demand">Отгрузка</button>
+            <button onclick="createAllPayments()" class="btn btn-payment">Платёж</button>
+            <button onclick="batchAction('return')" class="btn btn-return">Возврат</button>
+            <button onclick="batchAction('cancel')" class="btn btn-cancel">Отмена</button>
           </div>
 
           <!-- Current stats (60%) -->
@@ -136,7 +136,7 @@
               placeholder="Введите OEM-код"
               value="7020-061600комплект"
             />
-            <button onclick="searchProductByOEM()" class="search-btn">Поиск</button>
+            <button onclick="searchProductByOEM()" class="btn btn-accent">Поиск</button>
           </div>
           <div id="marketResults"></div>
         </div>
@@ -731,7 +731,7 @@
             html +=
               '<button onclick="pushToMS(\'' +
               ms.id +
-              '\')" class="push-btn ms-btn">📤 Отправить в МС</button>';
+              '\')" class="btn btn-ms btn-block push-btn">📤 Отправить в МС</button>';
           }
           html += '</div>';
 
@@ -743,7 +743,7 @@
               (ozon.code || '') +
               "', " +
               (ozon.product_id || 0) +
-              ')" class="push-btn ozon-btn">📤 Отправить в Ozon</button>';
+              ')" class="btn btn-ozon btn-block push-btn">📤 Отправить в Ozon</button>';
           }
           html += '</div>';
 
@@ -753,7 +753,7 @@
             html +=
               '<button onclick="pushToWB(\'' +
               (wb.vendorCode || wb.code || '') +
-              '\')" class="push-btn wb-btn">📤 Отправить в WB</button>';
+              '\')" class="btn btn-wb btn-block push-btn">📤 Отправить в WB</button>';
           }
           html += '</div>';
 

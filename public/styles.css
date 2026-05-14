@@ -440,38 +440,10 @@ body {
   margin-top: 6px;
 }
 
-.button-row button {
-  flex: 1;
-  padding: 10px 14px;
-  font-size: 0.9rem;
-}
-
-/* Primary action button (Scan) */
-.button-row button:not(.abort-btn) {
-  background: var(--bg-dark);
-  border: 1px solid var(--accent);
-  color: var(--text);
-}
-
-.button-row button:not(.abort-btn):hover:not(:disabled) {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: white;
-}
-
 .abort-btn {
   flex: 0 0 28px !important;
-  background: var(--bg-dark) !important;
-  border: 1px solid var(--error) !important;
-  color: var(--error) !important;
   padding: 0;
   font-size: 0.9rem;
-}
-
-.abort-btn:hover:not(:disabled) {
-  background: var(--error) !important;
-  border-color: var(--error) !important;
-  color: white !important;
 }
 
 /* === Table Panel === */
@@ -777,110 +749,21 @@ td.order-name-cell,
   color: var(--text);
 }
 
-/* === Action Buttons - Fill on hover === */
+/* Size only — .btn handles color/hover/disabled */
 .action-btn {
   width: 28px;
   height: 28px;
   padding: 0;
   font-size: 0.85rem;
   margin: 2px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  border: 2px solid var(--border-light);
-  background: var(--bg-dark);
-  color: var(--text);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .action-btn:hover:not(:disabled) {
   transform: scale(1.05);
-  box-shadow: 0 4px 16px rgba(249, 115, 22, 0.2);
 }
 
 .action-btn:active:not(:disabled) {
   transform: scale(0.95);
-  box-shadow: var(--shadow-sm);
-}
-
-/* Success/Payment - green fill on hover */
-.action-btn.success,
-.action-btn.payment {
-  border-color: #22c55e;
-  color: #22c55e;
-}
-
-.action-btn.success:hover:not(:disabled),
-.action-btn.payment:hover:not(:disabled) {
-  background: #22c55e;
-  border-color: #22c55e;
-  color: white;
-  box-shadow:
-    0 0 15px rgba(34, 197, 94, 0.3),
-    0 0 30px rgba(34, 197, 94, 0.2);
-}
-
-/* Demand - orange fill on hover */
-.action-btn.demand {
-  border-color: #f97316;
-  color: #f97316;
-}
-
-.action-btn.demand:hover:not(:disabled) {
-  background: #f97316;
-  border-color: #f97316;
-  color: white;
-  box-shadow:
-    0 0 15px rgba(249, 115, 22, 0.3),
-    0 0 30px rgba(249, 115, 22, 0.2);
-}
-
-/* Return - red fill on hover */
-.action-btn.return {
-  border-color: #ef4444;
-  color: #ef4444;
-}
-
-.action-btn.return:hover:not(:disabled) {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: white;
-  box-shadow:
-    0 0 15px rgba(239, 68, 68, 0.3),
-    0 0 30px rgba(239, 68, 68, 0.2);
-}
-
-/* Cancel - gray fill on hover */
-.action-btn.cancel {
-  border-color: #64748b;
-  color: #64748b;
-}
-
-.action-btn.cancel:hover:not(:disabled) {
-  background: #64748b;
-  border-color: #64748b;
-  color: white;
-  box-shadow:
-    0 0 15px rgba(100, 116, 139, 0.3),
-    0 0 30px rgba(100, 116, 139, 0.2);
-}
-
-.action-btn:disabled {
-  opacity: 0.25;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-  border-color: var(--border-light);
-  color: var(--text-muted);
-  background: var(--bg-dark);
-}
-
-.action-btn:disabled:hover {
-  background: var(--bg-dark);
-  transform: none;
-  box-shadow: none;
 }
 
 /* === Print Button (Sticker) === */
@@ -1007,102 +890,7 @@ input[type='checkbox']:checked::after {
   z-index: 1;
 }
 
-.bulk-btn {
-  padding: 8px 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  background: var(--bg-dark);
-  border: 2px solid var(--border);
-  color: var(--text);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-}
 
-.bulk-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 50%);
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.bulk-btn:hover:not(:disabled) {
-  transform: scale(1.03);
-}
-
-.bulk-btn:hover::before {
-  opacity: 1;
-}
-
-.bulk-btn:active:not(:disabled) {
-  transform: translateY(0) scale(0.98);
-}
-
-.bulk-btn.payment {
-  border-color: #22c55e;
-  color: #22c55e;
-}
-
-.bulk-btn.payment:hover:not(:disabled) {
-  background: #22c55e;
-  border-color: #22c55e;
-  color: white;
-  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.35);
-}
-
-.bulk-btn.demand {
-  border-color: #f97316;
-  color: #f97316;
-}
-
-.bulk-btn.demand:hover:not(:disabled) {
-  background: #f97316;
-  border-color: #f97316;
-  color: white;
-  box-shadow: 0 4px 16px rgba(249, 115, 22, 0.35);
-}
-
-.bulk-btn.return {
-  border-color: #ef4444;
-  color: #ef4444;
-}
-
-.bulk-btn.return:hover:not(:disabled) {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: white;
-  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.35);
-}
-
-.bulk-btn.cancel {
-  border-color: #64748b;
-  color: #64748b;
-}
-
-.bulk-btn.cancel:hover:not(:disabled) {
-  background: #64748b;
-  border-color: #64748b;
-  color: white;
-  box-shadow:
-    0 4px 20px rgba(100, 116, 139, 0.3),
-    0 0 30px rgba(100, 116, 139, 0.15);
-}
-
-.bulk-btn:disabled {
-  opacity: 0.25;
-  cursor: not-allowed;
-  transform: none;
-  background: var(--bg-dark);
-  border-color: var(--border);
-  color: var(--text-muted);
-}
 
 /* === Totals === */
 .totals {
@@ -1176,6 +964,121 @@ button:disabled {
   background: var(--border);
   border-color: var(--border);
   color: var(--text-muted);
+}
+
+/* === Button System (Unified) === */
+/* Base: fill-on-hover pattern — all buttons use this */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: var(--bg-dark);
+  border: 2px solid;
+  color: var(--text);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn:hover:not(:disabled) {
+  transform: scale(1.03);
+  color: white;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+  transform: none;
+  background: var(--bg-dark);
+  border-color: var(--border);
+  color: var(--text-muted);
+  box-shadow: none !important;
+}
+
+/* Size modifiers */
+.btn-lg {
+  padding: 10px 20px;
+  font-size: 0.9rem;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+/* Color modifiers — solid fill (standard) */
+.btn-accent,
+.btn-demand,
+.btn-ms {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-accent:hover:not(:disabled),
+.btn-demand:hover:not(:disabled),
+.btn-ms:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 15px var(--accent-glow), 0 0 30px var(--accent-glow);
+}
+
+.btn-payment {
+  border-color: #22c55e;
+  color: #22c55e;
+}
+.btn-payment:hover:not(:disabled) {
+  background: #22c55e;
+  border-color: #22c55e;
+  box-shadow: 0 0 15px rgba(34, 197, 94, 0.3), 0 0 30px rgba(34, 197, 94, 0.2);
+}
+
+.btn-return {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+.btn-return:hover:not(:disabled) {
+  background: #ef4444;
+  border-color: #ef4444;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.3), 0 0 30px rgba(239, 68, 68, 0.2);
+}
+
+.btn-cancel {
+  border-color: #64748b;
+  color: #64748b;
+}
+.btn-cancel:hover:not(:disabled) {
+  background: #64748b;
+  border-color: #64748b;
+  box-shadow: 0 0 15px rgba(100, 116, 139, 0.3), 0 0 30px rgba(100, 116, 139, 0.2);
+}
+
+/* Color modifiers — gradient fill (branded platforms) */
+.btn-wb {
+  border-color: #a855f7;
+  color: #a855f7;
+}
+.btn-wb:hover:not(:disabled) {
+  background: linear-gradient(135deg, #a855f7, #7c3aed);
+  border-color: #a855f7;
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.3), 0 0 30px rgba(168, 85, 247, 0.2);
+}
+
+.btn-ozon {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+.btn-ozon:hover:not(:disabled) {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: #3b82f6;
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.3), 0 0 30px rgba(59, 130, 246, 0.2);
 }
 
 /* === Save Token Button === */
@@ -1909,42 +1812,7 @@ span[id$='Dot']:not(#statusDot),
   gap: 10px;
 }
 
-.token-btn {
-  padding: 6px 12px;
-  font-size: 0.8rem;
-  background: var(--bg-dark);
-  border: 1px solid var(--accent);
-  color: var(--text);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.token-btn:hover {
-  background: var(--accent);
-  color: white;
-}
-
-.sticker-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-size: 0.8rem;
-  background: var(--bg-dark);
-  border: 1px solid var(--accent);
-  color: var(--text);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.sticker-btn:hover {
-  background: var(--accent);
-  color: white;
-}
-
+/* SVG icon inside sticker button */
 .sticker-btn svg {
   flex-shrink: 0;
 }
@@ -2088,22 +1956,6 @@ span[id$='Dot']:not(#statusDot),
   box-shadow:
     0 0 0 2px var(--accent),
     0 0 15px var(--accent-glow);
-}
-
-.search-btn {
-  padding: 10px 20px;
-  background: var(--bg-dark);
-  border: 1px solid var(--accent);
-  color: var(--text);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-weight: 600;
-  transition: all 0.2s ease;
-}
-
-.search-btn:hover {
-  background: var(--accent);
-  color: white;
 }
 
 #marketResults {
@@ -2425,14 +2277,20 @@ span[id$='Dot']:not(#statusDot),
   margin-bottom: 10px;
 }
 .ozon-cell h3 {
-  color: #3b82f6;
   font-size: 0.95rem;
   margin-bottom: 10px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 .wb-cell h3 {
-  color: #a855f7;
   font-size: 0.95rem;
   margin-bottom: 10px;
+  background: linear-gradient(135deg, #a855f7, #7c3aed);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 /* === Token Modal Fields === */
@@ -2567,57 +2425,14 @@ span[id$='Dot']:not(#statusDot),
   width: 100%;
 }
 
-/* Push buttons */
+/* Push buttons — .btn handles color/border/hover, .push-btn handles only layout/radius */
 .push-btn {
   width: 100%;
   padding: 10px 16px;
-  border: none;
   border-radius: var(--radius-md);
   font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
   margin-top: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   gap: 8px;
-}
-
-.wb-btn {
-  background: linear-gradient(135deg, #a855f7, #7c3aed);
-  color: white;
-  box-shadow: 0 2px 8px rgba(168, 85, 247, 0.3);
-}
-
-.wb-btn:hover {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-  box-shadow: 0 4px 12px rgba(168, 85, 247, 0.4);
-  transform: translateY(-1px);
-}
-
-.ozon-btn {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: white;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-}
-
-.ozon-btn:hover {
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-  transform: translateY(-1px);
-}
-
-.ms-btn {
-  background: linear-gradient(135deg, #f97316, #ea580c);
-  color: white;
-  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.3);
-}
-
-.ms-btn:hover {
-  background: linear-gradient(135deg, #ea580c, #c2410c);
-  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.4);
-  transform: translateY(-1px);
 }
 
 /* Search status for push operations */

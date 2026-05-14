@@ -379,14 +379,12 @@ async function loadSavedOrders() {
 
 function loadSavedOrdersAndRender() {
   currentPage = 0;
-  loadOrdersState().then(() => {
-    loadSavedOrders().then(function (orders) {
-      ordersData = orders;
-      renderTable();
-      updateTotals();
-      renderCurrentStats();
-      saveLastActionStats();
-    });
+  loadSavedOrders().then(function (orders) {
+    ordersData = orders;
+    renderTable();
+    updateTotals();
+    renderCurrentStats();
+    saveLastActionStats();
   });
 }
 
@@ -738,17 +736,17 @@ function getRowActions(order, index) {
   let btns = '';
 
   // Demand - создать отгрузку (если её нет и заказ не отменён)
-  btns += `<button class="action-btn demand" onclick="createDemandByNum('${order.shipmentNum}')" title="${hasD ? 'Отгрузка есть' : 'Создать отгрузку'}" ${hasD || isCancelled ? 'disabled' : ''}>📦</button>`;
+  btns += `<button class="btn btn-demand action-btn" onclick="createDemandByNum('${order.shipmentNum}')" title="${hasD ? 'Отгрузка есть' : 'Создать отгрузку'}" ${hasD || isCancelled ? 'disabled' : ''}>📦</button>`;
 
   // Payment - создать платёж (если есть отгрузка, нет оплаты и нет возврата)
-  btns += `<button class="action-btn success" onclick="createPaymentByNum('${order.shipmentNum}')" title="${hasPayment ? 'Оплачено' : 'Создать платёж'}" ${hasPayment || isCancelled || !hasD || hasR ? 'disabled' : ''}>💰</button>`;
+  btns += `<button class="btn btn-payment action-btn" onclick="createPaymentByNum('${order.shipmentNum}')" title="${hasPayment ? 'Оплачено' : 'Создать платёж'}" ${hasPayment || isCancelled || !hasD || hasR ? 'disabled' : ''}>💰</button>`;
 
   // Return - возврат (если есть отгрузка, возврат не создан, заказ не отменён)
-  btns += `<button class="action-btn return" onclick="createReturnByNum('${order.shipmentNum}')" title="${hasR ? 'Возврат есть' : 'Создать возврат'}" ${hasR || isCancelled || !hasD ? 'disabled' : ''}>↩</button>`;
+  btns += `<button class="btn btn-return action-btn" onclick="createReturnByNum('${order.shipmentNum}')" title="${hasR ? 'Возврат есть' : 'Создать возврат'}" ${hasR || isCancelled || !hasD ? 'disabled' : ''}>↩</button>`;
 
   // Cancel - отмена (только если нет отгрузки и не отменён)
   const canCancel = !hasD && !isCancelled;
-  btns += `<button class="action-btn cancel" onclick="cancelOrderByNum('${order.shipmentNum}')" title="Отменить заказ" ${canCancel ? '' : 'disabled'}>✗</button>`;
+  btns += `<button class="btn btn-cancel action-btn" onclick="cancelOrderByNum('${order.shipmentNum}')" title="Отменить заказ" ${canCancel ? '' : 'disabled'}>✗</button>`;
 
   return btns;
 }
@@ -1995,3 +1993,4 @@ async function clearSavedData() {
     showStatus('Ошибка: ' + e.message);
   }
 }
+
