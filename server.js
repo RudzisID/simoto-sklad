@@ -6,7 +6,8 @@ require('dotenv').config()
 const moduleRoot = __dirname
 
 const { initApi } = require('./lib/moysklad')
-const { checkOrder, processBatch } = require('./lib/batch')
+const { processBatch } = require('./lib/batch')
+const { checkOrder } = require('./lib/check')
 const {
   findOrderByShipmentNum,
   getOrderFull,

@@ -370,6 +370,10 @@ async function loadSavedOrders() {
       returnName: state.returnName || null,
       returnSum: state.returnSum || 0,
       cancelledSum: state.cancelledSum || 0,
+      canPayment: state.hasDemand && !state.hasPayment && !state.hasReturn && !state.isCancelled,
+      canDemand: !state.hasDemand && !state.isCancelled,
+      canReturn: state.hasDemand && !state.hasReturn && !state.isCancelled,
+      canCancel: !state.hasDemand && !state.isCancelled,
       orderPositions: state.orderPositions || [],
       demandPositions: state.demandPositions || []
     });
@@ -1032,6 +1036,7 @@ function calculateStats(orderList) {
     cancelledCount: 0,
     cancelledSum: 0,
     errorCount: 0,
+    errorSum: 0,
     notFoundCount: 0,
 
     // Вариант A: Раздельный подсчёт (оба могут быть)
@@ -1075,6 +1080,7 @@ function calculateStats(orderList) {
     }
     if (o.lastAction && o.lastAction.includes('_error')) {
       stats.errorCount++;
+      stats.errorSum += sum;
     }
     if (o.status === 'not_found' || o.statusName === 'Не найден') {
       stats.notFoundCount++;
@@ -1138,8 +1144,9 @@ function renderCurrentStats(force = false) {
     const returnSum = stats.returnSum || 0;
     const cancelledSum = stats.cancelledSum || 0;
     const paymentSum = stats.paymentSum || 0;
+    const errorSum = stats.errorSum || 0;
 
-    const totalAccounted = paymentSum + returnSum + cancelledSum;
+    const totalAccounted = paymentSum + returnSum + cancelledSum + errorSum;
     const isMatch = Math.abs(demandSum - totalAccounted) < 1;
     const matchIcon = isMatch ? '✓' : '✗';
     const matchClass = isMatch ? 'success' : 'error';
@@ -1149,7 +1156,7 @@ function renderCurrentStats(force = false) {
             <div class="stat-row"><span class="stat-label">Оплачено:</span><span class="stat-value success">${stats.paymentCount || 0}</span><span class="stat-sum">${fmtSum(paymentSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Возвраты:</span><span class="stat-value">${stats.returnCount || 0}</span><span class="stat-sum">${fmtSum(returnSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Отмены:</span><span class="stat-value">${stats.cancelledCount || 0}</span><span class="stat-sum">${fmtSum(cancelledSum)}</span></div>
-            <div class="stat-row"><span class="stat-label">Ошибок:</span><span class="stat-value error">${stats.errorCount || 0}</span><span class="stat-sum">-</span></div>
+            <div class="stat-row"><span class="stat-label">Ошибок:</span><span class="stat-value error">${stats.errorCount || 0}</span><span class="stat-sum">${fmtSum(errorSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Не найден:</span><span class="stat-value">${stats.notFoundCount || 0}</span><span class="stat-sum">-</span></div>
             ${currentDuplicates > 0 ? `<div class="stat-row"><span class="stat-label">Дублей:</span><span class="stat-value duplicates">${currentDuplicates}</span><span class="stat-sum">-</span></div>` : ''}
             <div class="calculator">
@@ -1160,6 +1167,8 @@ function renderCurrentStats(force = false) {
                     <span class="calc-sum">${fmtSum(returnSum)}</span>
                     <span class="calc-op"> + </span>
                     <span class="calc-sum">${fmtSum(cancelledSum)}</span>
+                    <span class="calc-op"> + </span>
+                    <span class="calc-sum">${fmtSum(errorSum)}</span>
                 </div>
                 <div class="calc-formula">
                     <span class="calc-op">= </span>
@@ -1172,7 +1181,7 @@ function renderCurrentStats(force = false) {
                   !isMatch
                     ? `<div class="calc-formula">
                     <span class="calc-op">Разница: </span>
-                    <span class="calc-sum ${matchClass}">${fmtSum(Math.abs(demandSum - totalAccounted))} ₽</span>
+                    <span class="calc-sum">${fmtSum(Math.abs(demandSum - totalAccounted))} ₽</span>
                 </div>`
                     : ''
                 }

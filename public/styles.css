@@ -717,6 +717,9 @@ td.order-name-cell,
 }
 .calc-icon.error {
   color: var(--error);
+  background: none;
+  border: none;
+  padding: 0;
 }
 
 @keyframes iconPop {
@@ -1486,6 +1489,13 @@ button:disabled {
 
 .stat-value.error {
   color: var(--error);
+  background: none;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  margin: 0;
+  font-weight: inherit;
 }
 
 .stat-value.duplicates {

@@ -12,7 +12,7 @@
     <div class="app-header">
       <div class="header-left">
         <img src="logo-line.svg" alt="SiMOTO" class="header-logo" />
-        <button class="btn btn-accent" onclick="showTokenModal()">Токены</button>
+        <button class="btn btn-accent token-btn">Токены</button>
       </div>
       <div class="header-center">
         <div class="tab-bar">
@@ -302,6 +302,13 @@
         // Close modal on overlay click
         tokenModal.addEventListener('click', (e) => {
           if (e.target === tokenModal) tokenModal.classList.add('hidden');
+        });
+
+        // Global Escape — закрывает любой открытый попап
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            document.querySelectorAll('.modal-overlay').forEach((m) => m.classList.add('hidden'));
+          }
         });
 
         // Sticker modal
