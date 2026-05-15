@@ -2147,15 +2147,6 @@ span[id$='Dot']:not(#statusDot),
   object-fit: contain;
 }
 
-.thumb-popup img {
-  display: block;
-  max-width: 392px;   /* 400 - 2*4 padding */
-  max-height: 392px;
-  width: auto;
-  height: auto;
-  border-radius: calc(var(--radius-sm) - 2px);
-}
-
 /* Popup снизу (когда сверху не помещается) */
 .thumb-wrap.popup-bottom .thumb-popup {
   bottom: auto;
@@ -2171,35 +2162,22 @@ span[id$='Dot']:not(#statusDot),
   z-index: 100;
 }
 
-.thumb-popup img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
-
-.thumb-wrap:hover .thumb-popup {
-  display: block;
-}
-
-.thumb-wrap:hover {
-  overflow: visible;
-  z-index: 100;
-}
-
-/* Overlay actions on hover */
+/* Overlay actions on hover — 2 ряда, полный оверлей */
 .thumb-actions {
   position: absolute;
-  bottom: 0;
+  top: 0;
   left: 0;
   right: 0;
-  display: flex;
-  justify-content: center;
-  gap: 4px;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
   padding: 4px;
-  background: rgba(0, 0, 0, 0.65);
+  background: rgba(0, 0, 0, 0.7);
   opacity: 0;
   transition: opacity 0.2s ease;
+  z-index: 5;
 }
 
 .thumb-wrap:hover .thumb-actions {
@@ -2208,17 +2186,20 @@ span[id$='Dot']:not(#statusDot),
 
 /* Thumbnail action buttons */
 .thumb-btn {
-  width: 26px;
-  height: 26px;
   border: none;
-  border-radius: 50%;
-  font-size: 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.15s ease;
   line-height: 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 2px;
 }
 
 .thumb-btn.replace {
@@ -2237,6 +2218,16 @@ span[id$='Dot']:not(#statusDot),
 
 .thumb-btn.delete:hover {
   background: var(--error);
+}
+
+/* Download button */
+.thumb-btn.download {
+  background: rgba(59, 130, 246, 0.8);
+  color: #fff;
+}
+
+.thumb-btn.download:hover {
+  background: #3b82f6;
 }
 
 .thumb-btn.add {
@@ -2267,6 +2258,49 @@ span[id$='Dot']:not(#statusDot),
 .thumb-wrap.add-new:hover {
   border-color: var(--accent);
   background: rgba(249, 115, 22, 0.05);
+}
+
+/* Drag & drop states for thumbnail sorting */
+.thumb-wrap.dragging {
+  opacity: 0.4;
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.thumb-wrap.drag-over {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.4);
+}
+
+.thumb-wrap.drag-over .thumb-img-container {
+  opacity: 0.6;
+}
+
+/* ── Drag-active highlight on images-row (NO border/padding to avoid layout shift) ── */
+.images-row.drag-active {
+  outline: 2px dashed #3b82f6;
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+/* Source row also gets highlighted during cross-platform drag */
+.images-row.drag-source {
+  outline: 2px dashed var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+  background: rgba(249, 115, 22, 0.05);
+}
+
+.images-row.drag-active .thumb-wrap:not(.dragging),
+.images-row.drag-source .thumb-wrap:not(.dragging) {
+  cursor: grab;
+}
+
+.images-row.drag-active .thumb-wrap:not(.dragging):active,
+.images-row.drag-source .thumb-wrap:not(.dragging):active {
+  cursor: grabbing;
 }
 
 /* Cell styling for market rows */

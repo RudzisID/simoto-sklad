@@ -18,7 +18,7 @@ const zipPath = path.join(tmpDir, 'update.zip')
 const extractPath = path.join(tmpDir, 'extracted')
 
 // Files/directories to preserve (not overwrite)
-const preserveList = ['.env', 'node_modules', 'logs']
+const preserveList = ['.env', 'node_modules', 'logs', 'simoto-sklad.bat']
 
 // Ensure dotfiles (.gitignore style) are included in copy
 function isExcluded(name) {

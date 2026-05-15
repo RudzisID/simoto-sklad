@@ -1284,7 +1284,7 @@ app.post('/api/market/push/ms', async (req, res) => {
 // ──────────────────────────────────────────
 app.post('/api/market/push/wb', async (req, res) => {
   const wbToken = req.headers['x-wb-token']
-  const { vendorCode, price, title, description, characteristics } = req.body
+  const { vendorCode, price, title, description, characteristics, images } = req.body
 
   if (!wbToken) return res.status(401).json({ error: 'Требуется токен WB' })
   if (!vendorCode) return res.status(400).json({ error: 'Нет vendorCode' })
@@ -1312,6 +1312,16 @@ app.post('/api/market/push/wb', async (req, res) => {
     }
 
     await Promise.all(updates)
+
+    // 4. Upload images if provided (separate try/catch — don't fail the push)
+    if (images && Array.isArray(images) && images.length > 0) {
+      try {
+        await wbOzonSync.pushWBMedia(wbToken, nmId, images)
+      } catch (mediaErr) {
+        log(`[Market] WB media push warning: ${mediaErr.message} — continuing`)
+      }
+    }
+
     log(`[Market] WB push: updated ${vendorCode} (nmId: ${nmId})`)
     res.json({ success: true, message: '✅ Товар обновлён в Wildberries' })
   } catch (e) {
@@ -1326,7 +1336,7 @@ app.post('/api/market/push/wb', async (req, res) => {
 app.post('/api/market/push/ozon', async (req, res) => {
   const ozonClientId = req.headers['x-ozon-client-id']
   const ozonApiKey = req.headers['x-ozon-api-key']
-  const { offerId, productId, price, title, description, attributes } = req.body
+  const { offerId, productId, price, title, description, attributes, images } = req.body
 
   if (!ozonClientId || !ozonApiKey) return res.status(401).json({ error: 'Требуются Client-Id и Api-Key Ozon' })
   if (!offerId && !productId) return res.status(400).json({ error: 'Нет offerId или productId' })
@@ -1340,10 +1350,15 @@ app.post('/api/market/push/ozon', async (req, res) => {
       updates.push(wbOzonSync.pushOzonPrice(ozonClientId, ozonApiKey, productId, price))
     }
 
-    // 2. Update title + description через асинхронный импорт (task_id)
-    //    /v3/product/import принимает name и description одновременно
-    if (title || description) {
-      updates.push(wbOzonSync.pushOzonTitle(ozonClientId, ozonApiKey, offerId, title, description))
+    // 2. Update title + description + images через асинхронный импорт (task_id)
+    //    /v3/product/import принимает name, description и images[]
+    //    Ошибка импорта не роняет весь push (логируем и продолжаем)
+    if (title || description || (images && images.length > 0)) {
+      const importPromise = wbOzonSync.pushOzonImport(ozonClientId, ozonApiKey, offerId, title, description, images)
+        .catch(err => {
+          log(`[Market] Ozon import/images warning (non-fatal): ${err.message}`)
+        })
+      updates.push(importPromise)
     }
 
     // 3. Update attributes (характеристики) через /v1/product/attributes/update
@@ -1359,6 +1374,148 @@ app.post('/api/market/push/ozon', async (req, res) => {
     res.status(500).json({ error: e.message })
   }
 })
+
+// ──────────────────────────────────────────
+// Sync image between WB and Ozon
+// ──────────────────────────────────────────
+app.post('/api/market/sync/image', async (req, res) => {
+  const wbToken = req.headers['x-wb-token']
+  const ozonClientId = req.headers['x-ozon-client-id']
+  const ozonApiKey = req.headers['x-ozon-api-key']
+  const { sourcePlatform, targetPlatform, imageUrl, nmId, offerId } = req.body
+
+  // Validate required fields
+  if (!sourcePlatform || !targetPlatform || !imageUrl) {
+    return res.status(400).json({ error: 'Требуются sourcePlatform, targetPlatform и imageUrl' })
+  }
+
+  // MS images are not supported
+  if (sourcePlatform === 'ms' || targetPlatform === 'ms') {
+    return res.status(400).json({ error: 'MS images not supported' })
+  }
+
+  try {
+    if (sourcePlatform === 'wb' && targetPlatform === 'ozon') {
+      // Copy image from WB to Ozon
+      if (!ozonClientId || !ozonApiKey) {
+        return res.status(401).json({ error: 'Требуются Client-Id и Api-Key Ozon' })
+      }
+      if (!offerId) {
+        return res.status(400).json({ error: 'Требуется offerId' })
+      }
+
+      const taskId = await wbOzonSync.syncImageToOzon(ozonClientId, ozonApiKey, offerId, imageUrl)
+      log(`[Market] Image synced WB→Ozon: offer=${offerId}, task=${taskId}`)
+      return res.json({ success: true, message: '✅ Изображение отправлено в Ozon', taskId })
+
+    } else if (sourcePlatform === 'ozon' && targetPlatform === 'wb') {
+      // Copy image from Ozon to WB
+      if (!wbToken) {
+        return res.status(401).json({ error: 'Требуется токен WB' })
+      }
+      if (!nmId) {
+        return res.status(400).json({ error: 'Требуется nmId' })
+      }
+
+      await wbOzonSync.syncImageToWB(wbToken, nmId, imageUrl)
+      log(`[Market] Image synced Ozon→WB: nmId=${nmId}`)
+      return res.json({ success: true, message: '✅ Изображение отправлено в Wildberries' })
+
+    } else {
+      return res.status(400).json({ error: 'Invalid sync direction. Supported: wb→ozon, ozon→wb' })
+    }
+  } catch (e) {
+    log(`[Market] Sync image error: ${e.message}`)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ──────────────────────────────────────────
+// Upload image file for market products
+// ──────────────────────────────────────────
+const multer = require('multer');
+
+// Configure multer for image uploads
+const UPLOAD_DIR = path.join(__dirname, 'temp', 'images');
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+// Cleanup old uploads (>1 hour) on server startup
+function cleanOldUploads() {
+  try {
+    if (!fs.existsSync(UPLOAD_DIR)) return;
+    const files = fs.readdirSync(UPLOAD_DIR);
+    const now = Date.now();
+    let deleted = 0;
+    for (const file of files) {
+      const filePath = path.join(UPLOAD_DIR, file);
+      const stats = fs.statSync(filePath);
+      const ageHours = (now - stats.mtimeMs) / (1000 * 60 * 60);
+      if (ageHours > 1) {
+        fs.unlinkSync(filePath);
+        deleted++;
+      }
+    }
+    if (deleted > 0) log(`[Upload] Cleaned ${deleted} old upload files`, 'info');
+  } catch (e) {
+    log(`[Upload] Cleanup error: ${e.message}`, 'error');
+  }
+}
+cleanOldUploads();
+
+const imageStorage = multer.diskStorage({
+  destination: function(req, file, cb) {
+    cb(null, UPLOAD_DIR);
+  },
+  filename: function(req, file, cb) {
+    const ext = path.extname(file.originalname) || '.jpg';
+    const name = 'upload_' + Date.now() + '_' + Math.round(Math.random() * 1000) + ext;
+    cb(null, name);
+  }
+});
+
+const imageUpload = multer({
+  storage: imageStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: function(req, file, cb) {
+    const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Недопустимый формат файла: ' + ext + '. Разрешены: jpg, png, webp, gif'));
+    }
+  }
+});
+
+app.post('/api/market/image/upload', imageUpload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Файл не загружен' });
+    }
+    
+    const fileUrl = '/temp/images/' + req.file.filename;
+    log(`[Upload] Image saved: ${req.file.filename} (${(req.file.size / 1024).toFixed(1)} KB)`, 'info');
+    
+    // Log metadata if provided (platform/vendorCode)
+    if (req.body.platform || req.body.vendorCode) {
+      log(`[Upload] Metadata: platform=${req.body.platform || '-'}, vendorCode=${req.body.vendorCode || '-'}`, 'info');
+    }
+    
+    res.json({
+      success: true,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      url: fileUrl,
+      fullUrl: fileUrl  // same for local
+    });
+  } catch (e) {
+    log(`[Upload] Error: ${e.message}`, 'error');
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Start server
 const server = app.listen(PORT, () => {

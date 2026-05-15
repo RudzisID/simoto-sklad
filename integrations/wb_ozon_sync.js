@@ -121,13 +121,21 @@ async function fetchWBData(codes, token) {
 
         // Extract images from card.photos (WB: photos — верхнеуровневый массив фото)
         const wbImages = []
-        var mediaStr = JSON.stringify(found.media)
-        debug(`[WB] media for ${code}: ${mediaStr ? mediaStr.substring(0, 300) : 'undefined/null'}`)
-        var photosStr = JSON.stringify(found.photos)
-        debug(`[WB] photos for ${code}: ${photosStr ? photosStr.substring(0, 300) : 'undefined/null'}`)
-        const wbPhotos = found.photos || []
-        if (Array.isArray(wbPhotos) && wbPhotos.length > 0) {
-          for (const photo of wbPhotos) {
+        debug(`[WB] photos debug for ${code}: type=${typeof found.photos}, isArray=${Array.isArray(found.photos)}, count=${Array.isArray(found.photos) ? found.photos.length : 'N/A'}`)
+        debug(`[WB] media debug for ${code}: type=${typeof found.media}, isArray=${Array.isArray(found.media)}, count=${Array.isArray(found.media) ? found.media.length : 'N/A'}`)
+        if (Array.isArray(found.photos) && found.photos.length > 0) {
+          const first = found.photos[0]
+          debug(`[WB] first photo keys: ${Object.keys(first).join(', ')}`)
+          debug(`[WB] first photo: big=${String(first.big || '').substring(0, 120)}, c246x328=${String(first.c246x328 || '').substring(0, 120)}, url=${String(first.url || '').substring(0, 120)}`)
+          if (found.photos.length >= 2) {
+            const second = found.photos[1]
+            debug(`[WB] second photo: big=${String(second.big || '').substring(0, 120)}, c246x328=${String(second.c246x328 || '').substring(0, 120)}`)
+          }
+          // Если photos содержит 1 элемент, а media больше — возможно все фото в media
+          if (found.photos.length === 1 && Array.isArray(found.media) && found.media.length > 1) {
+            warn(`[WB] photos has 1 item but media has ${found.media.length} — checking media for images`)
+          }
+          for (const photo of found.photos) {
             wbImages.push({
               url: photo.big || photo.url || '',
               c246x328: photo.c246x328 || '',
@@ -261,7 +269,17 @@ async function fetchOzonData(codes, clientId, apiKey) {
       const attrData = await fetchOzonAttributes(clientId, apiKey, productId)
 
       // ── Извлекаем изображения ──
-      const ozonImages = details.images || []
+      let ozonImages = details.images || []
+      // Debug: посмотреть, что приходит в details
+      debug(`[Ozon] images debug for ${code}: count=${details.images?.length || 0}, primary=${typeof details.primary_image === 'string' ? details.primary_image.substring(0, 120) : JSON.stringify(details.primary_image)}`)
+      // Ozon API отдаёт обложку (primary_image) отдельно от массива images[]
+      if (details.primary_image && typeof details.primary_image === 'string') {
+        if (ozonImages.length === 0 || ozonImages[0] !== details.primary_image) {
+          debug(`[Ozon] Prepending primary_image to images array for ${code}`)
+          ozonImages = [details.primary_image, ...ozonImages]
+        }
+      }
+      debug(`[Ozon] Total images for ${code}: ${ozonImages.length}`)
 
       results.push({
         code: details.offer_id || code,
@@ -688,15 +706,19 @@ async function pushOzonStock(clientId, apiKey, offerId, productId, stock) {
 }
 
 // ──────────────────────────────────────────
-// Ozon: Push title update
+// Ozon: Push product import (title, description, images)
 // Docs: .opencode/context/external/ozon-api.md
 // Endpoint: POST /v3/product/import
 // ⚠ Асинхронная операция — возвращает task_id
+// Принимает опциональный массив images (URL-строки)
 // ──────────────────────────────────────────
-async function pushOzonTitle(clientId, apiKey, offerId, title, description) {
+async function pushOzonImport(clientId, apiKey, offerId, title, description, images) {
   const item = { offer_id: offerId }
   if (title) item.name = title
   if (description !== undefined) item.description = description
+  if (images && Array.isArray(images) && images.length > 0) {
+    item.images = images
+  }
 
   const body = JSON.stringify({ items: [item] })
 
@@ -715,8 +737,12 @@ async function pushOzonTitle(clientId, apiKey, offerId, title, description) {
   if (response.status !== 200) {
     throw new Error(`Ozon Import API: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
   }
-  success(`[Ozon] Title/description update task created for ${offerId}: ${title}`)
+  const imgCount = images && Array.isArray(images) ? images.length : 0
+  success(`[Ozon] Product import task created for ${offerId}: title=${!!title}, desc=${!!description}, images=${imgCount}`)
 }
+
+// Alias for backward compatibility
+const pushOzonTitle = pushOzonImport
 
 // ──────────────────────────────────────────
 // Wildberries: Update card data (description + characteristics)
@@ -782,6 +808,127 @@ async function pushOzonAttributes(clientId, apiKey, productId, attributes) {
   success(`[Ozon] Attributes updated for product_id ${productId}: ${attributes.length} attrs`)
 }
 
+// ──────────────────────────────────────────
+// Wildberries: Upload media files by URLs
+// Docs: https://dev.wildberries.ru/openapi/content-service
+// Endpoint: POST /content/v3/media/save
+// Принимает массив URL-строк или объектов с полем url / big
+// ──────────────────────────────────────────
+async function pushWBMedia(token, nmId, images) {
+  try {
+    // Извлекаем URL из массива (поддерживает строки и объекты { url, name })
+    const urls = (images || [])
+      .map(img => {
+        if (typeof img === 'string') return img
+        if (img && typeof img.url === 'string') return img.url
+        if (img && typeof img.big === 'string') return img.big
+        return null
+      })
+      .filter(Boolean)
+
+    if (urls.length === 0) {
+      warn(`[WB] No valid image URLs to upload for nmID ${nmId}`)
+      return null
+    }
+
+    const body = JSON.stringify({
+      nmId: Number(nmId),
+      data: urls
+    })
+
+    const options = {
+      hostname: 'content-api.wildberries.ru',
+      path: '/content/v3/media/save',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': token
+      }
+    }
+
+    info(`[WB] Uploading ${urls.length} images for nmID ${nmId}`)
+    const response = await makeRequest(options, body)
+
+    if (response.status !== 200) {
+      throw new Error(`WB Media Save: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
+    }
+
+    success(`[WB] Media saved for nmID ${nmId}: ${urls.length} images`)
+    return response
+  } catch (e) {
+    error(`[WB] Media save error for nmID ${nmId}: ${e.message}`)
+    throw e
+  }
+}
+
+// ──────────────────────────────────────────
+// Sync single image to Wildberries
+// Reuses pushWBMedia with a single-element array
+// ──────────────────────────────────────────
+async function syncImageToWB(token, nmId, imageUrl) {
+  try {
+    if (!token) throw new Error('WB token is required')
+    if (!nmId) throw new Error('nmId is required')
+    if (!imageUrl) throw new Error('imageUrl is required')
+
+    info(`[WB] Syncing image to nmID ${nmId}: ${imageUrl}`)
+
+    const result = await pushWBMedia(token, nmId, [imageUrl])
+
+    success(`[WB] Image synced to nmID ${nmId}`)
+    return result
+  } catch (e) {
+    error(`[WB] Image sync error for nmID ${nmId}: ${e.message}`)
+    throw e
+  }
+}
+
+// ──────────────────────────────────────────
+// Sync single image to Ozon
+// Imports image URL via /v1/product/import
+// Returns task_id from API response
+// ──────────────────────────────────────────
+async function syncImageToOzon(clientId, apiKey, offerId, imageUrl) {
+  try {
+    if (!clientId || !apiKey) throw new Error('Ozon credentials are required')
+    if (!offerId) throw new Error('offerId is required')
+    if (!imageUrl) throw new Error('imageUrl is required')
+
+    info(`[Ozon] Syncing image to offer_id ${offerId}: ${imageUrl}`)
+
+    const body = JSON.stringify({
+      items: [{
+        offer_id: offerId,
+        images: [imageUrl]
+      }]
+    })
+
+    const options = {
+      hostname: 'api-seller.ozon.ru',
+      path: '/v1/product/import',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Client-Id': clientId,
+        'Api-Key': apiKey
+      }
+    }
+
+    const response = await makeRequest(options, body)
+
+    if (response.status !== 200) {
+      throw new Error(`Ozon Import API: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
+    }
+
+    const taskId = response.body?.result?.task_id || null
+    success(`[Ozon] Image sync task created for ${offerId}: task_id=${taskId}`)
+    return taskId
+  } catch (e) {
+    error(`[Ozon] Image sync error for ${offerId}: ${e.message}`)
+    throw e
+  }
+}
+
 module.exports = {
   fetchWBData,
   fetchWBPrice,
@@ -793,8 +940,12 @@ module.exports = {
   pushWBPrice,
   pushWBStock,
   pushWBCard,
+  pushWBMedia,
   pushOzonPrice,
   pushOzonStock,
+  pushOzonImport,
   pushOzonTitle,
-  pushOzonAttributes
+  pushOzonAttributes,
+  syncImageToWB,
+  syncImageToOzon
 }

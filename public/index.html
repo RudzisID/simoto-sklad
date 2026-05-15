@@ -134,7 +134,7 @@
               type="text"
               id="oemSearchInput"
               placeholder="Введите OEM-код"
-              value="7020-061600комплект"
+              value="17001210040комплект"
             />
             <button onclick="searchProductByOEM()" class="btn btn-accent">Поиск</button>
           </div>
@@ -353,6 +353,21 @@
           if (e.target === stickerModal) stickerModal.classList.add('hidden');
         });
       });
+      // Cross-platform image sync state
+      // Хранит URL картинок, добавленных через drag между маркетами (ещё не отправленных на площадку)
+      var _pendingCrossSyncs = { wb: [], ozon: [], ms: [] };
+      var _syncedOemCode = '';
+
+      // Copy image URL from one platform's images to another (UI only, no API call)
+      function copyImageToPlatform(imageUrl, sourcePlatform, targetPlatform) {
+        if (!_pendingCrossSyncs[targetPlatform]) _pendingCrossSyncs[targetPlatform] = [];
+        if (_pendingCrossSyncs[targetPlatform].indexOf(imageUrl) === -1) {
+          _pendingCrossSyncs[targetPlatform].push(imageUrl);
+        }
+        // Re-render with merged data
+        searchProductByOEM();
+      }
+
       // Market search logic
       async function searchProductByOEM() {
         const oem = document.getElementById('oemSearchInput').value.trim();
@@ -390,6 +405,35 @@
           if (!response.ok) {
             throw new Error(data.error || 'Ошибка сервера');
           }
+
+          // If OEM code changed — clear pending cross-platform syncs
+          if (_syncedOemCode !== oem) {
+            _pendingCrossSyncs = { wb: [], ozon: [], ms: [] };
+            _syncedOemCode = oem;
+          }
+
+          // Merge pending cross-platform image syncs into server data
+          if (data.wildberries && Array.isArray(data.wildberries.images) && _pendingCrossSyncs.wb.length > 0) {
+            _pendingCrossSyncs.wb.forEach(function(url) {
+              var exists = data.wildberries.images.some(function(img) {
+                return (img.url || img.big || '') === url;
+              });
+              if (!exists) {
+                data.wildberries.images.push({ url: url, c246x328: url, c516x688: url });
+              }
+            });
+          }
+          if (data.ozon && Array.isArray(data.ozon.images) && _pendingCrossSyncs.ozon.length > 0) {
+            _pendingCrossSyncs.ozon.forEach(function(url) {
+              if (data.ozon.images.indexOf(url) === -1) {
+                data.ozon.images.push(url);
+              }
+            });
+          }
+
+          // Store for sync buttons
+          window._wbData = data.wildberries || null;
+          window._ozonData = data.ozon || null;
 
           // Render results - Grid layout: shared fields, then rows of 3 columns
           var ms = data.moysklad;
@@ -485,7 +529,6 @@
           html += '<div class="ms-cell">';
           if (ms) {
             var msDescClean = ms.descriptionClean || ms.description || '';
-            html += renderImageThumbs(ms.images, 'ms');
             html +=
               '<h4 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">Описание</h4>';
             html +=
@@ -569,12 +612,7 @@
               var img = images[i];
               var thumbUrl = '';
               var fullUrl = '';
-              if (platform === 'ms') {
-                // MS image URLs требуют авторизации — используем proxy
-                var msToken = (typeof localStorage !== 'undefined' ? localStorage.getItem('ms_token') : '') || '';
-                thumbUrl = '/api/proxy/ms-image?url=' + encodeURIComponent(img.miniature || '') + '&token=' + encodeURIComponent(msToken);
-                fullUrl = '/api/proxy/ms-image?url=' + encodeURIComponent(img.download || '') + '&token=' + encodeURIComponent(msToken);
-              } else if (platform === 'wb') {
+              if (platform === 'wb') {
                 thumbUrl = img.c246x328 || img.url || '';
                 fullUrl = img.url || img.c516x688 || '';
               } else {
@@ -591,6 +629,7 @@
               html += '<img src="' + esc(fullUrl) + '" alt="' + esc('Фото ' + (i + 1)) + '" />';
               html += '</div>';
               html += '<div class="thumb-actions">';
+              html += '<button class="thumb-btn download" title="Скачать" data-url="' + esc(fullUrl) + '">⬇</button>';
               html += '<button class="thumb-btn replace" title="Заменить" data-idx="' + i + '" data-platform="' + platform + '">🔄</button>';
               html += '<button class="thumb-btn delete" title="Удалить" data-idx="' + i + '" data-platform="' + platform + '">✕</button>';
               html += '</div>';
@@ -602,6 +641,22 @@
             html += '</div>';
             html += '</div>';
             return html;
+          }
+
+          // ── Helper: collect image URLs from DOM in current order ──
+          function collectImageUrls(platform) {
+            var imagesRow = document.getElementById(platform + '-images')
+            if (!imagesRow) return []
+            var urls = []
+            var thumbWraps = imagesRow.querySelectorAll('.thumb-wrap:not(.add-new)')
+            thumbWraps.forEach(function(wrap) {
+              var img = wrap.querySelector('.thumb')
+              if (img) {
+                var fullUrl = img.getAttribute('data-full')
+                if (fullUrl) urls.push(fullUrl)
+              }
+            })
+            return urls
           }
 
           // Build flat lists with canonical names
@@ -791,6 +846,254 @@
               }
             });
           });
+
+          // Download image on ⬇ click
+          resultsDiv.querySelectorAll('.thumb-btn.download').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+              e.stopPropagation();
+              var url = this.dataset.url;
+              if (!url) return;
+              // Use fetch + blob to download, then trigger download via &lt;a&gt;
+              fetch(url)
+                .then(function(resp) { return resp.blob(); })
+                .then(function(blob) {
+                  var blobUrl = URL.createObjectURL(blob);
+                  var a = document.createElement('a');
+                  a.href = blobUrl;
+                  a.download = 'image-' + (this.dataset.idx || Date.now()) + '.jpg';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(blobUrl);
+                }.bind(this))
+                .catch(function(err) {
+                  // Fallback: if fetch fails, try opening in new tab
+                  var fallbackUrl = this.dataset.url;
+                  if (fallbackUrl) window.open(fallbackUrl, '_blank');
+                }.bind(this));
+            });
+          });
+
+          // Add image on ＋ click — открыть диалог выбора файла
+          resultsDiv.querySelectorAll('.thumb-btn.add').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+              e.stopPropagation();
+              var platform = this.dataset.platform;
+              if (!platform) return;
+
+              // Create hidden file input
+              var fileInput = document.createElement('input');
+              fileInput.type = 'file';
+              fileInput.accept = 'image/jpeg,image/png,image/webp';
+              fileInput.style.display = 'none';
+              document.body.appendChild(fileInput);
+
+              fileInput.addEventListener('change', function() {
+                var file = fileInput.files && fileInput.files[0];
+                if (!file) { document.body.removeChild(fileInput); return; }
+                uploadImage(file, platform, null, function(err, result) {
+                  document.body.removeChild(fileInput);
+                  if (err) {
+                    console.error('Upload failed:', err);
+                    return;
+                  }
+                  searchProductByOEM();
+                });
+              });
+
+              fileInput.click();
+            });
+          });
+
+          // Drag & drop sorting for thumbnails
+          var imagesRows = resultsDiv.querySelectorAll('.images-row');
+          imagesRows.forEach(function(row) {
+            var wraps = row.querySelectorAll('.thumb-wrap:not(.add-new)');
+            wraps.forEach(function(wrap) {
+              wrap.draggable = true;
+              
+              wrap.addEventListener('dragstart', function(e) {
+                this.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                // Store source platform and image URL for cross-platform drag
+                var srcPlatform = row.id.replace('-images', '');
+                var imgEl = this.querySelector('.thumb');
+                var imgUrl = imgEl ? imgEl.getAttribute('data-full') : '';
+                e.dataTransfer.setData('text/plain', JSON.stringify({
+                  platform: srcPlatform,
+                  url: imgUrl
+                }));
+                // Activate drag mode — highlight both rows for cross-platform hint
+                document.querySelectorAll('.images-row').forEach(function(r) {
+                  r.classList.add('drag-active');
+                  if (r.id === row.id) r.classList.add('drag-source');
+                });
+              });
+              
+              wrap.addEventListener('dragend', function(e) {
+                this.classList.remove('dragging');
+                // Remove drag classes from ALL rows (not just this one)
+                document.querySelectorAll('.images-row').forEach(function(r) {
+                  r.classList.remove('drag-active', 'drag-source');
+                });
+                // Remove drag-over from all wraps
+                document.querySelectorAll('.thumb-wrap').forEach(function(w) {
+                  w.classList.remove('drag-over');
+                });
+              });
+              
+              wrap.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+              });
+              
+              wrap.addEventListener('dragenter', function(e) {
+                e.preventDefault();
+                if (!this.classList.contains('dragging')) {
+                  this.classList.add('drag-over');
+                }
+              });
+              
+              wrap.addEventListener('dragleave', function(e) {
+                // Only remove if actually leaving this element (not entering a child)
+                if (!this.contains(e.relatedTarget)) {
+                  this.classList.remove('drag-over');
+                }
+              });
+              
+              wrap.addEventListener('drop', function(e) {
+                e.preventDefault();
+                this.classList.remove('drag-over');
+                
+                var dragging = row.querySelector('.thumb-wrap.dragging');
+                if (!dragging || dragging === this) return;
+                
+                // Get all thumb wraps (excluding add-new)
+                var allWraps = Array.from(row.querySelectorAll('.thumb-wrap:not(.add-new)'));
+                var fromIdx = allWraps.indexOf(dragging);
+                var toIdx = allWraps.indexOf(this);
+                
+                if (fromIdx === -1 || toIdx === -1) return;
+                
+                // Reorder DOM elements
+                if (fromIdx < toIdx) {
+                  this.parentNode.insertBefore(dragging, this.nextSibling);
+                } else {
+                  this.parentNode.insertBefore(dragging, this);
+                }
+                
+                // Update data-idx attributes for all wraps
+                var updatedWraps = row.querySelectorAll('.thumb-wrap:not(.add-new)');
+                updatedWraps.forEach(function(w, idx) {
+                  w.querySelectorAll('.thumb-btn[data-idx]').forEach(function(btn) {
+                    btn.dataset.idx = idx;
+                  });
+                });
+              });
+            });
+          });
+
+          // ── Drag & drop: files OR cross-platform image copy on images-row ──
+          resultsDiv.querySelectorAll('.images-row').forEach(function(row) {
+            // Prevent default drag behaviors on the row
+            row.addEventListener('dragover', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              this.classList.add('drag-active');
+            });
+            
+            row.addEventListener('dragleave', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              // Only deactivate if leaving the row entirely
+              if (!this.contains(e.relatedTarget)) {
+                this.classList.remove('drag-active');
+              }
+            });
+            
+            row.addEventListener('drop', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              this.classList.remove('drag-active');
+              
+              // Remove drag classes from all rows
+              document.querySelectorAll('.images-row').forEach(function(r) {
+                r.classList.remove('drag-active', 'drag-source');
+              });
+              document.querySelectorAll('.thumb-wrap').forEach(function(w) {
+                w.classList.remove('drag-over');
+              });
+              
+              // Case 1: File drag from computer
+              var files = e.dataTransfer.files;
+              if (files && files.length > 0) {
+                for (var fi = 0; fi < files.length; fi++) {
+                  var file = files[fi];
+                  if (!file.type.startsWith('image/')) continue;
+                  
+                  var platform = this.id ? this.id.replace('-images', '') : '';
+                  if (!platform) continue;
+                  
+                  uploadImage(file, platform, null, function(err, result) {
+                    if (err) {
+                      console.error('Upload failed:', err);
+                      return;
+                    }
+                    searchProductByOEM();
+                  });
+                }
+                return;
+              }
+              
+              // Case 2: Cross-platform thumb drag — copy image to this platform
+              try {
+                var dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
+                if (dragData && dragData.platform && dragData.url) {
+                  var targetPlatform = this.id.replace('-images', '');
+                  if (dragData.platform !== targetPlatform) {
+                    copyImageToPlatform(dragData.url, dragData.platform, targetPlatform);
+                  }
+                }
+              } catch (ex) {
+                // Not a JSON payload — ignore
+              }
+            });
+          });
+          
+          // ── File drag & drop: replace image on specific thumb-wrap ──
+          resultsDiv.querySelectorAll('.thumb-wrap:not(.add-new)').forEach(function(wrap) {
+            wrap.addEventListener('dragover', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+            });
+            
+            wrap.addEventListener('drop', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              
+              var files = e.dataTransfer.files;
+              if (!files || files.length === 0) return;
+              
+              var file = files[0];
+              if (!file.type.startsWith('image/')) return;
+              
+              // Find platform and idx from the thumb buttons
+              var anyBtn = this.querySelector('.thumb-btn[data-platform]');
+              var platform = anyBtn ? anyBtn.dataset.platform : '';
+              var idx = anyBtn ? anyBtn.dataset.idx : null;
+              
+              if (!platform) return;
+              
+              uploadImage(file, platform, idx, function(err, result) {
+                if (err) {
+                  console.error('Upload+replace failed:', err);
+                  return;
+                }
+                // Refresh search to show replaced image
+                searchProductByOEM();
+              });
+            });
+          });
         } catch (error) {
           resultsDiv.innerHTML = `<div class="search-status error">Ошибка: ${error.message}</div>`;
         }
@@ -883,6 +1186,9 @@
         var wbTextarea = document.querySelector('.wb-desc');
         var wbDescription = getDescriptionValue(wbTextarea);
 
+        // Collect images in current order
+        var wbImages = collectImageUrls('wb');
+
         const resultsDiv = document.getElementById('marketResults');
         const statusDiv = document.createElement('div');
         statusDiv.className = 'search-status';
@@ -904,7 +1210,8 @@
               price: price,
               title: title,
               description: wbDescription,
-              characteristics: wbCharacteristics
+              characteristics: wbCharacteristics,
+              ...(wbImages.length > 0 && { images: wbImages })
             })
           });
 
@@ -943,6 +1250,9 @@
         var ozonTextarea = document.querySelector('.ozon-desc');
         var ozonDescription = getDescriptionValue(ozonTextarea);
 
+        // Collect images in current order
+        var ozonImages = collectImageUrls('ozon');
+
         const resultsDiv = document.getElementById('marketResults');
         const statusDiv = document.createElement('div');
         statusDiv.className = 'search-status';
@@ -967,7 +1277,8 @@
               price: price,
               title: title,
               description: ozonDescription,
-              attributes: ozonAttributes
+              attributes: ozonAttributes,
+              ...(ozonImages.length > 0 && { images: ozonImages })
             })
           });
 
@@ -984,6 +1295,30 @@
           statusDiv.className = 'search-status error';
           statusDiv.innerHTML = `❌ Ошибка отправки в Ozon: ${error.message}`;
         }
+      }
+
+      // ── Upload helper function ──
+      function uploadImage(file, platform, replaceIdx, callback) {
+        var formData = new FormData();
+        formData.append('image', file);
+        if (platform) formData.append('platform', platform);
+        if (replaceIdx !== null && replaceIdx !== undefined) formData.append('replaceIdx', replaceIdx);
+        
+        fetch('/api/market/image/upload', {
+          method: 'POST',
+          body: formData
+        })
+        .then(function(resp) { return resp.json(); })
+        .then(function(result) {
+          if (result.success) {
+            callback(null, result);
+          } else {
+            callback(result.error || 'Upload failed');
+          }
+        })
+        .catch(function(err) {
+          callback(err.message || 'Upload error');
+        });
       }
     </script>
   </body>
