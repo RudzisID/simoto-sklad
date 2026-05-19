@@ -267,6 +267,195 @@ app.get('/api/process/stream', (req, res) => {
   })
 })
 
+// SSE endpoint для поиска возвратов WB по стикеру
+app.get('/api/wb-return/stream', (req, res) => {
+  const wbToken = req.headers['x-wb-token']
+  const msToken = req.query.token || req.headers['x-api-token']
+  const numbersParam = req.query.numbers
+  const abortId = req.query.abortId
+
+  if (!wbToken) {
+    return res.status(401).json({ error: 'Требуется WB токен' })
+  }
+  if (!msToken) {
+    return res.status(401).json({ error: 'Требуется токен API МС' })
+  }
+  if (!numbersParam) {
+    return res.status(400).json({ error: 'Требуется массив numbers' })
+  }
+
+  const numbers = numbersParam
+    .split(',')
+    .map((n) => n.trim())
+    .filter((n) => n)
+
+  if (numbers.length === 0) {
+    return res.status(400).json({ error: 'Пустой массив numbers' })
+  }
+
+  // SSE заголовки
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+
+  sseConnections.add(res)
+  res.on('close', () => { sseConnections.delete(res) })
+
+  log(`=== WB-Return SSE: start ${numbers.length} orders ===`)
+
+  // Инициализируем API МС с токеном
+  process.env.MOYSKLAD_TOKEN = msToken
+  initApi(msToken)
+
+  function checkAbort() {
+    if (abortId && abortSignals.get(abortId)) {
+      abortSignals.delete(abortId)
+      return true
+    }
+    return false
+  }
+
+  let processed = 0
+  let orders = []
+
+  async function processNext(index) {
+    if (index >= numbers.length) {
+      // Все обработаны
+      res.write(`data: ${JSON.stringify({ type: 'done', orders })}\n\n`)
+      log(`=== WB-Return SSE: completed ${numbers.length} orders ===`)
+      res.end()
+      return
+    }
+
+    if (checkAbort()) {
+      res.write(`data: ${JSON.stringify({ type: 'aborted', processed })}\n\n`)
+      log(`=== WB-Return SSE: aborted after ${processed} orders ===`)
+      res.end()
+      return
+    }
+
+    const sticker = numbers[index]
+    log(`WB-Return: processing sticker ${sticker} (${index + 1}/${numbers.length})`)
+
+    try {
+      // 1. Ищем srid в отчёте продаж по коду стикера
+      const { srid, gNumber, nmId } = await wbOzonSync.fetchWBOrderBySticker(sticker, wbToken)
+      if (!srid) {
+        log(`WB-Return: sticker ${sticker} not found in sales report`)
+        res.write(`data: ${JSON.stringify({
+          type: 'progress', index: index + 1, total: numbers.length,
+          order: {
+            shipmentNum: sticker,
+            orderName: '-',
+            sum: 0,
+            statusName: 'Не найден в WB',
+            status: 'error',
+            hasReturn: false,
+            hasDemand: false,
+            hasPayment: false,
+            orderPositions: [],
+            returnSum: 0
+          }
+        })}\n\n`)
+        if (res.flush) res.flush()
+        processed++
+        setTimeout(() => processNext(index + 1), 200)
+        return
+      }
+
+      // 2. Получаем номер сборочного задания
+      const orderId = await wbOzonSync.fetchWBOrderIdBySrid(srid, wbToken)
+      if (!orderId) {
+        log(`WB-Return: srid ${srid} -> no orderId found`)
+        res.write(`data: ${JSON.stringify({
+          type: 'progress', index: index + 1, total: numbers.length,
+          order: {
+            shipmentNum: sticker,
+            orderName: `SRID: ${srid}`,
+            sum: 0,
+            statusName: 'Сборочное не найдено',
+            status: 'error',
+            hasReturn: false,
+            hasDemand: false,
+            hasPayment: false,
+            orderPositions: [],
+            returnSum: 0
+          }
+        })}\n\n`)
+        if (res.flush) res.flush()
+        processed++
+        setTimeout(() => processNext(index + 1), 200)
+        return
+      }
+
+      // 3. Ищем заказ в МС по номеру сборочного задания
+      let orderResult
+      try {
+        orderResult = await checkOrder(orderId)
+      } catch (e) {
+        log(`WB-Return: checkOrder error for ${orderId}: ${e.message}`)
+        orderResult = null
+      }
+
+      if (orderResult) {
+        orderResult.shipmentNum = orderId
+        orders.push(orderResult)
+        res.write(`data: ${JSON.stringify({
+          type: 'progress', index: index + 1, total: numbers.length, order: orderResult
+        })}\n\n`)
+      } else {
+        res.write(`data: ${JSON.stringify({
+          type: 'progress', index: index + 1, total: numbers.length,
+          order: {
+            shipmentNum: orderId,
+            orderName: `Заказ ${orderId}`,
+            sum: 0,
+            statusName: 'Не найден в МС',
+            status: 'error',
+            hasReturn: false,
+            hasDemand: false,
+            hasPayment: false,
+            orderPositions: [],
+            returnSum: 0
+          }
+        })}\n\n`)
+      }
+    } catch (e) {
+      log(`WB-Return: error processing ${sticker}: ${e.message}`)
+      res.write(`data: ${JSON.stringify({
+        type: 'progress', index: index + 1, total: numbers.length,
+        order: {
+          shipmentNum: sticker,
+          orderName: '-',
+          sum: 0,
+          statusName: `Ошибка: ${e.message}`,
+          status: 'error',
+          hasReturn: false,
+          hasDemand: false,
+          hasPayment: false,
+          orderPositions: [],
+          returnSum: 0
+        }
+      })}\n\n`)
+    }
+
+    if (res.flush) res.flush()
+    processed++
+
+    // Cleanup at disconnect
+    req.on('close', () => {
+      log('WB-Return SSE: client disconnected')
+      if (abortId) abortSignals.set(abortId, true)
+    })
+
+    // Process next with small delay
+    setTimeout(() => processNext(index + 1), 200)
+  }
+
+  processNext(0)
+})
+
 // Batch action
 app.post('/api/batch', async (req, res) => {
   const { numbers, action } = req.body
@@ -1313,17 +1502,22 @@ app.post('/api/market/push/wb', async (req, res) => {
 
     await Promise.all(updates)
 
-    // 4. Upload images if provided (separate try/catch — don't fail the push)
+    // 4. Upload images if provided
+    let mediaStatus = 'skipped'
+    let mediaMessage = null
     if (images && Array.isArray(images) && images.length > 0) {
       try {
         await wbOzonSync.pushWBMedia(wbToken, nmId, images)
+        mediaStatus = 'ok'
       } catch (mediaErr) {
+        mediaStatus = 'error'
+        mediaMessage = mediaErr.message
         log(`[Market] WB media push warning: ${mediaErr.message} — continuing`)
       }
     }
 
     log(`[Market] WB push: updated ${vendorCode} (nmId: ${nmId})`)
-    res.json({ success: true, message: '✅ Товар обновлён в Wildberries' })
+    res.json({ success: true, message: '✅ Товар обновлён в Wildberries', mediaStatus, mediaMessage })
   } catch (e) {
     log(`[Market] WB push error: ${e.message}`)
     res.status(500).json({ error: e.message })
@@ -1350,15 +1544,18 @@ app.post('/api/market/push/ozon', async (req, res) => {
       updates.push(wbOzonSync.pushOzonPrice(ozonClientId, ozonApiKey, productId, price))
     }
 
-    // 2. Update title + description + images через асинхронный импорт (task_id)
-    //    /v3/product/import принимает name, description и images[]
-    //    Ошибка импорта не роняет весь push (логируем и продолжаем)
+    // 2. Update title + description + images
+    let ozonMediaStatus = 'skipped'
+    let ozonMediaMessage = null
     if (title || description || (images && images.length > 0)) {
-      const importPromise = wbOzonSync.pushOzonImport(ozonClientId, ozonApiKey, offerId, title, description, images)
-        .catch(err => {
-          log(`[Market] Ozon import/images warning (non-fatal): ${err.message}`)
-        })
-      updates.push(importPromise)
+      try {
+        await wbOzonSync.pushOzonImport(ozonClientId, ozonApiKey, offerId, title, description, images)
+        ozonMediaStatus = 'ok'
+      } catch (err) {
+        ozonMediaStatus = 'error'
+        ozonMediaMessage = err.message
+        log(`[Market] Ozon import/images warning (non-fatal): ${err.message}`)
+      }
     }
 
     // 3. Update attributes (характеристики) через /v1/product/attributes/update
@@ -1368,7 +1565,7 @@ app.post('/api/market/push/ozon', async (req, res) => {
 
     await Promise.all(updates)
     log(`[Market] Ozon push: updated ${offerId}`)
-    res.json({ success: true, message: '✅ Товар обновлён в Ozon' })
+    res.json({ success: true, message: '✅ Товар обновлён в Ozon', mediaStatus: ozonMediaStatus, mediaMessage: ozonMediaMessage })
   } catch (e) {
     log(`[Market] Ozon push error: ${e.message}`)
     res.status(500).json({ error: e.message })

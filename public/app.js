@@ -702,7 +702,7 @@ async function checkNumbers() {
     renderTable();
 
     checkBtn.disabled = false;
-    checkBtn.textContent = 'Сканировать';
+    checkBtn.textContent = 'Поиск МС';
     abortBtn.style.display = 'none';
     isWorking = false;
 
@@ -712,6 +712,164 @@ async function checkNumbers() {
     // Убираем анимацию сканирования (гарантированно)
     document.querySelector('.stats-final')?.classList.remove('scanning');
   }
+}
+
+/**
+ * Поиск возврата WB по коду стикера
+ * sticker → WB supplier/sales (поиск по sticker) → srid → orderId → checkNumbers(orderId)
+ */
+async function wbReturnSearch() {
+  const text = document.getElementById('numbersInput').value;
+
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l);
+  currentDuplicates = lines.length - new Set(lines).size;
+
+  const numbers = [...new Set(lines)];
+
+  if (numbers.length === 0) {
+    showStatus('Введите коды стикеров');
+    return;
+  }
+
+  const wbToken = localStorage.getItem('wb_token');
+  if (!wbToken) {
+    showStatus('Ошибка: WB токен не найден. Нажмите "Токены" в шапке.');
+    return;
+  }
+
+  const msToken = loadToken();
+  if (!msToken) {
+    showStatus('Ошибка: Токен МС не найден.');
+    return;
+  }
+
+  await loadOrdersState();
+
+  const wbBtn = document.querySelector('.btn-wb');
+  const abortBtn = document.getElementById('abortBtn');
+  if (wbBtn) wbBtn.disabled = true;
+  abortBtn.style.display = 'flex';
+  isWorking = true;
+  showProgress(true);
+
+  hideFinalStats(true);
+  startOperationTimer();
+
+  document.querySelector('.stats-final').classList.add('scanning');
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  currentPage = 0;
+  ordersData = [];
+
+  currentDuplicates = 0;
+  renderCurrentStats();
+  realtimeMode = true;
+
+  try {
+    currentController = new AbortController();
+    const abortId = Math.random().toString(36).substring(2, 15);
+    window.__currentAbortId = abortId;
+
+    const numbersParam = encodeURIComponent(numbers.join(','));
+    const url = `/api/wb-return/stream?numbers=${numbersParam}&abortId=${abortId}`;
+
+    const response = await fetch(url, {
+      signal: currentController.signal,
+      headers: {
+        'x-wb-token': wbToken,
+        'x-api-token': msToken
+      }
+    });
+
+    if (!response.ok) {
+      const errData = await response.json();
+      hideProgress(false, errData.error || 'Ошибка');
+      document.querySelector('.stats-final')?.classList.remove('scanning');
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+
+            if (data.type === 'progress') {
+              const order = data.order;
+              const orderData = { ...order, enabled: true };
+              ordersData.push(orderData);
+
+              document.getElementById('statusText').textContent =
+                `Загружено ${data.index}/${data.total}`;
+
+              appendOrderRow(orderData);
+              updateTotals();
+              renderCurrentStats(true);
+            } else if (data.type === 'done') {
+              const elapsed = stopOperationTimer();
+              realtimeMode = false;
+              updateTotals();
+              renderCurrentStats();
+              saveLastActionStats();
+              hideProgress(true, 'Готово: ' + ordersData.length);
+              document.querySelector('.stats-final').classList.remove('scanning');
+            } else if (data.type === 'aborted') {
+              const elapsed = stopOperationTimer();
+              realtimeMode = false;
+              updateTotals();
+              renderCurrentStats();
+              hideProgress(false, 'Прервано. Обработано: ' + data.processed);
+              document.querySelector('.stats-final').classList.remove('scanning');
+            } else if (data.type === 'error') {
+              hideProgress(false, data.error);
+              document.querySelector('.stats-final')?.classList.remove('scanning');
+              return;
+            }
+          } catch (e) {
+            console.error('WB-Return SSE parse error:', e);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      hideProgress(false, 'Прервано');
+      stopOperationTimer();
+    } else {
+      hideProgress(false, 'Ошибка: ' + e.message);
+      stopOperationTimer();
+    }
+  } finally {
+    realtimeMode = false;
+    renderTable();
+
+    if (wbBtn) wbBtn.disabled = false;
+    abortBtn.style.display = 'none';
+    isWorking = false;
+    window.__currentAbortId = null;
+    document.querySelector('.stats-final')?.classList.remove('scanning');
+  }
+}
+
+/** Заглушка для Ozon возвратов */
+function ozonReturnSearch() {
+  showStatus('Возврат Ozon в разработке');
 }
 
 function abortCheck() {

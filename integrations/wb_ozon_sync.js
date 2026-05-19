@@ -122,7 +122,7 @@ async function fetchWBData(codes, token) {
         // Extract images from card.photos (WB: photos — верхнеуровневый массив фото)
         const wbImages = []
         debug(`[WB] photos debug for ${code}: type=${typeof found.photos}, isArray=${Array.isArray(found.photos)}, count=${Array.isArray(found.photos) ? found.photos.length : 'N/A'}`)
-        debug(`[WB] media debug for ${code}: type=${typeof found.media}, isArray=${Array.isArray(found.media)}, count=${Array.isArray(found.media) ? found.media.length : 'N/A'}`)
+        // media field does not exist in WB API response — removed
         if (Array.isArray(found.photos) && found.photos.length > 0) {
           const first = found.photos[0]
           debug(`[WB] first photo keys: ${Object.keys(first).join(', ')}`)
@@ -131,10 +131,7 @@ async function fetchWBData(codes, token) {
             const second = found.photos[1]
             debug(`[WB] second photo: big=${String(second.big || '').substring(0, 120)}, c246x328=${String(second.c246x328 || '').substring(0, 120)}`)
           }
-          // Если photos содержит 1 элемент, а media больше — возможно все фото в media
-          if (found.photos.length === 1 && Array.isArray(found.media) && found.media.length > 1) {
-            warn(`[WB] photos has 1 item but media has ${found.media.length} — checking media for images`)
-          }
+          // media field does not exist in WB API response — removed
           for (const photo of found.photos) {
             wbImages.push({
               url: photo.big || photo.url || '',
@@ -144,7 +141,7 @@ async function fetchWBData(codes, token) {
           }
           success(`[WB] Extracted ${wbImages.length} images for ${code}`)
         } else {
-          warn(`[WB] No images found for ${code} (photos: ${typeof found.photos}, media: ${typeof found.media})`)
+          warn(`[WB] No images found for ${code} (photos: ${typeof found.photos})`)
         }
 
         // Try to get retail price from Prices API (more accurate)
@@ -271,13 +268,21 @@ async function fetchOzonData(codes, clientId, apiKey) {
       // ── Извлекаем изображения ──
       let ozonImages = details.images || []
       // Debug: посмотреть, что приходит в details
-      debug(`[Ozon] images debug for ${code}: count=${details.images?.length || 0}, primary=${typeof details.primary_image === 'string' ? details.primary_image.substring(0, 120) : JSON.stringify(details.primary_image)}`)
+      var primaryDbg = ''
+      if (typeof details.primary_image === 'string') primaryDbg = details.primary_image.substring(0, 120)
+      else if (Array.isArray(details.primary_image)) primaryDbg = 'array[' + details.primary_image.length + ']'
+      else primaryDbg = JSON.stringify(details.primary_image)
+      debug(`[Ozon] images debug for ${code}: count=${details.images?.length || 0}, primary=${primaryDbg}`)
       // Ozon API отдаёт обложку (primary_image) отдельно от массива images[]
-      if (details.primary_image && typeof details.primary_image === 'string') {
-        if (ozonImages.length === 0 || ozonImages[0] !== details.primary_image) {
-          debug(`[Ozon] Prepending primary_image to images array for ${code}`)
-          ozonImages = [details.primary_image, ...ozonImages]
-        }
+      let primaryUrl = null
+      if (typeof details.primary_image === 'string') {
+        primaryUrl = details.primary_image
+      } else if (Array.isArray(details.primary_image) && details.primary_image.length > 0) {
+        primaryUrl = details.primary_image[0]
+      }
+      if (primaryUrl && (ozonImages.length === 0 || ozonImages[0] !== primaryUrl)) {
+        debug(`[Ozon] Prepending primary_image to images array for ${code}`)
+        ozonImages = [primaryUrl, ...ozonImages]
       }
       debug(`[Ozon] Total images for ${code}: ${ozonImages.length}`)
 
@@ -929,6 +934,76 @@ async function syncImageToOzon(clientId, apiKey, offerId, imageUrl) {
   }
 }
 
+/**
+ * WB: найти сборочное задание по коду стикера возврата
+ * @param {string} stickerCode - Код стикера с возвратной наклейки (например, "51250075718")
+ * @param {string} token - WB API token (raw, без Bearer — statistics-api)
+ * @param {number} [daysBack=90] - На сколько дней назад искать
+ * @returns {Promise<{srid: string|null, gNumber: string|null, nmId: string|null}>}
+ */
+async function fetchWBOrderBySticker(stickerCode, token, daysBack = 90) {
+  const dateFrom = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const path = `/api/v1/supplier/sales?dateFrom=${dateFrom}&flag=1`
+
+  const res = await makeRequest({
+    hostname: 'statistics-api.wildberries.ru',
+    path,
+    method: 'GET',
+    headers: { 'Authorization': token } // statistics-api: raw token, без Bearer
+  })
+
+  if (res.status !== 200 || !Array.isArray(res.body)) {
+    return { srid: null, gNumber: null, nmId: null }
+  }
+
+  const found = res.body.find(s => String(s.sticker) === String(stickerCode))
+  if (!found) return { srid: null, gNumber: null, nmId: null }
+
+  return {
+    srid: found.srid || null,
+    gNumber: found.gNumber || null,
+    nmId: String(found.nmId || '')
+  }
+}
+
+/**
+ * WB: получить номер сборочного задания (orderId) по srid
+ * @param {string} srid - Уникальный идентификатор из отчёта продаж (e.g. "eAz.rdf3f976...04")
+ * @param {string} token - WB API token (с Bearer — marketplace-api)
+ * @returns {Promise<string|null>} - id сборочного задания (orderId) или null
+ */
+async function fetchWBOrderIdBySrid(srid, token) {
+  // Извлекаем orderUid из srid: "eAz.ORDERUID" → "ORDERUID"
+  // или "eAz.ORDERUID.0.0" → "ORDERUID"
+  const parts = srid.split('.')
+  const orderUid = parts.length >= 2 ? parts[1] : null
+  if (!orderUid) return null
+
+  const bearer = token.startsWith('Bearer ') ? token : 'Bearer ' + token
+  let next = 0
+  const limit = 1000
+
+  while (next !== null) {
+    const path = `/api/v3/orders?next=${next}&limit=${limit}`
+    const res = await makeRequest({
+      hostname: 'marketplace-api.wildberries.ru',
+      path,
+      method: 'GET',
+      headers: { 'Authorization': bearer }
+    })
+
+    if (res.status !== 200 || !res.body || !Array.isArray(res.body.orders)) break
+
+    const matched = res.body.orders.find(order => order.rid && order.rid.includes(orderUid))
+    if (matched) return String(matched.id)
+
+    next = res.body.next
+    if (next === undefined || next === null) break
+  }
+
+  return null
+}
+
 module.exports = {
   fetchWBData,
   fetchWBPrice,
@@ -947,5 +1022,7 @@ module.exports = {
   pushOzonTitle,
   pushOzonAttributes,
   syncImageToWB,
-  syncImageToOzon
+  syncImageToOzon,
+  fetchWBOrderBySticker,
+  fetchWBOrderIdBySrid
 }

@@ -55,7 +55,9 @@
           <div class="input-panel">
             <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
             <div class="button-row">
-              <button class="btn btn-accent btn-lg btn-block" onclick="checkNumbers()">Сканировать</button>
+              <button class="btn btn-accent btn-lg" onclick="checkNumbers()">Поиск МС</button>
+              <button class="btn btn-wb btn-lg" onclick="wbReturnSearch()">Возврат WB</button>
+              <button class="btn btn-ozon btn-lg" onclick="ozonReturnSearch()">Возврат Ozon</button>
               <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display: none">
                 ✕
               </button>
@@ -364,8 +366,51 @@
         if (_pendingCrossSyncs[targetPlatform].indexOf(imageUrl) === -1) {
           _pendingCrossSyncs[targetPlatform].push(imageUrl);
         }
-        // Re-render with merged data
-        searchProductByOEM();
+        // Direct DOM manipulation — add thumbnail without re-render
+        addThumbToRow(targetPlatform, imageUrl);
+      }
+
+      // Add a thumbnail element to a platform's images row (no re-render, no flash)
+      function addThumbToRow(platform, imageUrl) {
+        var imagesRow = document.getElementById(platform + '-images');
+        if (!imagesRow) return;
+        var addNew = imagesRow.querySelector('.thumb-wrap.add-new');
+        if (!addNew) return;
+
+        // Skip duplicates
+        var existingImgs = imagesRow.querySelectorAll('.thumb-wrap:not(.add-new) .thumb');
+        for (var ei = 0; ei < existingImgs.length; ei++) {
+          if (existingImgs[ei].getAttribute('data-full') === imageUrl) return;
+        }
+
+        var nextIdx = imagesRow.querySelectorAll('.thumb-wrap:not(.add-new)').length;
+
+        var wrap = document.createElement('div');
+        wrap.className = 'thumb-wrap';
+        wrap.innerHTML =
+          '<div class="thumb-img-container">' +
+            '<img class="thumb" src="' + esc(imageUrl) + '" alt="Фото ' + (nextIdx + 1) + '" data-full="' + esc(imageUrl) + '" />' +
+          '</div>' +
+          '<div class="thumb-popup">' +
+            '<img src="' + esc(imageUrl) + '" alt="Фото ' + (nextIdx + 1) + '" />' +
+          '</div>' +
+          '<div class="thumb-actions">' +
+            '<button class="thumb-btn download" title="Скачать" data-url="' + esc(imageUrl) + '">⬇</button>' +
+            '<button class="thumb-btn replace" title="Заменить" data-idx="' + nextIdx + '" data-platform="' + platform + '">🔄</button>' +
+            '<button class="thumb-btn delete" title="Удалить" data-idx="' + nextIdx + '" data-platform="' + platform + '">✕</button>' +
+          '</div>';
+
+        imagesRow.insertBefore(wrap, addNew);
+
+        // Attach hover-zoom popup on mouseenter
+        wrap.addEventListener('mouseenter', function() {
+          var rect = wrap.getBoundingClientRect();
+          if (rect.top < 420) {
+            wrap.classList.add('popup-bottom');
+          } else {
+            wrap.classList.remove('popup-bottom');
+          }
+        });
       }
 
       // Market search logic
@@ -416,7 +461,8 @@
           if (data.wildberries && Array.isArray(data.wildberries.images) && _pendingCrossSyncs.wb.length > 0) {
             _pendingCrossSyncs.wb.forEach(function(url) {
               var exists = data.wildberries.images.some(function(img) {
-                return (img.url || img.big || '') === url;
+                var imgUrl = (typeof img === 'string') ? img : (img.url || img.big || '');
+                return imgUrl === url;
               });
               if (!exists) {
                 data.wildberries.images.push({ url: url, c246x328: url, c516x688: url });
@@ -425,7 +471,11 @@
           }
           if (data.ozon && Array.isArray(data.ozon.images) && _pendingCrossSyncs.ozon.length > 0) {
             _pendingCrossSyncs.ozon.forEach(function(url) {
-              if (data.ozon.images.indexOf(url) === -1) {
+              var exists = data.ozon.images.some(function(img) {
+                var imgUrl = (typeof img === 'string') ? img : (img.url || '');
+                return imgUrl === url;
+              });
+              if (!exists) {
                 data.ozon.images.push(url);
               }
             });
@@ -640,6 +690,10 @@
             html += '<button class="thumb-btn add" title="Добавить изображение" data-platform="' + platform + '">＋</button>';
             html += '</div>';
             html += '</div>';
+            // Push images-only button
+            if (platform !== 'ms') {
+              html += '<button onclick="pushPlatformImages(\'' + platform + '\')" class="btn btn-sm push-images-btn" style="margin-top:6px;font-size:13px;padding:6px 12px;">📤 Изображения</button>';
+            }
             return html;
           }
 
@@ -874,34 +928,13 @@
             });
           });
 
-          // Add image on ＋ click — открыть диалог выбора файла
+          // Add image on ＋ click — открыть попап для вставки URL
           resultsDiv.querySelectorAll('.thumb-btn.add').forEach(function(btn) {
             btn.addEventListener('click', function(e) {
               e.stopPropagation();
               var platform = this.dataset.platform;
               if (!platform) return;
-
-              // Create hidden file input
-              var fileInput = document.createElement('input');
-              fileInput.type = 'file';
-              fileInput.accept = 'image/jpeg,image/png,image/webp';
-              fileInput.style.display = 'none';
-              document.body.appendChild(fileInput);
-
-              fileInput.addEventListener('change', function() {
-                var file = fileInput.files && fileInput.files[0];
-                if (!file) { document.body.removeChild(fileInput); return; }
-                uploadImage(file, platform, null, function(err, result) {
-                  document.body.removeChild(fileInput);
-                  if (err) {
-                    console.error('Upload failed:', err);
-                    return;
-                  }
-                  searchProductByOEM();
-                });
-              });
-
-              fileInput.click();
+              showAddImagePopup(platform);
             });
           });
 
@@ -1094,6 +1127,40 @@
               });
             });
           });
+
+          // ── Cross-platform drag & drop: add image to + button ──
+          resultsDiv.querySelectorAll('.thumb-wrap.add-new').forEach(function(addWrap) {
+            addWrap.addEventListener('dragover', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+            });
+
+            addWrap.addEventListener('dragenter', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+            });
+
+            addWrap.addEventListener('drop', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+
+              // Files from computer — already handled by images-row handler
+              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) return;
+
+              // Cross-platform image copy
+              try {
+                var dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
+                if (dragData && dragData.platform && dragData.url) {
+                  var targetPlatform = addWrap.closest('.images-row').id.replace('-images', '');
+                  if (dragData.platform !== targetPlatform) {
+                    copyImageToPlatform(dragData.url, dragData.platform, targetPlatform);
+                  }
+                }
+              } catch (ex) {
+                // Not JSON — ignore
+              }
+            });
+          });
         } catch (error) {
           resultsDiv.innerHTML = `<div class="search-status error">Ошибка: ${error.message}</div>`;
         }
@@ -1199,7 +1266,16 @@
           const wbToken = localStorage.getItem('wb_token') || '';
           if (!wbToken) throw new Error('Нет токена WB');
 
-          const response = await fetch('/api/market/push/wb', {
+          // Filter out local URLs that marketplaces can't access
+        var wbExternalImages = wbImages.filter(function(url) {
+          return !url.startsWith('/temp/');
+        });
+        if (wbImages.length !== wbExternalImages.length) {
+          var wbSkipped = wbImages.length - wbExternalImages.length;
+          console.warn('[WB] Skipping ' + wbSkipped + ' local image(s) — not accessible by WB API');
+        }
+
+        const response = await fetch('/api/market/push/wb', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -1211,7 +1287,7 @@
               title: title,
               description: wbDescription,
               characteristics: wbCharacteristics,
-              ...(wbImages.length > 0 && { images: wbImages })
+              ...(wbExternalImages.length > 0 && { images: wbExternalImages })
             })
           });
 
@@ -1220,10 +1296,16 @@
           if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
 
           statusDiv.className = 'search-status success';
-          statusDiv.innerHTML = `✅ Данные успешно отправлены в WB для ${vendorCode}`;
+          var wbMsg = `✅ Данные успешно отправлены в WB для ${vendorCode}`;
+          if (result.mediaStatus === 'error') {
+            wbMsg += `<br><span style="color:#e67e22;">⚠️ Изображения: ${result.mediaMessage || 'ошибка загрузки'}</span>`;
+          } else if (result.mediaStatus === 'skipped') {
+            wbMsg += `<br><span style="color:#999;">ℹ️ Изображения: нет для отправки</span>`;
+          }
+          statusDiv.innerHTML = wbMsg;
 
-          // Refresh search after 2 seconds
-          setTimeout(() => searchProductByOEM(), 2000);
+          // Clear pending cross-syncs — next refresh shows real state
+          _pendingCrossSyncs.wb = [];
         } catch (error) {
           statusDiv.className = 'search-status error';
           statusDiv.innerHTML = `❌ Ошибка отправки в WB: ${error.message}`;
@@ -1264,6 +1346,15 @@
           const ozonApiKey = localStorage.getItem('ozon_api_key') || '';
           if (!ozonClientId || !ozonApiKey) throw new Error('Нет ключей Ozon');
 
+        // Filter out local URLs that marketplaces can't access
+        var ozonExternalImages = ozonImages.filter(function(url) {
+          return !url.startsWith('/temp/');
+        });
+        if (ozonImages.length !== ozonExternalImages.length) {
+          var ozonSkipped = ozonImages.length - ozonExternalImages.length;
+          console.warn('[Ozon] Skipping ' + ozonSkipped + ' local image(s) — not accessible by Ozon API');
+        }
+
           const response = await fetch('/api/market/push/ozon', {
             method: 'POST',
             headers: {
@@ -1278,7 +1369,7 @@
               title: title,
               description: ozonDescription,
               attributes: ozonAttributes,
-              ...(ozonImages.length > 0 && { images: ozonImages })
+              ...(ozonExternalImages.length > 0 && { images: ozonExternalImages })
             })
           });
 
@@ -1287,14 +1378,191 @@
           if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
 
           statusDiv.className = 'search-status success';
-          statusDiv.innerHTML = `✅ Данные успешно отправлены в Ozon (${offerId || productId})`;
+          var ozonPushMsg = `✅ Данные успешно отправлены в Ozon (${offerId || productId})`;
+          if (result.mediaStatus === 'error') {
+            ozonPushMsg += `<br><span style="color:#e67e22;">⚠️ Изображения: ${result.mediaMessage || 'ошибка загрузки'}</span>`;
+          } else if (result.mediaStatus === 'skipped') {
+            ozonPushMsg += `<br><span style="color:#999;">ℹ️ Изображения: нет для отправки</span>`;
+          }
+          statusDiv.innerHTML = ozonPushMsg;
 
-          // Refresh search after 2 seconds
-          setTimeout(() => searchProductByOEM(), 2000);
+          // Clear pending cross-syncs — next refresh shows real state
+          _pendingCrossSyncs.ozon = [];
         } catch (error) {
           statusDiv.className = 'search-status error';
           statusDiv.innerHTML = `❌ Ошибка отправки в Ozon: ${error.message}`;
         }
+      }
+
+      // Dispatcher for platform-specific image-only push (called from renderImageThumbs)
+      function pushPlatformImages(platform) {
+        if (platform === 'ozon') {
+          var ozonImgData = window._ozonData;
+          if (!ozonImgData) return;
+          pushOzonImagesOnly(ozonImgData.code || '', ozonImgData.product_id || 0);
+        } else if (platform === 'wb') {
+          var wbImgData = window._wbData;
+          if (!wbImgData) return;
+          pushWBImagesOnly(wbImgData.vendorCode || wbImgData.code || '');
+        }
+      }
+
+      // Push only images to Wildberries (no text fields)
+      async function pushWBImagesOnly(vendorCode) {
+        if (!vendorCode) return;
+        var inImages = collectImageUrls('wb');
+        var extImages = inImages.filter(function(url) {
+          return !url.startsWith('/temp/');
+        });
+
+        const resultsDiv = document.getElementById('marketResults');
+        const stDiv = document.createElement('div');
+        stDiv.className = 'search-status';
+        stDiv.innerHTML = '<span class="search-spinner"></span> Отправка изображений в WB...';
+        resultsDiv.prepend(stDiv);
+
+        try {
+          const wbToken = localStorage.getItem('wb_token') || '';
+          if (!wbToken) throw new Error('Нет токена WB');
+
+          const resp = await fetch('/api/market/push/wb', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-wb-token': wbToken },
+            body: JSON.stringify({
+              vendorCode: vendorCode,
+              ...(extImages.length > 0 && { images: extImages })
+            })
+          });
+
+          const res = await resp.json();
+          if (!resp.ok) throw new Error(res.error || 'Ошибка отправки');
+
+          stDiv.className = 'search-status success';
+          var imMsg = '✅ Изображения отправлены в WB';
+          if (res.mediaStatus === 'error') {
+            imMsg += `<br><span style="color:#e67e22;">⚠️ ${res.mediaMessage || 'ошибка загрузки'}</span>`;
+          } else if (res.mediaStatus === 'skipped') {
+            imMsg += '<br><span style="color:#999;">ℹ️ Нет изображений для отправки</span>';
+          }
+          stDiv.innerHTML = imMsg;
+          _pendingCrossSyncs.wb = [];
+        } catch (error) {
+          stDiv.className = 'search-status error';
+          stDiv.innerHTML = '❌ Ошибка отправки изображений в WB: ' + error.message;
+        }
+      }
+
+      // Push only images to Ozon (no text fields)
+      async function pushOzonImagesOnly(offerId, productId) {
+        if (!offerId && !productId) return;
+        var inImages = collectImageUrls('ozon');
+        var extImages = inImages.filter(function(url) {
+          return !url.startsWith('/temp/');
+        });
+
+        const resultsDiv = document.getElementById('marketResults');
+        const stDiv = document.createElement('div');
+        stDiv.className = 'search-status';
+        stDiv.innerHTML = '<span class="search-spinner"></span> Отправка изображений в Ozon...';
+        resultsDiv.prepend(stDiv);
+
+        try {
+          const ozonClientId = localStorage.getItem('ozon_client_id') || '';
+          const ozonApiKey = localStorage.getItem('ozon_api_key') || '';
+          if (!ozonClientId || !ozonApiKey) throw new Error('Нет ключей Ozon');
+
+          const resp = await fetch('/api/market/push/ozon', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-ozon-client-id': ozonClientId,
+              'x-ozon-api-key': ozonApiKey
+            },
+            body: JSON.stringify({
+              offerId: offerId,
+              productId: productId,
+              ...(extImages.length > 0 && { images: extImages })
+            })
+          });
+
+          const res = await resp.json();
+          if (!resp.ok) throw new Error(res.error || 'Ошибка отправки');
+
+          stDiv.className = 'search-status success';
+          var imMsg = '✅ Изображения отправлены в Ozon';
+          if (res.mediaStatus === 'error') {
+            imMsg += `<br><span style="color:#e67e22;">⚠️ ${res.mediaMessage || 'ошибка загрузки'}</span>`;
+          } else if (res.mediaStatus === 'skipped') {
+            imMsg += '<br><span style="color:#999;">ℹ️ Нет изображений для отправки</span>';
+          }
+          stDiv.innerHTML = imMsg;
+          _pendingCrossSyncs.ozon = [];
+        } catch (error) {
+          stDiv.className = 'search-status error';
+          stDiv.innerHTML = '❌ Ошибка отправки изображений в Ozon: ' + error.message;
+        }
+      }
+
+      // ── Show popup for adding image by URL ──
+      function showAddImagePopup(platform) {
+        var overlay = document.createElement('div');
+        overlay.className = 'popup-overlay';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+        var popup = document.createElement('div');
+        popup.className = 'popup-content';
+        popup.style.cssText = 'background:#fff;border-radius:12px;padding:28px;max-width:520px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);font-family:sans-serif;';
+
+        popup.innerHTML =
+          '<div style="font-size:22px;font-weight:700;margin-bottom:16px;">📷 Добавить изображение</div>' +
+          '<div style="color:#555;line-height:1.6;margin-bottom:16px;font-size:14px;">' +
+            'Маркетплейсам нужна публичная ссылка на изображение.<br><br>' +
+            '<strong>Варианты:</strong><br>' +
+            '1. Сначала загрузите в Ozon или Wildberries — потом сможете перетащить картинку в другой маркет<br>' +
+            '2. Или вставьте ссылку с хостинга (Яндекс.Диск, Google Диск и т.д.)' +
+          '</div>' +
+          '<label style="display:block;font-weight:600;margin-bottom:6px;font-size:13px;color:#333;">Ссылка на изображение:</label>' +
+          '<input type="url" id="popupImageUrl" placeholder="https://..." style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:18px;">' +
+          '<div style="display:flex;gap:10px;justify-content:flex-end;">' +
+            '<button id="popupCancelBtn" style="padding:10px 20px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:14px;">Отмена</button>' +
+            '<button id="popupAddBtn" style="padding:10px 20px;border:none;border-radius:8px;background:#5865f2;color:#fff;cursor:pointer;font-size:14px;font-weight:600;">Добавить</button>' +
+          '</div>';
+
+        overlay.appendChild(popup);
+        document.body.appendChild(overlay);
+
+        setTimeout(function() { var inp = document.getElementById('popupImageUrl'); if (inp) inp.focus(); }, 100);
+
+        function closePopup() {
+          if (overlay.parentNode) document.body.removeChild(overlay);
+        }
+
+        document.getElementById('popupCancelBtn').addEventListener('click', closePopup);
+        overlay.addEventListener('click', function(e) {
+          if (e.target === overlay) closePopup();
+        });
+
+        document.getElementById('popupAddBtn').addEventListener('click', function() {
+          var url = document.getElementById('popupImageUrl').value.trim();
+          if (!url) return;
+          if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            document.getElementById('popupImageUrl').style.borderColor = '#e74c3c';
+            return;
+          }
+          document.getElementById('popupImageUrl').style.borderColor = '#ddd';
+          // Add to pending syncs
+          if (!_pendingCrossSyncs[platform]) _pendingCrossSyncs[platform] = [];
+          if (_pendingCrossSyncs[platform].indexOf(url) === -1) {
+            _pendingCrossSyncs[platform].push(url);
+          }
+          // Add thumbnail directly to DOM
+          addThumbToRow(platform, url);
+          closePopup();
+        });
+
+        document.getElementById('popupImageUrl').addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') document.getElementById('popupAddBtn').click();
+        });
       }
 
       // ── Upload helper function ──
