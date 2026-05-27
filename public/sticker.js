@@ -154,24 +154,21 @@ function toggleStickerModal(show) {
   var modal = document.getElementById('stickerModal');
   if (!modal) return;
   modal.classList.toggle('hidden', !show);
+  if (show) {
+    document.getElementById('stickerCarrier').value = '';
+    document.getElementById('stickerCode').value = '';
+    document.getElementById('stickerAvito').checked = false;
+  }
 }
 
 // ─── generateSticker ─────────────────────────────────────────────────────────
 // Читает поля из DOM-попапа, валидирует, вызывает openStickerPrint.
 
 function generateSticker() {
-  var select = document.getElementById('stickerCarrier');
-  var customInput = document.getElementById('stickerCarrierCustom');
+  var carrier = document.getElementById('stickerCarrier').value.trim();
   var avitoChecked = document.getElementById('stickerAvito').checked;
   var code = document.getElementById('stickerCode').value.trim();
   var size = document.getElementById('stickerSize').value;
-
-  var carrier;
-  if (select.value === '__other__') {
-    carrier = customInput.value.trim();
-  } else {
-    carrier = select.value;
-  }
 
   if (!carrier) {
     alert(

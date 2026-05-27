@@ -50,6 +50,10 @@ function makeRequest(options, postData = null) {
         }
       })
     })
+    req.setTimeout(30000, () => {
+      req.destroy()
+      reject(new Error(`Request timeout: ${options.method} ${options.hostname}${options.path}`))
+    })
     req.on('error', reject)
     if (postData) req.write(postData)
     req.end()
@@ -222,6 +226,36 @@ async function fetchWBPrice(token, nmID) {
   }
 }
 
+async function fetchWBProductFull(token, vendorCode) {
+  const results = await fetchWBData([vendorCode], token)
+  const product = results[0]
+
+  if (!product || product.error) {
+    return { error: 'Not found in WB' }
+  }
+
+  if (product.nmID) {
+    const retailPrice = await fetchWBPrice(token, product.nmID)
+    if (retailPrice !== null) {
+      product.price = retailPrice
+    }
+  }
+
+  return {
+    code: product.code,
+    title: product.title,
+    price: product.price,
+    brand: product.brand,
+    nmID: product.nmID,
+    barcode: product.barcode,
+    description: product.description,
+    characteristics: product.characteristics,
+    images: product.images,
+    subjectName: product.subjectName,
+    vendorCode: product.vendorCode,
+  }
+}
+
 /**
  * Ozon: Search product by offer_id (SKU/Article)
  * Docs: см. .opencode/context/external/ozon-api.md
@@ -291,8 +325,9 @@ async function fetchOzonData(codes, clientId, apiKey) {
         title: details.name || 'N/A',
         price: price,
         site: 'Ozon',
-        sku: details.id || productId,        // numeric product_id
-        product_id: details.id || productId,  // для push-запросов
+        sku: details.id || productId,
+        product_id: details.id || productId,
+        type_id: details.type_id,            // required for /v3/product/import
         description: description,
         attributes: attrData.attributes,
         dimensions: attrData.dimensions,
@@ -305,6 +340,36 @@ async function fetchOzonData(codes, clientId, apiKey) {
   }
 
   return results
+}
+
+async function fetchOzonProductFull(clientId, apiKey, offerId) {
+  const productId = await findOzonProductIdByOfferId(offerId, clientId, apiKey)
+  if (!productId) return null
+
+  const details = await getOzonProductInfo(productId, clientId, apiKey)
+  if (!details) return null
+
+  const description = await fetchOzonDescription(clientId, apiKey, productId, offerId)
+  const attrData = await fetchOzonAttributes(clientId, apiKey, productId)
+
+  let ozonImages = details.images || []
+  if (typeof details.primary_image === 'string') {
+    ozonImages = [details.primary_image, ...ozonImages]
+  } else if (Array.isArray(details.primary_image) && details.primary_image.length > 0) {
+    ozonImages = [details.primary_image[0], ...ozonImages]
+  }
+
+  return {
+    offer_id: details.offer_id || offerId,
+    product_id: productId,
+    type_id: details.type_id,
+    name: details.name || '',
+    price: parseFloat(details.price) || 0,
+    description,
+    images: ozonImages,
+    attributes: attrData.attributes,
+    dimensions: attrData.dimensions,
+  }
 }
 
 /**
@@ -717,12 +782,40 @@ async function pushOzonStock(clientId, apiKey, offerId, productId, stock) {
 // ⚠ Асинхронная операция — возвращает task_id
 // Принимает опциональный массив images (URL-строки)
 // ──────────────────────────────────────────
-async function pushOzonImport(clientId, apiKey, offerId, title, description, images) {
-  const item = { offer_id: offerId }
-  if (title) item.name = title
-  if (description !== undefined) item.description = description
-  if (images && Array.isArray(images) && images.length > 0) {
-    item.images = images
+async function pushOzonImport(clientId, apiKey, offerId, title, description, images, typeId) {
+  let item
+
+  try {
+    const current = await fetchOzonProductFull(clientId, apiKey, offerId)
+    if (current) {
+      item = {
+        offer_id: offerId,
+        name: title || current.name,
+        description: description !== undefined ? description : current.description,
+        price: current.price,
+        type_id: typeId || current.type_id,
+        weight: current.dimensions?.weight,
+        weight_unit: current.dimensions?.weight_unit,
+        height: current.dimensions?.height,
+        width: current.dimensions?.width,
+        depth: current.dimensions?.depth,
+        dimension_unit: current.dimensions?.dimension_unit,
+        images: (images && images.length > 0) ? images : current.images,
+        attributes: current.attributes,
+      }
+    }
+  } catch (e) {
+    warn(`[Ozon] fetchOzonProductFull failed for ${offerId}, using fallback: ${e.message}`)
+  }
+
+  if (!item) {
+    item = { offer_id: offerId }
+    if (typeId) item.type_id = typeId
+    if (title) item.name = title
+    if (description !== undefined) item.description = description
+    if (images && Array.isArray(images) && images.length > 0) {
+      item.images = images
+    }
   }
 
   const body = JSON.stringify({ items: [item] })
@@ -742,8 +835,68 @@ async function pushOzonImport(clientId, apiKey, offerId, title, description, ima
   if (response.status !== 200) {
     throw new Error(`Ozon Import API: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
   }
-  const imgCount = images && Array.isArray(images) ? images.length : 0
-  success(`[Ozon] Product import task created for ${offerId}: title=${!!title}, desc=${!!description}, images=${imgCount}`)
+
+  const imgCount = item.images && Array.isArray(item.images) ? item.images.length : 0
+
+  const taskId = response.body && response.body.result && response.body.result.task_id
+
+  if (taskId) {
+    success(`[Ozon] Import task created: ${taskId} for ${offerId}: title=${!!title}, desc=${!!description}, images=${imgCount}`)
+    checkOzonImportStatus(clientId, apiKey, taskId, offerId)
+  } else {
+    success(`[Ozon] Product import task created for ${offerId}: title=${!!title}, desc=${!!description}, images=${imgCount}`)
+  }
+}
+
+/**
+ * Check the status of an Ozon import task after a 3-second delay.
+ * Non-blocking — logs result but does not throw.
+ */
+async function checkOzonImportStatus(clientId, apiKey, taskId, offerId) {
+  try {
+    await new Promise(r => setTimeout(r, 3000))
+
+    const statusBody = JSON.stringify({ task_id: taskId })
+    const statusOptions = {
+      hostname: 'api-seller.ozon.ru',
+      path: '/v1/product/import/info',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Client-Id': clientId,
+        'Api-Key': apiKey
+      }
+    }
+
+    const statusRes = await makeRequest(statusOptions, statusBody)
+    debug(`[Ozon] Import status response for task ${taskId}: status=${statusRes.status}, body=${JSON.stringify(statusRes.body)}`)
+    if (statusRes.status !== 200) {
+      warn(`[Ozon] Import status check failed for task ${taskId}: HTTP ${statusRes.status}`)
+      return
+    }
+
+    // Extract items from response: { result: { items: [...], total: N } }
+    const items = statusRes.body && statusRes.body.result && statusRes.body.result.items
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      warn(`[Ozon] Import status check: no items for task ${taskId}`)
+      return
+    }
+    // Assuming we queried for a single task_id, take the first item
+    const task = items[0]
+    const status = task.status || 'unknown'
+
+    if (status === 'imported') {
+      success(`[Ozon] Import task ${taskId} completed successfully (${offerId})`)
+    } else if (status === 'imported_with_errors') {
+      warn(`[Ozon] Import task ${taskId} completed with errors (${offerId}): ${task.error || 'unknown'}`)
+    } else if (status === 'failed') {
+      error(`[Ozon] Import task ${taskId} FAILED (${offerId}): ${task.error || 'unknown error'}`)
+    } else {
+      info(`[Ozon] Import task ${taskId} status: ${status} (${offerId}) — task still processing, check later`)
+    }
+  } catch (e) {
+    warn(`[Ozon] Import status check error for task ${taskId}: ${e.message}`)
+  }
 }
 
 // Alias for backward compatibility
@@ -755,11 +908,19 @@ const pushOzonTitle = pushOzonImport
 // Endpoint: POST /content/v2/cards/upload
 // ──────────────────────────────────────────
 async function pushWBCard(token, nmID, vendorCode, description, characteristics) {
-  const card = { nmID: nmID, vendorCode: vendorCode }
-  if (description !== undefined) card.description = description
-  if (characteristics && Array.isArray(characteristics)) {
-    card.characteristics = characteristics
+  let current = null
+  try {
+    current = await fetchWBProductFull(token, vendorCode)
+    if (current && current.error) current = null
+  } catch (e) {
+    current = null
   }
+
+  const card = { nmID: nmID, vendorCode: vendorCode }
+  card.description = description !== undefined ? description : (current ? current.description : description)
+  card.characteristics = (characteristics && Array.isArray(characteristics) && characteristics.length > 0)
+    ? characteristics
+    : (current && current.characteristics ? current.characteristics : characteristics)
 
   const body = JSON.stringify({ cards: [card] })
 
@@ -943,7 +1104,8 @@ async function syncImageToOzon(clientId, apiKey, offerId, imageUrl) {
  */
 async function fetchWBOrderBySticker(stickerCode, token, daysBack = 90) {
   const dateFrom = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  const path = `/api/v1/supplier/sales?dateFrom=${dateFrom}&flag=1`
+  // flag=0: все записи с lastChangeDate >= dateFrom (до 80 000 строк), включая возвраты
+  const path = `/api/v1/supplier/sales?dateFrom=${dateFrom}&flag=0`
 
   const res = await makeRequest({
     hostname: 'statistics-api.wildberries.ru',
@@ -1004,10 +1166,344 @@ async function fetchWBOrderIdBySrid(srid, token) {
   return null
 }
 
+// ──────────────────────────────────────────
+// Ozon: Returns & Postings API
+// ──────────────────────────────────────────
+
+/**
+ * Helper: make a retryable request to Ozon API with 429 handling
+ * Reads Retry-After header, falls back to 60s, max 3 retries
+ */
+async function ozonRequestWithRetry(hostname, path, method, headers, body, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const response = await makeRequest({ hostname, path, method, headers }, body)
+
+    if (response.status === 429 && attempt < maxRetries) {
+      const retryAfter = parseInt(
+        response.headers && response.headers['retry-after'],
+        10
+      ) || 60
+      warn(`[Ozon] Rate limited (429), retrying after ${retryAfter}s (attempt ${attempt + 1}/${maxRetries})`)
+      await new Promise(r => setTimeout(r, retryAfter * 1000))
+      continue
+    }
+
+    return response
+  }
+
+  throw new Error('Ozon API: max retries exceeded (429)')
+}
+
+/**
+ * Fetch returns list from Ozon Seller API
+ * Endpoint: POST /v1/returns/list
+ * Cursor-based pagination via last_id
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {number} [daysBack=120] - How many days back to search for returns
+ */
+async function fetchOzonReturnsList(clientId, apiKey, daysBack = 120) {
+  const returns = []
+  const now = new Date()
+  const from = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000)
+
+  const pad = n => String(n).padStart(2, '0')
+  const timeFrom = `${from.getUTCFullYear()}-${pad(from.getUTCMonth() + 1)}-${pad(from.getUTCDate())}T00:00:00Z`
+  const timeTo = `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}T23:59:59Z`
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Client-Id': clientId,
+    'Api-Key': apiKey
+  }
+
+  info(`[Ozon] Fetching returns from ${timeFrom} to ${timeTo}...`)
+
+  let lastId = 0
+  let hasNext = true
+
+  try {
+    while (hasNext) {
+      const body = JSON.stringify({
+        filter: {
+          logistic_return_date: {
+            time_from: timeFrom,
+            time_to: timeTo
+          }
+        },
+        limit: 500,
+        last_id: lastId
+      })
+
+      const response = await ozonRequestWithRetry(
+        'api-seller.ozon.ru',
+        '/v1/returns/list',
+        'POST',
+        headers,
+        body
+      )
+
+      if (response.status !== 200) {
+        const snippet = typeof response.body === 'object'
+          ? JSON.stringify(response.body).substring(0, 300)
+          : String(response.body).substring(0, 300)
+        throw new Error(`Ozon Returns List API: HTTP ${response.status} — ${snippet}`)
+      }
+
+      const items = response.body?.returns || []
+      for (const ret of items) {
+        returns.push({
+          id: ret.id,
+          posting_number: ret.posting_number || '',
+          order_id: ret.order_id,
+          order_number: ret.order_number || '',
+          return_reason_name: ret.return_reason_name || '',
+          type: ret.type || '',
+          schema: ret.schema || '',
+          barcode: (ret.logistic && ret.logistic.barcode) || '',
+          offer_id: (ret.product && ret.product.offer_id) || '',
+          product_name: (ret.product && ret.product.name) || '',
+          product_price: (ret.product && ret.product.price && ret.product.price.price) || 0,
+          status_display: (ret.visual && ret.visual.status && ret.visual.status.display_name) || '',
+          status_sys: (ret.visual && ret.visual.status && ret.visual.status.sys_name) || '',
+          return_date: (ret.logistic && ret.logistic.return_date) || ''
+        })
+      }
+
+      hasNext = response.body && response.body.has_next === true && items.length > 0
+      if (hasNext && items.length > 0) {
+        lastId = items[items.length - 1].id
+        await new Promise(r => setTimeout(r, 1000))
+      } else {
+        hasNext = false
+      }
+    }
+
+    success(`[Ozon] Fetched ${returns.length} returns (daysBack=${daysBack})`)
+    return returns
+  } catch (e) {
+    error(`[Ozon] fetchOzonReturnsList error: ${e.message}`)
+    throw e
+  }
+}
+
+/**
+ * Fetch FBS postings list from Ozon Seller API
+ * Endpoint: POST /v3/posting/fbs/list
+ * Offset-based pagination
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {number} [daysBack=120] - How many days back to search
+ */
+async function fetchOzonPostingsList(clientId, apiKey, daysBack = 120) {
+  const postings = []
+  const now = new Date()
+  const from = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000)
+
+  const pad = n => String(n).padStart(2, '0')
+  const since = `${from.getUTCFullYear()}-${pad(from.getUTCMonth() + 1)}-${pad(from.getUTCDate())}T00:00:00.000Z`
+  const to = `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}T23:59:59.000Z`
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Client-Id': clientId,
+    'Api-Key': apiKey
+  }
+
+  let offset = 0
+  const limit = 1000
+  let hasNext = true
+
+  try {
+    while (hasNext) {
+      const body = JSON.stringify({
+        filter: { since, to },
+        dir: 'ASC',
+        offset,
+        limit,
+        with: {
+          analytics_data: true,
+          barcodes: true,
+          financial_data: true,
+          translit: true
+        }
+      })
+
+      const response = await ozonRequestWithRetry(
+        'api-seller.ozon.ru',
+        '/v3/posting/fbs/list',
+        'POST',
+        headers,
+        body
+      )
+
+      if (response.status !== 200) {
+        const snippet = typeof response.body === 'object'
+          ? JSON.stringify(response.body).substring(0, 300)
+          : String(response.body).substring(0, 300)
+        throw new Error(`Ozon Postings List API: HTTP ${response.status} — ${snippet}`)
+      }
+
+      const items = response.body && response.body.result && response.body.result.postings
+        ? response.body.result.postings
+        : []
+      for (const post of items) {
+        const firstProduct = post.products && post.products.length > 0 ? post.products[0] : null
+        postings.push({
+          posting_number: post.posting_number || '',
+          order_id: post.order_id,
+          status: post.status || '',
+          products: (post.products || []).map(p => ({
+            offer_id: p.offer_id || '',
+            name: p.name || '',
+            price: p.price || '0',
+            sku: p.sku,
+            quantity: p.quantity || 0
+          })),
+          shipment_date: post.shipment_date || '',
+          delivering_date: post.delivering_date || '',
+          price: firstProduct ? parseFloat(firstProduct.price) || 0 : 0
+        })
+      }
+
+      hasNext = response.body && response.body.result && response.body.result.has_next === true && items.length >= limit
+      if (hasNext) {
+        offset += limit
+        await new Promise(r => setTimeout(r, 1000))
+      } else {
+        hasNext = false
+      }
+    }
+
+    success(`[Ozon] Fetched ${postings.length} postings (daysBack=${daysBack})`)
+    return postings
+  } catch (e) {
+    error(`[Ozon] fetchOzonPostingsList error: ${e.message}`)
+    throw e
+  }
+}
+
+/**
+ * Get detail of a single FBS posting
+ * Endpoint: POST /v3/posting/fbs/get
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {string} postingNumber - FBS posting number
+ * @returns {Promise<Object|null>} Posting result object or null
+ */
+async function fetchOzonPostingDetail(clientId, apiKey, postingNumber) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Client-Id': clientId,
+    'Api-Key': apiKey
+  }
+
+  try {
+    const body = JSON.stringify({
+      posting_number: postingNumber,
+      with: {
+        analytics_data: true,
+        financial_data: true
+      }
+    })
+
+    const response = await ozonRequestWithRetry(
+      'api-seller.ozon.ru',
+      '/v3/posting/fbs/get',
+      'POST',
+      headers,
+      body
+    )
+
+    if (response.status !== 200) {
+      const snippet = typeof response.body === 'object'
+        ? JSON.stringify(response.body).substring(0, 300)
+        : String(response.body).substring(0, 300)
+      throw new Error(`Ozon Posting Detail API: HTTP ${response.status} — ${snippet}`)
+    }
+
+    if (!response.body || !response.body.result) return null
+    return response.body.result
+  } catch (e) {
+    error(`[Ozon] fetchOzonPostingDetail error: ${e.message}`)
+    return null
+  }
+}
+
+/**
+ * Search for a return by its barcode
+ * Endpoint: POST /v1/returns/list with filter.barcode
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {string} barcode - Return barcode (e.g. "ii5275210303")
+ * @returns {Promise<Object|null>} Matching return in simplified format, or null
+ */
+async function fetchOzonReturnByBarcode(clientId, apiKey, barcode) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Client-Id': clientId,
+    'Api-Key': apiKey
+  }
+
+  try {
+    const body = JSON.stringify({
+      filter: { barcode },
+      limit: 10,
+      last_id: 0
+    })
+
+    const response = await ozonRequestWithRetry(
+      'api-seller.ozon.ru',
+      '/v1/returns/list',
+      'POST',
+      headers,
+      body
+    )
+
+    if (response.status !== 200) {
+      const snippet = typeof response.body === 'object'
+        ? JSON.stringify(response.body).substring(0, 300)
+        : String(response.body).substring(0, 300)
+      throw new Error(`Ozon Return By Barcode API: HTTP ${response.status} — ${snippet}`)
+    }
+
+    const items = response.body && response.body.returns ? response.body.returns : []
+    if (items.length === 0) return null
+
+    const ret = items[0]
+    return {
+      id: ret.id,
+      posting_number: ret.posting_number || '',
+      order_id: ret.order_id,
+      order_number: ret.order_number || '',
+      return_reason_name: ret.return_reason_name || '',
+      type: ret.type || '',
+      schema: ret.schema || '',
+      barcode: (ret.logistic && ret.logistic.barcode) || '',
+      offer_id: (ret.product && ret.product.offer_id) || '',
+      product_name: (ret.product && ret.product.name) || '',
+      product_price: (ret.product && ret.product.price && ret.product.price.price) || 0,
+      status_display: (ret.visual && ret.visual.status && ret.visual.status.display_name) || '',
+      status_sys: (ret.visual && ret.visual.status && ret.visual.status.sys_name) || '',
+      return_date: (ret.logistic && ret.logistic.return_date) || ''
+    }
+  } catch (e) {
+    error(`[Ozon] fetchOzonReturnByBarcode error: ${e.message}`)
+    return null
+  }
+}
+
 module.exports = {
+  makeRequest,
   fetchWBData,
   fetchWBPrice,
+  fetchWBProductFull,
   fetchOzonData,
+  fetchOzonProductFull,
   fetchOzonDescription,
   fetchOzonAttributes,
   fetchOzonCategoryAttributes,
@@ -1024,5 +1520,9 @@ module.exports = {
   syncImageToWB,
   syncImageToOzon,
   fetchWBOrderBySticker,
-  fetchWBOrderIdBySrid
+  fetchWBOrderIdBySrid,
+  fetchOzonReturnsList,
+  fetchOzonPostingsList,
+  fetchOzonPostingDetail,
+  fetchOzonReturnByBarcode
 }

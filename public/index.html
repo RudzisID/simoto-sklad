@@ -4,14 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SiMOTO</title>
-    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="images/simoto/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <!-- Common Header -->
     <div class="app-header">
       <div class="header-left">
-        <img src="logo-line.svg" alt="SiMOTO" class="header-logo" />
+        <img src="images/simoto/logo-line.svg" alt="SiMOTO" class="header-logo" />
         <button class="btn btn-accent token-btn">Токены</button>
       </div>
       <div class="header-center">
@@ -54,14 +54,18 @@
           <!-- Input block -->
           <div class="input-panel">
             <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
-            <div class="button-row">
-              <button class="btn btn-accent btn-lg" onclick="checkNumbers()">Поиск МС</button>
-              <button class="btn btn-wb btn-lg" onclick="wbReturnSearch()">Возврат WB</button>
-              <button class="btn btn-ozon btn-lg" onclick="ozonReturnSearch()">Возврат Ozon</button>
-              <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display: none">
-                ✕
-              </button>
-            </div>
+<div class="button-grid">
+   <button class="btn btn-ms" onclick="checkNumbers()"><img class="btn-icon" src="images/marketplace/ms-favicon.svg"> Поиск</button>
+   <div class="button-row">
+     <button class="btn btn-wb" onclick="refreshWBSales()"><img class="btn-icon" src="images/marketplace/wb-favicon.svg"> Обновить</button>
+     <button class="btn btn-ozon" onclick="refreshOzonReturns()"><img class="btn-icon" src="images/marketplace/ozon-favicon.svg"> Обновить</button>
+   </div>
+   <div class="button-row">
+     <button class="btn btn-wb" onclick="wbReturnSearch()"><img class="btn-icon" src="images/marketplace/wb-favicon.svg"> Поиск</button>
+     <button class="btn btn-ozon" onclick="ozonReturnSearch()"><img class="btn-icon" src="images/marketplace/ozon-favicon.svg"> Поиск</button>
+   </div>
+   <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display:none">✕</button>
+ </div>
           </div>
         </div>
 
@@ -87,15 +91,51 @@
                     <th class="sortable" onclick="sortTable('paid')">Платёж</th>
                     <th class="sortable" onclick="sortTable('returnSum')">Возврат</th>
                     <th class="sortable" onclick="sortTable('statusName')">Статус</th>
+                    <th class="sortable" onclick="sortTable('returnType')">Тип</th>
+                    <th class="sortable" onclick="sortTable('reason')">Причина</th>
+                    <th class="sortable date-header" onclick="toggleDateFilter()">
+                      Дата
+                      <span id="dateFilterBadge" class="filter-badge" style="display:none"></span>
+                    </th>
                     <th>Кнопки</th>
                   </tr>
                 </thead>
                 <tbody id="tableBody">
                   <tr>
-                    <td colspan="9" class="empty">Введите номера и нажмите "Проверить"</td>
+                    <td colspan="12" class="empty">Введите номера и нажмите "Проверить"</td>
                   </tr>
                 </tbody>
               </table>
+<div id="dateFilterOverlay" class="date-filter-overlay" style="display:none"></div>
+<div id="dateFilterPopup" class="date-filter-popup" style="display:none">
+  <div class="df-range">
+    <div class="drp-row">
+      <div class="drp-field">
+        <label class="df-label">С:</label>
+        <input type="text" id="dfFromDisplay" class="df-input" readonly placeholder="дд.мм.гггг">
+      </div>
+      <div class="drp-field">
+        <label class="df-label">По:</label>
+        <input type="text" id="dfToDisplay" class="df-input" readonly placeholder="дд.мм.гггг">
+      </div>
+    </div>
+    <div id="drpCalendar" class="drp-calendar">
+      <div class="drp-header">
+        <button class="drp-nav" onclick="drpPrevMonth()">‹</button>
+        <span class="drp-title" id="drpTitle">Май 2026</span>
+        <button class="drp-nav" onclick="drpNextMonth()">›</button>
+      </div>
+      <div class="drp-weekdays">
+        <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+      </div>
+      <div class="drp-days" id="drpDays"></div>
+    </div>
+  </div>
+  <div class="df-actions">
+    <button class="btn btn-cancel" onclick="resetDateFilter()">Сбросить</button>
+    <button class="btn btn-accent" onclick="applyDateFilter()">Применить</button>
+  </div>
+</div>
             </div>
           </div>
         </div>
@@ -154,25 +194,25 @@
         <div class="modal-body">
           <p>Введите токены для сервисов:</p>
           <div class="token-field">
-            <label>МойСклад:</label>
-            <input type="text" id="msTokenInput" placeholder="Токен МойСклад" />
+            <label class="df-label">МойСклад:</label>
+            <input type="text" id="msTokenInput" class="df-input" placeholder="Токен МойСклад" />
           </div>
           <div class="token-field">
-            <label>Wildberries:</label>
-            <input type="text" id="wbTokenInput" placeholder="Токен WB (Authorization)" />
+            <label class="df-label">Wildberries:</label>
+            <input type="text" id="wbTokenInput" class="df-input" placeholder="Токен WB (Authorization)" />
           </div>
           <div class="token-field">
-            <label>Ozon Client-Id:</label>
-            <input type="text" id="ozonClientIdInput" placeholder="Client-Id от Ozon" />
+            <label class="df-label">Ozon Client-Id:</label>
+            <input type="text" id="ozonClientIdInput" class="df-input" placeholder="Client-Id от Ozon" />
           </div>
           <div class="token-field">
-            <label>Ozon Api-Key:</label>
-            <input type="text" id="ozonApiKeyInput" placeholder="Api-Key от Ozon" />
+            <label class="df-label">Ozon Api-Key:</label>
+            <input type="text" id="ozonApiKeyInput" class="df-input" placeholder="Api-Key от Ozon" />
           </div>
         </div>
         <div class="modal-footer">
-          <button id="tokenCancel" class="button secondary">Отмена</button>
-          <button id="tokenSave" class="button">Сохранить</button>
+          <button id="tokenCancel" class="btn btn-cancel">Отмена</button>
+          <button id="tokenSave" class="btn btn-accent">Сохранить</button>
         </div>
       </div>
     </div>
@@ -187,8 +227,8 @@
           <p id="confirmMessage"></p>
         </div>
         <div class="modal-footer">
-          <button id="confirmCancel" class="button secondary">Отмена</button>
-          <button id="confirmOk" class="button">ОК</button>
+          <button id="confirmCancel" class="btn btn-cancel">Отмена</button>
+          <button id="confirmOk" class="btn btn-accent">ОК</button>
         </div>
       </div>
     </div>
@@ -201,49 +241,42 @@
         </div>
         <div class="modal-body sticker-modal-body">
           <div class="sticker-field">
-            <label for="stickerCarrier">Служба доставки</label>
-            <select id="stickerCarrier">
-              <option value="">— Выберите —</option>
-              <option value="СДЭК">СДЭК</option>
-              <option value="Почта">Почта</option>
-              <option value="Яндекс">Яндекс</option>
-              <option value="Авито">Авито</option>
-              <option value="__other__">Другое...</option>
-            </select>
-            <input
-              type="text"
-              id="stickerCarrierCustom"
-              class="sticker-carrier-custom"
-              placeholder="Введите службу доставки..."
-              style="display: none"
-            />
+            <label class="df-label" for="stickerCarrier">Служба доставки</label>
+            <input type="text" id="stickerCarrier" class="df-input" list="carrierSuggestions" placeholder="СДЭК, Почта, Яндекс, Авито..." />
+            <datalist id="carrierSuggestions">
+              <option value="СДЭК">
+              <option value="Почта">
+              <option value="Яндекс">
+              <option value="Авито">
+            </datalist>
           </div>
           <div class="sticker-field sticker-checkbox-row">
             <label class="sticker-checkbox">
-              <input type="checkbox" id="stickerAvito" checked />
+              <input type="checkbox" id="stickerAvito" />
               <span class="sticker-checkbox-label">Авито <small>(второе слово)</small></span>
             </label>
           </div>
           <div class="sticker-field">
-            <label for="stickerCode">Код заказа</label>
+            <label class="df-label" for="stickerCode">Код заказа</label>
             <input
               type="text"
               id="stickerCode"
+              class="df-input"
               inputmode="numeric"
               pattern="[0-9]*"
               placeholder="Номер заказа"
             />
           </div>
           <div class="sticker-field">
-            <label for="stickerSize">Размер наклейки</label>
-            <select id="stickerSize">
+            <label class="df-label" for="stickerSize">Размер наклейки</label>
+            <select id="stickerSize" class="df-input">
               <option value="58x40">58 × 40 мм</option>
             </select>
           </div>
         </div>
         <div class="modal-footer">
-          <button id="stickerCancel" class="button secondary">Отмена</button>
-          <button id="stickerCreate" class="button">Создать</button>
+          <button id="stickerCancel" class="btn btn-cancel">Отмена</button>
+          <button id="stickerCreate" class="btn btn-accent">Создать</button>
         </div>
       </div>
     </div>
@@ -315,36 +348,6 @@
 
         // Sticker modal
         const stickerModal = document.getElementById('stickerModal');
-        const stickerSelect = document.getElementById('stickerCarrier');
-        const stickerCustom = document.getElementById('stickerCarrierCustom');
-        const stickerAvito = document.getElementById('stickerAvito');
-
-        function updateStickerAvitoState() {
-          var carrier = stickerSelect.value;
-          if (carrier === '__other__') {
-            carrier = stickerCustom.value.trim();
-          }
-          if (carrier === 'Авито') {
-            stickerAvito.checked = false;
-            stickerAvito.disabled = true;
-          } else {
-            stickerAvito.disabled = false;
-          }
-        }
-
-        // При смене select: показать/скрыть custom input
-        stickerSelect.addEventListener('change', function () {
-          if (stickerSelect.value === '__other__') {
-            stickerCustom.style.display = '';
-            stickerCustom.focus();
-          } else {
-            stickerCustom.style.display = 'none';
-            stickerCustom.value = '';
-          }
-          updateStickerAvitoState();
-        });
-        // При вводе в custom input
-        stickerCustom.addEventListener('input', updateStickerAvitoState);
 
         document.getElementById('stickerCancel').addEventListener('click', function () {
           stickerModal.classList.add('hidden');
@@ -359,6 +362,27 @@
       // Хранит URL картинок, добавленных через drag между маркетами (ещё не отправленных на площадку)
       var _pendingCrossSyncs = { wb: [], ozon: [], ms: [] };
       var _syncedOemCode = '';
+
+      // Global HTML-escaping helper (used by addThumbToRow and renderImageThumbs)
+      function esc(v) {
+        return String(v == null ? '' : v).replace(/"/g, '&quot;');
+      }
+
+      // Collect image URLs from DOM in current order (global — called from push functions)
+      function collectImageUrls(platform) {
+        var imagesRow = document.getElementById(platform + '-images')
+        if (!imagesRow) return []
+        var urls = []
+        var thumbWraps = imagesRow.querySelectorAll('.thumb-wrap:not(.add-new)')
+        thumbWraps.forEach(function(wrap) {
+          var img = wrap.querySelector('.thumb')
+          if (img) {
+            var fullUrl = img.getAttribute('data-full')
+            if (fullUrl) urls.push(fullUrl)
+          }
+        })
+        return urls
+      }
 
       // Copy image URL from one platform's images to another (UI only, no API call)
       function copyImageToPlatform(imageUrl, sourcePlatform, targetPlatform) {
@@ -386,17 +410,17 @@
         var nextIdx = imagesRow.querySelectorAll('.thumb-wrap:not(.add-new)').length;
 
         var wrap = document.createElement('div');
-        wrap.className = 'thumb-wrap';
+        wrap.className = 'thumb-wrap thumb-pending';
         wrap.innerHTML =
           '<div class="thumb-img-container">' +
             '<img class="thumb" src="' + esc(imageUrl) + '" alt="Фото ' + (nextIdx + 1) + '" data-full="' + esc(imageUrl) + '" />' +
           '</div>' +
+          '<span class="thumb-pending-badge">⏳</span>' +
           '<div class="thumb-popup">' +
             '<img src="' + esc(imageUrl) + '" alt="Фото ' + (nextIdx + 1) + '" />' +
           '</div>' +
           '<div class="thumb-actions">' +
             '<button class="thumb-btn download" title="Скачать" data-url="' + esc(imageUrl) + '">⬇</button>' +
-            '<button class="thumb-btn replace" title="Заменить" data-idx="' + nextIdx + '" data-platform="' + platform + '">🔄</button>' +
             '<button class="thumb-btn delete" title="Удалить" data-idx="' + nextIdx + '" data-platform="' + platform + '">✕</button>' +
           '</div>';
 
@@ -411,11 +435,92 @@
             wrap.classList.remove('popup-bottom');
           }
         });
+
+        // Make the new thumbnail draggable (for reordering and cross-platform copy)
+        wrap.draggable = true;
+
+        wrap.addEventListener('dragstart', function(e) {
+          var srcPlatform = imagesRow.id.replace('-images', '');
+          var imgEl = this.querySelector('.thumb');
+          var imgUrl = imgEl ? imgEl.getAttribute('data-full') : '';
+          this.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', JSON.stringify({
+            platform: srcPlatform,
+            url: imgUrl
+          }));
+          document.querySelectorAll('.images-row').forEach(function(r) {
+            r.classList.add('drag-active');
+            if (r.id === imagesRow.id) r.classList.add('drag-source');
+          });
+        });
+
+        wrap.addEventListener('dragend', function(e) {
+          this.classList.remove('dragging');
+          document.querySelectorAll('.images-row').forEach(function(r) {
+            r.classList.remove('drag-active', 'drag-source');
+          });
+          document.querySelectorAll('.thumb-wrap').forEach(function(w) {
+            w.classList.remove('drag-over');
+          });
+        });
+
+        wrap.addEventListener('dragover', function(e) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        });
+
+        wrap.addEventListener('dragenter', function(e) {
+          e.preventDefault();
+          if (!this.classList.contains('dragging')) {
+            this.classList.add('drag-over');
+          }
+        });
+
+        wrap.addEventListener('dragleave', function(e) {
+          if (!this.contains(e.relatedTarget)) {
+            this.classList.remove('drag-over');
+          }
+        });
+
+        wrap.addEventListener('drop', function(e) {
+          e.preventDefault();
+          this.classList.remove('drag-over');
+
+          var dragging = imagesRow.querySelector('.thumb-wrap.dragging');
+          if (!dragging || dragging === this) return;
+
+          var allWraps = Array.from(imagesRow.querySelectorAll('.thumb-wrap:not(.add-new)'));
+          var fromIdx = allWraps.indexOf(dragging);
+          var toIdx = allWraps.indexOf(this);
+
+          if (fromIdx === -1 || toIdx === -1) return;
+
+          if (fromIdx < toIdx) {
+            this.parentNode.insertBefore(dragging, this.nextSibling);
+          } else {
+            this.parentNode.insertBefore(dragging, this);
+          }
+
+          var updatedWraps = imagesRow.querySelectorAll('.thumb-wrap:not(.add-new)');
+          updatedWraps.forEach(function(w, idx) {
+            w.querySelectorAll('.thumb-btn[data-idx]').forEach(function(btn) {
+              btn.dataset.idx = idx;
+            });
+          });
+        });
       }
 
       // Market search logic
-      async function searchProductByOEM() {
-        const oem = document.getElementById('oemSearchInput').value.trim();
+      async function searchProductByOEM(oemCode) {
+        let oem;
+        if (oemCode) {
+          oem = oemCode.trim();
+          document.getElementById('oemSearchInput').value = oem;
+          switchTab('market');
+        } else {
+          oem = document.getElementById('oemSearchInput').value.trim();
+        }
         if (!oem) return;
 
         const resultsDiv = document.getElementById('marketResults');
@@ -457,30 +562,6 @@
             _syncedOemCode = oem;
           }
 
-          // Merge pending cross-platform image syncs into server data
-          if (data.wildberries && Array.isArray(data.wildberries.images) && _pendingCrossSyncs.wb.length > 0) {
-            _pendingCrossSyncs.wb.forEach(function(url) {
-              var exists = data.wildberries.images.some(function(img) {
-                var imgUrl = (typeof img === 'string') ? img : (img.url || img.big || '');
-                return imgUrl === url;
-              });
-              if (!exists) {
-                data.wildberries.images.push({ url: url, c246x328: url, c516x688: url });
-              }
-            });
-          }
-          if (data.ozon && Array.isArray(data.ozon.images) && _pendingCrossSyncs.ozon.length > 0) {
-            _pendingCrossSyncs.ozon.forEach(function(url) {
-              var exists = data.ozon.images.some(function(img) {
-                var imgUrl = (typeof img === 'string') ? img : (img.url || '');
-                return imgUrl === url;
-              });
-              if (!exists) {
-                data.ozon.images.push(url);
-              }
-            });
-          }
-
           // Store for sync buttons
           window._wbData = data.wildberries || null;
           window._ozonData = data.ozon || null;
@@ -491,86 +572,82 @@
           var wb = data.wildberries;
           var html = '<div class="market-grid">';
 
-          // ── Header row: название + цена (3 колонки) ──
-          html += '<div class="market-row header-row">';
+           // ── Header row: 3 колонки ──
+           html += '<div class="market-row header-row">';
 
-          // MS header
-          html += '<div class="ms-cell">';
-          if (ms) {
-            html += '<h3>МойСклад</h3>';
-            html +=
-              '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">Код: ' +
-              ms.code +
-              (ms.article ? ' | Арт: ' + ms.article : '') +
-              '</p>';
-            html += '<div class="edit-fields" style="margin:0;">';
-            html +=
-              '<label>Цена (руб): <input type="number" id="ms-price" value="' +
-              (ms.price || 0) +
-              '" step="0.01" class="edit-input"></label>';
-            html +=
-              '<label>Название: <input type="text" id="ms-title" value="' +
-              (ms.name || '').replace(/"/g, '&quot;') +
-              '" class="edit-input full-width"></label>';
-            html += '</div>';
-          } else {
-            html += '<h3>МойСклад</h3><p class="not-found">Товар не найден</p>';
-          }
-          html += '</div>';
+           // MS header
+           html += '<div class="ms-cell">';
+           if (ms) {
+             html += '<h3>МойСклад</h3>';
+             html +=
+               '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">Код: ' +
+               ms.code +
+               (ms.article ? ' | Арт: ' + ms.article : '') +
+               '</p>';
+           } else {
+             html += '<h3>МойСклад</h3><p class="not-found">Товар не найден</p>';
+           }
+           html += '</div>';
 
-          // Ozon header
-          html += '<div class="ozon-cell">';
-          if (ozon && !ozon.error) {
-            html += '<h3>Ozon</h3>';
-            html +=
-              '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">offer_id: ' +
-              ozon.code +
-              (ozon.product_id ? ' | ID: ' + ozon.product_id : '') +
-              '</p>';
-            html += '<div class="edit-fields" style="margin:0;">';
-            html +=
-              '<label>Цена (руб): <input type="number" id="ozon-price" value="' +
-              (ozon.price || 0) +
-              '" step="0.01" class="edit-input"></label>';
-            html +=
-              '<label>Название: <input type="text" id="ozon-title" value="' +
-              (ozon.title || '').replace(/"/g, '&quot;') +
-              '" class="edit-input full-width"></label>';
-            html += '</div>';
-          } else if (ozon && ozon.error) {
-            html += '<h3>Ozon</h3><p class="error">' + ozon.error + '</p>';
-          } else {
-            html += '<h3>Ozon</h3><p class="not-found">Товар не найден</p>';
-          }
-          html += '</div>';
+           // Ozon header
+           html += '<div class="ozon-cell">';
+           if (ozon && !ozon.error) {
+             html += '<h3>Ozon</h3>';
+             html +=
+               '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">offer_id: ' +
+               ozon.code +
+               (ozon.product_id ? ' | ID: ' + ozon.product_id : '') +
+               '</p>';
+           } else if (ozon && ozon.error) {
+             html += '<h3>Ozon</h3><p class="error">' + ozon.error + '</p>';
+           } else {
+             html += '<h3>Ozon</h3><p class="not-found">Товар не найден</p>';
+           }
+           html += '</div>';
 
-          // WB header
-          html += '<div class="wb-cell">';
-          if (wb && !wb.error) {
-            html += '<h3>Wildberries</h3>';
-            html +=
-              '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">vendorCode: ' +
-              (wb.vendorCode || wb.code) +
-              (wb.brand ? ' | ' + wb.brand : '') +
-              '</p>';
-            html += '<div class="edit-fields" style="margin:0;">';
-            html +=
-              '<label>Цена (руб): <input type="number" id="wb-price" value="' +
-              (wb.price || 0) +
-              '" step="0.01" class="edit-input"></label>';
-            html +=
-              '<label>Название: <input type="text" id="wb-title" value="' +
-              (wb.title || '').replace(/"/g, '&quot;') +
-              '" class="edit-input full-width"></label>';
-            html += '</div>';
-          } else if (wb && wb.error) {
-            html += '<h3>Wildberries</h3><p class="error">' + wb.error + '</p>';
-          } else {
-            html += '<h3>Wildberries</h3><p class="not-found">Товар не найден</p>';
-          }
-          html += '</div>';
+           // WB header
+           html += '<div class="wb-cell">';
+           if (wb && !wb.error) {
+             html += '<h3>Wildberries</h3>';
+             html +=
+               '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">vendorCode: ' +
+               (wb.vendorCode || wb.code) +
+               (wb.brand ? ' | ' + wb.brand : '') +
+               '</p>';
+           } else if (wb && wb.error) {
+             html += '<h3>Wildberries</h3><p class="error">' + wb.error + '</p>';
+           } else {
+             html += '<h3>Wildberries</h3><p class="not-found">Товар не найден</p>';
+           }
+           html += '</div>';
 
-          html += '</div>'; // end header-row
+           html += '</div>'; // end header-row
+
+           // ── Title row: названия в колонках на одном уровне ──
+           var wbTitle = (wb && !wb.error) ? (wb.title || '') : '';
+           var ozonTitle = (ozon && !ozon.error) ? (ozon.title || '') : '';
+           var titlesMatch = (wbTitle.trim().toLowerCase() === ozonTitle.trim().toLowerCase()) && wbTitle !== '' && ozonTitle !== '';
+           var hasWb = !!(wb && !wb.error);
+           var hasOzon = !!(ozon && !ozon.error);
+
+           html += '<div class="market-row title-row">';
+           // MS — пустая ячейка
+           html += '<div class="ms-cell title-cell"></div>';
+           // Ozon title
+           html += '<div class="ozon-cell title-cell">';
+           if (hasOzon) {
+             html += '<h4 class="field-label">Название</h4>';
+             html += '<input type="text" class="platform-title-input ozon-title-input" id="ozon-title" value="' + ozonTitle.replace(/"/g, '&quot;') + '" />';
+           }
+           html += '</div>';
+           // WB title
+           html += '<div class="wb-cell title-cell">';
+           if (hasWb) {
+             html += '<h4 class="field-label">Название</h4>';
+             html += '<input type="text" class="platform-title-input wb-title-input" id="wb-title" value="' + wbTitle.replace(/"/g, '&quot;') + '" />';
+           }
+           html += '</div>';
+           html += '</div>'; // end title-row
 
           // ── Description row (3 колонки) ──
           html += '<div class="market-row desc-row">';
@@ -638,19 +715,127 @@
 
           // ── Aligned Characteristics / Attributes ──
           // Собираем атрибуты из всех систем и выравниваем по строкам
-          var aliasCanonical = {
-            'Страна-изготовитель': 'Страна производства',
-            'Количество, штук': 'Количество предметов в упаковке (шт.)'
-          };
-          var ozonSkipNames = ['Rich-контент JSON', 'Аннотация', 'Код продавца'];
+           var aliasCanonical = {
+             // Основная информация
+             'Бренд': 'Бренд',
+             'Модель': 'Модель',
+             'Тип': 'Тип товара',
+              'Назначение': 'Назначение',
+              'Артикул': 'Артикул',
+              'Артикул производителя': 'Артикул производителя',
+              'Артикул поставщика': 'Артикул производителя',
+              'Пол': 'Пол',
+             'Возраст': 'Возраст',
+             'Возрастные ограничения': 'Возраст',
+             
+             // Физические параметры
+             'Вес': 'Вес',
+             'Длина': 'Длина',
+             'Ширина': 'Ширина',
+             'Высота': 'Высота',
+             'Глубина': 'Глубина',
+             'Диаметр': 'Диаметр',
+              'Объем': 'Объем',
+              'Габариты (Д×Ш×В)': 'Габариты',
+              'Количество': 'Количество',
+              'Количество, штук': 'Количество',
+              'Количество предметов': 'Количество',
+              'Количество предметов в упаковке (шт.)': 'Количество',
+             
+              // Визуальные характеристики
+              'Цвет': 'Цвет',
+              'Материал': 'Материал',
+              'Материал изделия': 'Материал',
+              'Фактура': 'Фактура',
+             'Рисунок': 'Рисунок',
+             'Узор': 'Узор',
+             'Покрытие': 'Покрытие',
+             'Отделка': 'Отделка',
+             
+             // Производство и страна
+             'Страна-изготовитель': 'Страна производства',
+             'Страна производства': 'Страна производства',
+             'Бренд-страна': 'Бренд-страна',
+             
+             // Упаковка и комплектация
+             'Комплектация': 'Комплектация',
+             'Входит в комплект': 'Входит в комплект',
+             'Упаковка': 'Упаковка',
+             'Тип упаковки': 'Тип упаковки',
+             
+              // Особенности и свойства
+              'Особенности': 'Особенности',
+              'Свойства': 'Свойства',
+              'Функции': 'Функции',
+              
+              // Технические характеристики
+             'Мощность': 'Мощность',
+             'Напряжение': 'Напряжение',
+             'Частота': 'Частота',
+             'Температура': 'Температура',
+             'Скорость': 'Скорость',
+             'Пропускная способность': 'Пропускная способность',
+             
+             // Для одежды и обуви
+             'Размер одежды': 'Размер',
+             'Размер обуви': 'Размер',
+             'Размер': 'Размер',
+             'Размерный ряд': 'Размерный ряд',
+             
+             // Для электроники
+             'Тип экрана': 'Тип экрана',
+             'Диагональ экрана': 'Диагональ экрана',
+             'Разрешение': 'Разрешение',
+             'Операционная система': 'Операционная система',
+             'Процессор': 'Процессор',
+             'Объем памяти': 'Объем памяти',
+             'Встроенная память': 'Встроенная память',
+             
+             // Общие
+             'Страна': 'Страна',
+             'Производитель': 'Производитель',
+             'Поставщик': 'Поставщик',
+             'Год выпуска': 'Год выпуска',
+             'Сезон': 'Сезон',
+             'Коллекция': 'Коллекция',
+             'Стиль': 'Стиль',
+             'Ткань': 'Ткань',
+             'Состав': 'Состав',
+             'Материал верха': 'Материал верха',
+             'Материал подкладки': 'Материал подкладки',
+              'Подошва': 'Подошва',
+              'Каблук': 'Каблук',
+              
+              // WB ↔ Ozon маппинги (мототематика)
+              'ОЕМ номер': 'OEM-номер',
+              'OEM-номер': 'OEM-номер',
+              'Партномер (артикул производителя)': 'Артикул производителя',
+              'Совместимость': 'Совместимость',
+              'Альтернативные артикулы товара': 'Альтернативные артикулы',
+              'Вид мототехники': 'Вид мототехники',
+              'Марка мототехники': 'Марка мототехники',
+              'Модель мототехники': 'Модель',
+              'Цвет товара': 'Цвет',
+              'Вес с упаковкой, г': 'Вес',
+              'Вес нетто, г': 'Вес',
+              'Вес брутто, г': 'Вес',
+              'Минимальное количество оптом': 'Минимальное количество оптом',
+              'Код продавца': 'Код продавца',
+              'Диаметр, мм': 'Диаметр',
+              'ТН ВЭД коды ЕАЭС': 'ТН ВЭД',
+              'Ставка НДС': 'Ставка НДС',
+              'Название модели (для объединения в одну карточку)': 'Название модели',
+              'Объединить в похожие товары': 'Похожие товары',
+              '#Хештеги': 'Хештеги',
+              'Страна изготовитель': 'Страна производства',
+              'Страна изделия': 'Страна производства',
+              'Ткань верха': 'Ткань'
+            };
+           var skipNames = ['Rich-контент JSON', 'Аннотация', 'Артикул OZON'];
 
           function getCanonicalName(name) {
             return aliasCanonical[name] || name;
           }
-          function esc(v) {
-            return String(v == null ? '' : v).replace(/"/g, '&quot;');
-          }
-
           // ── Helper: render image thumbnails row ──
           function renderImageThumbs(images, platform) {
             if (!images || images.length === 0) return '';
@@ -680,7 +865,6 @@
               html += '</div>';
               html += '<div class="thumb-actions">';
               html += '<button class="thumb-btn download" title="Скачать" data-url="' + esc(fullUrl) + '">⬇</button>';
-              html += '<button class="thumb-btn replace" title="Заменить" data-idx="' + i + '" data-platform="' + platform + '">🔄</button>';
               html += '<button class="thumb-btn delete" title="Удалить" data-idx="' + i + '" data-platform="' + platform + '">✕</button>';
               html += '</div>';
               html += '</div>';
@@ -690,36 +874,17 @@
             html += '<button class="thumb-btn add" title="Добавить изображение" data-platform="' + platform + '">＋</button>';
             html += '</div>';
             html += '</div>';
-            // Push images-only button
-            if (platform !== 'ms') {
-              html += '<button onclick="pushPlatformImages(\'' + platform + '\')" class="btn btn-sm push-images-btn" style="margin-top:6px;font-size:13px;padding:6px 12px;">📤 Изображения</button>';
-            }
             return html;
           }
 
           // ── Helper: collect image URLs from DOM in current order ──
-          function collectImageUrls(platform) {
-            var imagesRow = document.getElementById(platform + '-images')
-            if (!imagesRow) return []
-            var urls = []
-            var thumbWraps = imagesRow.querySelectorAll('.thumb-wrap:not(.add-new)')
-            thumbWraps.forEach(function(wrap) {
-              var img = wrap.querySelector('.thumb')
-              if (img) {
-                var fullUrl = img.getAttribute('data-full')
-                if (fullUrl) urls.push(fullUrl)
-              }
-            })
-            return urls
-          }
-
           // Build flat lists with canonical names
           function collectAttrs(arr, systemKey, nameField, idField) {
             var list = [];
             (arr || []).forEach(function (a) {
               var name = a.name || '';
               if (!name) return;
-              if (systemKey === 'ozon' && ozonSkipNames.indexOf(name) !== -1) return;
+              if (skipNames.indexOf(name) !== -1) return;
               var val = '';
               if (systemKey === 'ozon') {
                 val = a.values && a.values.length > 0 ? a.values[0].value || '' : '';
@@ -782,84 +947,121 @@
           var ozonLookup = buildLookup(ozonAttrs);
           var wbLookup = buildLookup(wbAttrs);
 
-          // Render aligned rows
-          if (canonicalOrder.length > 0) {
-            html += '<div style="margin-top:8px;">';
-            html +=
-              '<h4 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;">Характеристики</h4>';
-            html += '<div class="aligned-chars">';
-            canonicalOrder.forEach(function (name) {
-              var msA = msLookup[name];
-              var ozA = ozonLookup[name];
-              var wbA = wbLookup[name];
-              html += '<div class="aligned-char-row">';
-              // MS
-              html += '<div class="aligned-char-cell' + (msA ? ' has-val' : ' empty') + '">';
-              if (msA) {
-                html += '<span class="aligned-char-name">' + esc(msA.originalName) + '</span>';
-                html +=
-                  '<textarea class="attr-value ms-attr" data-attr-id="' +
-                  esc(msA.id) +
-                  '" rows="1">' +
-                  esc(msA.value) +
-                  '</textarea>';
-              }
-              html += '</div>';
-              // Ozon
-              html += '<div class="aligned-char-cell' + (ozA ? ' has-val' : ' empty') + '">';
-              if (ozA) {
-                html += '<span class="aligned-char-name">' + esc(ozA.originalName) + '</span>';
-                html +=
-                  '<textarea class="attr-value ozon-attr" data-attr-id="' +
-                  esc(ozA.id) +
-                  '" rows="1">' +
-                  esc(ozA.value) +
-                  '</textarea>';
-              }
-              html += '</div>';
-              // WB
-              html += '<div class="aligned-char-cell' + (wbA ? ' has-val' : ' empty') + '">';
-              if (wbA) {
-                html += '<span class="aligned-char-name">' + esc(wbA.originalName) + '</span>';
-                html +=
-                  '<textarea class="attr-value wb-attr" data-attr-id="' +
-                  esc(wbA.id) +
-                  '" rows="1">' +
-                  esc(wbA.value) +
-                  '</textarea>';
-              }
-              html += '</div>';
-              html += '</div>';
-            });
-            html += '</div>';
-            html += '</div>';
-          } else {
-            html +=
-              '<p style="color:var(--text-muted);font-style:italic;margin-top:12px;">Нет характеристик</p>';
-          }
+           // Group characteristics by category
+            var categoryGroups = {
+              'Идентификация': ['Артикул', 'Артикул производителя', 'OEM-номер', 'Альтернативные артикулы', 'Код продавца'],
+              'Основная информация': ['Бренд', 'Модель', 'Тип', 'Назначение', 'Пол', 'Возраст', 'Вид мототехники', 'Марка мототехники'],
+              'Совместимость': ['Совместимость', 'Похожие товары', 'Название модели'],
+              'Физические параметры': ['Вес', 'Длина', 'Ширина', 'Высота', 'Глубина', 'Диаметр', 'Объем', 'Габариты', 'Количество', 'Минимальное количество оптом'],
+             'Внешний вид': ['Цвет', 'Материал', 'Фактура', 'Рисунок', 'Узор', 'Покрытие', 'Отделка'],
+             'Производство': ['Страна производства', 'Производитель', 'Поставщик', 'Год выпуска', 'Бренд-страна'],
+             'Упаковка и комплектация': ['Комплектация', 'Упаковка', 'Тип упаковки'],
+             'Классификация': ['ТН ВЭД', 'Ставка НДС', 'Сезон', 'Коллекция'],
+             'Особенности': ['Особенности', 'Свойства', 'Функции', 'Хештеги'],
+             'Другое': [] // catch-all
+           };
+           
+           // Function to get category for a canonical name
+           function getCategory(name) {
+             for (var cat in categoryGroups) {
+               if (categoryGroups[cat].indexOf(name) !== -1) {
+                 return cat;
+               }
+             }
+             return 'Другое';
+           }
+           
+           // Group canonical names by category
+           var grouped = {};
+           canonicalOrder.forEach(function(name) {
+             var cat = getCategory(name);
+             if (!grouped[cat]) grouped[cat] = [];
+             grouped[cat].push(name);
+           });
+           
+           // Render grouped characteristics
+           if (canonicalOrder.length > 0) {
+             html += '<div style="margin-top:8px;">';
+             html +=
+               '<h4 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;">Характеристики</h4>';
+             html += '<div class="aligned-chars-grouped">';
+             
+             // Iterate through categories in order
+              var categoryOrder = ['Идентификация', 'Основная информация', 'Совместимость', 'Физические параметры', 'Внешний вид', 'Производство', 'Упаковка и комплектация', 'Классификация', 'Особенности', 'Другое'];
+             categoryOrder.forEach(function(cat) {
+               var names = grouped[cat];
+               if (!names || names.length === 0) return;
+               
+               // Category header
+               html += '<div class="category-header" style="padding:8px 0 4px; border-bottom:1px solid var(--border-light); margin-bottom:6px;">';
+               html += '<span style="font-size:0.8rem; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px;">' + cat + '</span>';
+               html += '</div>';
+               
+               // Characteristics rows for this category
+               names.forEach(function(name) {
+                 var msA = msLookup[name];
+                 var ozA = ozonLookup[name];
+                 var wbA = wbLookup[name];
+                 html += '<div class="aligned-char-row">';
+                 // MS
+                 html += '<div class="aligned-char-cell' + (msA ? ' has-val' : ' empty') + '">';
+                 if (msA) {
+                   html += '<span class="aligned-char-name">' + esc(msA.originalName) + '</span>';
+                   html +=
+                     '<textarea class="attr-value ms-attr" data-attr-id="' +
+                     esc(msA.id) +
+                     '" rows="1">' +
+                     esc(msA.value) +
+                     '</textarea>';
+                 }
+                 html += '</div>';
+                 // Ozon
+                 html += '<div class="aligned-char-cell' + (ozA ? ' has-val' : ' empty') + '">';
+                 if (ozA) {
+                   html += '<span class="aligned-char-name">' + esc(ozA.originalName) + '</span>';
+                   html +=
+                     '<textarea class="attr-value ozon-attr" data-attr-id="' +
+                     esc(ozA.id) +
+                     '" rows="1">' +
+                     esc(ozA.value) +
+                     '</textarea>';
+                 }
+                 html += '</div>';
+                 // WB
+                 html += '<div class="aligned-char-cell' + (wbA ? ' has-val' : ' empty') + '">';
+                 if (wbA) {
+                   html += '<span class="aligned-char-name">' + esc(wbA.originalName) + '</span>';
+                   html +=
+                     '<textarea class="attr-value wb-attr" data-attr-id="' +
+                     esc(wbA.id) +
+                     '" rows="1">' +
+                     esc(wbA.value) +
+                     '</textarea>';
+                 }
+                 html += '</div>';
+                 html += '</div>';
+               });
+             });
+             
+             html += '</div>'; // end aligned-chars-grouped
+             html += '</div>';
+           } else {
+             html +=
+               '<p style="color:var(--text-muted);font-style:italic;margin-top:12px;">Нет характеристик</p>';
+           }
 
-          // ── Push button row (3 колонки) ──
+          // ── Push button row (2 колонки) ──
           html += '<div class="market-row btn-row">';
-
-          // MS push button
-          html += '<div class="ms-cell" style="display:flex;align-items:center;">';
-          if (ms) {
-            html +=
-              '<button onclick="pushToMS(\'' +
-              ms.id +
-              '\')" class="btn btn-ms btn-block push-btn">📤 Отправить в МС</button>';
-          }
-          html += '</div>';
 
           // Ozon push button
           html += '<div class="ozon-cell" style="display:flex;align-items:center;">';
           if (ozon && !ozon.error) {
             html +=
-              '<button onclick="pushToOzon(\'' +
+'<button onclick="pushToOzon(\'' +
               (ozon.code || '') +
               "', " +
               (ozon.product_id || 0) +
-              ')" class="btn btn-ozon btn-block push-btn">📤 Отправить в Ozon</button>';
+              ')" class="btn btn-ozon btn-block push-btn"><img class="btn-icon" src="images/marketplace/ozon-favicon.svg"> 💾 Сохранить</button>';
           }
           html += '</div>';
 
@@ -867,9 +1069,9 @@
           html += '<div class="wb-cell" style="display:flex;align-items:center;">';
           if (wb && !wb.error) {
             html +=
-              '<button onclick="pushToWB(\'' +
-              (wb.vendorCode || wb.code || '') +
-              '\')" class="btn btn-wb btn-block push-btn">📤 Отправить в WB</button>';
+'<button onclick="pushToWB(\'' +
+               (wb.vendorCode || wb.code || '') +
+               '\')" class="btn btn-wb btn-block push-btn"><img class="btn-icon" src="images/marketplace/wb-favicon.svg"> 💾 Сохранить</button>';
           }
           html += '</div>';
 
@@ -938,6 +1140,25 @@
             });
           });
 
+          // Delete image on ✕ click — remove from DOM + update data-idx
+          resultsDiv.querySelectorAll('.thumb-btn.delete').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+              e.stopPropagation();
+              var wrap = this.closest('.thumb-wrap');
+              if (!wrap) return;
+              var row = wrap.closest('.images-row');
+              wrap.remove();
+              // Update data-idx on remaining wraps
+              if (row) {
+                row.querySelectorAll('.thumb-wrap:not(.add-new)').forEach(function(w, idx) {
+                  w.querySelectorAll('.thumb-btn[data-idx]').forEach(function(b) {
+                    b.dataset.idx = idx;
+                  });
+                });
+              }
+            });
+          });
+
           // Drag & drop sorting for thumbnails
           var imagesRows = resultsDiv.querySelectorAll('.images-row');
           imagesRows.forEach(function(row) {
@@ -946,12 +1167,12 @@
               wrap.draggable = true;
               
               wrap.addEventListener('dragstart', function(e) {
-                this.classList.add('dragging');
-                e.dataTransfer.effectAllowed = 'move';
-                // Store source platform and image URL for cross-platform drag
                 var srcPlatform = row.id.replace('-images', '');
                 var imgEl = this.querySelector('.thumb');
                 var imgUrl = imgEl ? imgEl.getAttribute('data-full') : '';
+                this.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                // Store source platform and image URL for cross-platform drag
                 e.dataTransfer.setData('text/plain', JSON.stringify({
                   platform: srcPlatform,
                   url: imgUrl
@@ -1092,52 +1313,23 @@
               }
             });
           });
-          
-          // ── File drag & drop: replace image on specific thumb-wrap ──
-          resultsDiv.querySelectorAll('.thumb-wrap:not(.add-new)').forEach(function(wrap) {
-            wrap.addEventListener('dragover', function(e) {
-              e.preventDefault();
-              e.stopPropagation();
-            });
-            
-            wrap.addEventListener('drop', function(e) {
-              e.preventDefault();
-              e.stopPropagation();
-              
-              var files = e.dataTransfer.files;
-              if (!files || files.length === 0) return;
-              
-              var file = files[0];
-              if (!file.type.startsWith('image/')) return;
-              
-              // Find platform and idx from the thumb buttons
-              var anyBtn = this.querySelector('.thumb-btn[data-platform]');
-              var platform = anyBtn ? anyBtn.dataset.platform : '';
-              var idx = anyBtn ? anyBtn.dataset.idx : null;
-              
-              if (!platform) return;
-              
-              uploadImage(file, platform, idx, function(err, result) {
-                if (err) {
-                  console.error('Upload+replace failed:', err);
-                  return;
-                }
-                // Refresh search to show replaced image
-                searchProductByOEM();
-              });
-            });
-          });
 
           // ── Cross-platform drag & drop: add image to + button ──
           resultsDiv.querySelectorAll('.thumb-wrap.add-new').forEach(function(addWrap) {
             addWrap.addEventListener('dragover', function(e) {
               e.preventDefault();
-              e.stopPropagation();
             });
 
             addWrap.addEventListener('dragenter', function(e) {
               e.preventDefault();
-              e.stopPropagation();
+              this.classList.add('drag-over');
+            });
+
+            addWrap.addEventListener('dragleave', function(e) {
+              e.preventDefault();
+              if (!this.contains(e.relatedTarget)) {
+                this.classList.remove('drag-over');
+              }
             });
 
             addWrap.addEventListener('drop', function(e) {
@@ -1180,11 +1372,12 @@
       }
 
       // Push updated data to MoySklad
+      // @rudiment — функция существует, но кнопка в UI не отрисована (намеренно)
       async function pushToMS(productId) {
         if (!productId) return;
 
-        const price = parseFloat(document.getElementById('ms-price').value) || 0;
-        const title = document.getElementById('ms-title').value.trim();
+        const titleEl = document.getElementById('unified-title') || document.getElementById('ms-unified-title');
+        const title = titleEl ? titleEl.value.trim() : '';
 
         // Collect attributes
         var msAttrInputs = document.querySelectorAll('.ms-attr');
@@ -1199,7 +1392,7 @@
         const resultsDiv = document.getElementById('marketResults');
         const statusDiv = document.createElement('div');
         statusDiv.className = 'search-status';
-        statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в МойСклад...';
+        statusDiv.innerHTML = '<span class="search-spinner"></span> Сохранение в МойСклад...';
         resultsDiv.prepend(statusDiv);
 
         try {
@@ -1214,7 +1407,6 @@
             },
             body: JSON.stringify({
               productId: productId,
-              price: price,
               title: title,
               description: msDescription,
               attributes: msAttributes
@@ -1226,7 +1418,7 @@
           if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
 
           statusDiv.className = 'search-status success';
-          statusDiv.innerHTML = `✅ Данные успешно отправлены в МойСклад`;
+          statusDiv.innerHTML = `✅ Данные успешно сохранены в МойСклад`;
 
           // Refresh search after 2 seconds
           setTimeout(() => searchProductByOEM(), 2000);
@@ -1237,11 +1429,11 @@
       }
 
       // Push updated data to Wildberries
-      async function pushToWB(vendorCode) {
-        if (!vendorCode) return;
+       async function pushToWB(vendorCode) {
+         if (!vendorCode) return;
 
-        const price = parseFloat(document.getElementById('wb-price').value) || 0;
-        const title = document.getElementById('wb-title').value.trim();
+         const titleEl = document.getElementById('wb-title');
+         const title = titleEl ? titleEl.value.trim() : '';
 
         // Collect characteristics
         var wbAttrInputs = document.querySelectorAll('.wb-attr');
@@ -1259,7 +1451,7 @@
         const resultsDiv = document.getElementById('marketResults');
         const statusDiv = document.createElement('div');
         statusDiv.className = 'search-status';
-        statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в WB...';
+        statusDiv.innerHTML = '<span class="search-spinner"></span> Сохранение в WB...';
         resultsDiv.prepend(statusDiv);
 
         try {
@@ -1283,7 +1475,6 @@
             },
             body: JSON.stringify({
               vendorCode: vendorCode,
-              price: price,
               title: title,
               description: wbDescription,
               characteristics: wbCharacteristics,
@@ -1296,16 +1487,24 @@
           if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
 
           statusDiv.className = 'search-status success';
-          var wbMsg = `✅ Данные успешно отправлены в WB для ${vendorCode}`;
+          var wbMsg = `✅ Данные успешно сохранены в WB для ${vendorCode}`;
           if (result.mediaStatus === 'error') {
             wbMsg += `<br><span style="color:#e67e22;">⚠️ Изображения: ${result.mediaMessage || 'ошибка загрузки'}</span>`;
           } else if (result.mediaStatus === 'skipped') {
             wbMsg += `<br><span style="color:#999;">ℹ️ Изображения: нет для отправки</span>`;
+          } else if (result.mediaStatus === 'ok') {
+            // Remove pending markers from DOM — images were pushed successfully
+            var wbRow = document.getElementById('wb-images');
+            if (wbRow) {
+              wbRow.querySelectorAll('.thumb-wrap.thumb-pending').forEach(function(w) {
+                w.classList.remove('thumb-pending');
+                var badge = w.querySelector('.thumb-pending-badge');
+                if (badge) badge.remove();
+              });
+            }
+            _pendingCrossSyncs.wb = [];
           }
           statusDiv.innerHTML = wbMsg;
-
-          // Clear pending cross-syncs — next refresh shows real state
-          _pendingCrossSyncs.wb = [];
         } catch (error) {
           statusDiv.className = 'search-status error';
           statusDiv.innerHTML = `❌ Ошибка отправки в WB: ${error.message}`;
@@ -1313,11 +1512,11 @@
       }
 
       // Push updated data to Ozon
-      async function pushToOzon(offerId, productId) {
-        if (!offerId && !productId) return;
+       async function pushToOzon(offerId, productId) {
+         if (!offerId && !productId) return;
 
-        const price = parseFloat(document.getElementById('ozon-price').value) || 0;
-        const title = document.getElementById('ozon-title').value.trim();
+         const titleEl = document.getElementById('ozon-title');
+         const title = titleEl ? titleEl.value.trim() : '';
 
         // Collect Ozon attributes
         var ozonAttrInputs = document.querySelectorAll('.ozon-attr');
@@ -1338,7 +1537,7 @@
         const resultsDiv = document.getElementById('marketResults');
         const statusDiv = document.createElement('div');
         statusDiv.className = 'search-status';
-        statusDiv.innerHTML = '<span class="search-spinner"></span> Отправка в Ozon...';
+        statusDiv.innerHTML = '<span class="search-spinner"></span> Сохранение в Ozon...';
         resultsDiv.prepend(statusDiv);
 
         try {
@@ -1365,11 +1564,11 @@
             body: JSON.stringify({
               offerId: offerId,
               productId: productId,
-              price: price,
               title: title,
               description: ozonDescription,
               attributes: ozonAttributes,
-              ...(ozonExternalImages.length > 0 && { images: ozonExternalImages })
+              ...(ozonExternalImages.length > 0 && { images: ozonExternalImages }),
+              typeId: (window._ozonData && window._ozonData.type_id) || null
             })
           });
 
@@ -1378,128 +1577,27 @@
           if (!response.ok) throw new Error(result.error || 'Ошибка отправки');
 
           statusDiv.className = 'search-status success';
-          var ozonPushMsg = `✅ Данные успешно отправлены в Ozon (${offerId || productId})`;
+          var ozonPushMsg = `✅ Данные успешно сохранены в Ozon (${offerId || productId})`;
           if (result.mediaStatus === 'error') {
             ozonPushMsg += `<br><span style="color:#e67e22;">⚠️ Изображения: ${result.mediaMessage || 'ошибка загрузки'}</span>`;
           } else if (result.mediaStatus === 'skipped') {
             ozonPushMsg += `<br><span style="color:#999;">ℹ️ Изображения: нет для отправки</span>`;
+          } else if (result.mediaStatus === 'ok') {
+            // Remove pending markers from DOM — images were pushed successfully
+            var ozonRow = document.getElementById('ozon-images');
+            if (ozonRow) {
+              ozonRow.querySelectorAll('.thumb-wrap.thumb-pending').forEach(function(w) {
+                w.classList.remove('thumb-pending');
+                var badge = w.querySelector('.thumb-pending-badge');
+                if (badge) badge.remove();
+              });
+            }
+            _pendingCrossSyncs.ozon = [];
           }
           statusDiv.innerHTML = ozonPushMsg;
-
-          // Clear pending cross-syncs — next refresh shows real state
-          _pendingCrossSyncs.ozon = [];
         } catch (error) {
           statusDiv.className = 'search-status error';
           statusDiv.innerHTML = `❌ Ошибка отправки в Ozon: ${error.message}`;
-        }
-      }
-
-      // Dispatcher for platform-specific image-only push (called from renderImageThumbs)
-      function pushPlatformImages(platform) {
-        if (platform === 'ozon') {
-          var ozonImgData = window._ozonData;
-          if (!ozonImgData) return;
-          pushOzonImagesOnly(ozonImgData.code || '', ozonImgData.product_id || 0);
-        } else if (platform === 'wb') {
-          var wbImgData = window._wbData;
-          if (!wbImgData) return;
-          pushWBImagesOnly(wbImgData.vendorCode || wbImgData.code || '');
-        }
-      }
-
-      // Push only images to Wildberries (no text fields)
-      async function pushWBImagesOnly(vendorCode) {
-        if (!vendorCode) return;
-        var inImages = collectImageUrls('wb');
-        var extImages = inImages.filter(function(url) {
-          return !url.startsWith('/temp/');
-        });
-
-        const resultsDiv = document.getElementById('marketResults');
-        const stDiv = document.createElement('div');
-        stDiv.className = 'search-status';
-        stDiv.innerHTML = '<span class="search-spinner"></span> Отправка изображений в WB...';
-        resultsDiv.prepend(stDiv);
-
-        try {
-          const wbToken = localStorage.getItem('wb_token') || '';
-          if (!wbToken) throw new Error('Нет токена WB');
-
-          const resp = await fetch('/api/market/push/wb', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-wb-token': wbToken },
-            body: JSON.stringify({
-              vendorCode: vendorCode,
-              ...(extImages.length > 0 && { images: extImages })
-            })
-          });
-
-          const res = await resp.json();
-          if (!resp.ok) throw new Error(res.error || 'Ошибка отправки');
-
-          stDiv.className = 'search-status success';
-          var imMsg = '✅ Изображения отправлены в WB';
-          if (res.mediaStatus === 'error') {
-            imMsg += `<br><span style="color:#e67e22;">⚠️ ${res.mediaMessage || 'ошибка загрузки'}</span>`;
-          } else if (res.mediaStatus === 'skipped') {
-            imMsg += '<br><span style="color:#999;">ℹ️ Нет изображений для отправки</span>';
-          }
-          stDiv.innerHTML = imMsg;
-          _pendingCrossSyncs.wb = [];
-        } catch (error) {
-          stDiv.className = 'search-status error';
-          stDiv.innerHTML = '❌ Ошибка отправки изображений в WB: ' + error.message;
-        }
-      }
-
-      // Push only images to Ozon (no text fields)
-      async function pushOzonImagesOnly(offerId, productId) {
-        if (!offerId && !productId) return;
-        var inImages = collectImageUrls('ozon');
-        var extImages = inImages.filter(function(url) {
-          return !url.startsWith('/temp/');
-        });
-
-        const resultsDiv = document.getElementById('marketResults');
-        const stDiv = document.createElement('div');
-        stDiv.className = 'search-status';
-        stDiv.innerHTML = '<span class="search-spinner"></span> Отправка изображений в Ozon...';
-        resultsDiv.prepend(stDiv);
-
-        try {
-          const ozonClientId = localStorage.getItem('ozon_client_id') || '';
-          const ozonApiKey = localStorage.getItem('ozon_api_key') || '';
-          if (!ozonClientId || !ozonApiKey) throw new Error('Нет ключей Ozon');
-
-          const resp = await fetch('/api/market/push/ozon', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-ozon-client-id': ozonClientId,
-              'x-ozon-api-key': ozonApiKey
-            },
-            body: JSON.stringify({
-              offerId: offerId,
-              productId: productId,
-              ...(extImages.length > 0 && { images: extImages })
-            })
-          });
-
-          const res = await resp.json();
-          if (!resp.ok) throw new Error(res.error || 'Ошибка отправки');
-
-          stDiv.className = 'search-status success';
-          var imMsg = '✅ Изображения отправлены в Ozon';
-          if (res.mediaStatus === 'error') {
-            imMsg += `<br><span style="color:#e67e22;">⚠️ ${res.mediaMessage || 'ошибка загрузки'}</span>`;
-          } else if (res.mediaStatus === 'skipped') {
-            imMsg += '<br><span style="color:#999;">ℹ️ Нет изображений для отправки</span>';
-          }
-          stDiv.innerHTML = imMsg;
-          _pendingCrossSyncs.ozon = [];
-        } catch (error) {
-          stDiv.className = 'search-status error';
-          stDiv.innerHTML = '❌ Ошибка отправки изображений в Ozon: ' + error.message;
         }
       }
 

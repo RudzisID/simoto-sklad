@@ -519,21 +519,165 @@ curl -X POST http://localhost:3000/api/create-payment \
 ```
 
 ### JavaScript
-
+ 
 ```javascript
 const token = 'ваш_токен';
 const shipmentNum = '0128545550-0011-1';
-
+ 
 // Создание платежа
 const response = await fetch('/api/create-payment', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Api-Token': token
-  },
-  body: JSON.stringify({ shipmentNum })
+   method: 'POST',
+   headers: {
+     'Content-Type': 'application/json',
+     'X-Api-Token': token
+   },
+   body: JSON.stringify({ shipmentNum })
 });
-
+ 
 const result = await response.json();
 console.log(result);
+```
+```
+ 
+---
+ 
+### WB Sales Cache (supplier/sales)
+ 
+Эндпоинт для получения отчёта о продажах Wildberries, используется для
+сопоставления входящих платежей со стикерами заказов.
+ 
+#### Источник данных
+ 
+```http
+GET https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=YYYY-MM-DD&flag=0
+```
+ 
+**Параметры**:
+- `dateFrom` — дата начала (по `lastChangeDate`)
+- `flag=0` — все записи (не агрегированные)
+ 
+**Назначение**: Отчёт о продажах, используется для сопоставления платежей
+по стикерам (поле `sticker`).
+ 
+#### Кэширование
+ 
+- **Тип**: In-memory (`wbSalesCache` в `server.js`)
+- **Персистентность**: Сохраняется на диск в `logs/wb_sales_cache.json`
+  (автоматически загружается при перезапуске сервера)
+- **TTL**: 2 часа (`WB_SALES_CACHE_TTL`)
+- **Обновление**: Инкрементальное — только записи с `lastChangeDate > lastDate`
+- **Очистка**: Записи старше 90 дней удаляются (лимит WB API)
+ 
+#### Rate Limiting
+ 
+- **Лимит**: ~1 запрос в минуту
+- **Обработка 429**: Читает заголовок `X-Ratelimit-Retry`, ожидает указанное
+   количество секунд. До 3 попыток. Если есть просроченный кэш — отдаёт его
+   без повторных попыток.
+- **Логика повтора** (в `getWBSalesMap()`):
+   - Есть кэш (даже просроченный) → отдаём сразу, не ждём
+   - Нет кэша → retry по заголовку, fallback 60s, до 3 попыток
+ 
+#### Ключевые поля записи
+ 
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `sticker` | string | Стикер заказа |
+| `srid` | string | ID заказа в системе WB |
+| `nmId` | number | ID товара в WB |
+| `barcode` | string | Штрих-код |
+| `supplierArticle` | string | Артикул поставщика |
+| `lastChangeDate` | string | Дата последнего изменения |
+| `date` | string | Дата продажи |
+| `totalPrice` | number | Цена с учётом скидки (коп.) |
+ 
+#### Принудительное обновление
+ 
+```http
+POST /api/wb-sales/refresh
+Headers:
+   x-wb-token: <WB API token>
+ 
+Response:
+{
+   "success": true,
+   "records": 15000,
+   "bySticker": 14500,
+   "lastDate": "2026-05-20T10:30:00"
+}
+```
+ 
+Сбрасывает TTL кэша (`fetchedAt = 0`) и принудительно загружает новые данные
+из WB API через `getWBSalesMap()`.
+
+---
+
+### WB Returns Cache (supplier/returns)
+
+Эндпоинт для получения отчёта о возвратах Wildberries, используется для
+сопоставления входящих платежей со стикерами заказов при обработке возвратов.
+
+#### Источник данных
+
+```http
+GET https://statistics-api.wildberries.ru/api/v1/supplier/returns?dateFrom=YYYY-MM-DD&flag=0
+```
+
+**Параметры**:
+- `dateFrom` — дата начала (по `lastChangeDate`)
+- `flag=0` — все записи (не агрегированные)
+
+**Назначение**: Отчёт о возвратах, используется для сопоставления платежей
+по стикерам (поле `sticker`) при обработке возвратов покупателя.
+
+#### Кэширование
+
+- **Тип**: In-memory (`wbReturnsCache` в `server.js`)
+- **Персистентность**: Сохраняется на диск в `logs/wb_returns_cache.json`
+  (автоматически загружается при перезапуске сервера)
+- **TTL**: 2 часа (`WB_RETURNS_CACHE_TTL`)
+- **Обновление**: Инкрементальное — только записи с `lastChangeDate > lastDate`
+- **Очистка**: Записи старше 90 дней удаляются (лимит WB API)
+
+#### Rate Limiting
+
+- **Лимит**: ~1 запрос в минуту
+- **Обработка 429**: Читает заголовок `X-Ratelimit-Retry`, ожидает указанное
+  количество секунд. До 3 попыток. Если есть просроченный кэш — отдаёт его
+  без повторных попыток.
+- **Логика повтора** (в `getWBRReturnsMap()`):
+   - Есть кэш (даже просроченный) → отдаём сразу, не ждём
+   - Нет кэша → retry по заголовку, fallback 60s, до 3 попыток
+
+#### Ключевые поля записи
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `sticker` | string | Стикер заказа |
+| `srid` | string | ID заказа в системе WB |
+| `nmId` | number | ID товара в WB |
+| `barcode` | string | Штрих-код |
+| `supplierArticle` | string | Артикул поставщика |
+| `lastChangeDate` | string | Дата последнего изменения |
+| `date` | string | Дата возврата |
+| `totalPrice` | number | Сумма возврата с учётом скидки (коп.) |
+
+#### Принудительное обновление
+
+```http
+POST /api/wb-returns/refresh
+Headers:
+  x-wb-token: <WB API token>
+
+Response:
+{
+   "success": true,
+   "records": 15000,
+   "bySticker": 14500,
+   "lastDate": "2026-05-20T10:30:00"
+}
+```
+
+Сбрасывает TTL кэша (`fetchedAt = 0`) и принудительно загружает новые данные
+из WB API через `getWBRReturnsMap()`.
 ```

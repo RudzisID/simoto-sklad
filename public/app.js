@@ -61,6 +61,8 @@ const PAGE_SIZE = 1000;
 let ordersState = {};
 // currentSort: column - текущая колонка, statusIndex - индекс в getLifecycleStatuses() (для статуса)
 let currentSort = { column: 'shipmentNum', asc: true, statusIndex: 0 };
+let dateFilter = { from: '', to: '' };
+let drpState = { month: new Date().getMonth(), year: new Date().getFullYear() };
 let currentController = null;
 let isWorking = false;
 let realtimeMode = false; // Флаг для realtime добавления строк без перерисовки
@@ -370,6 +372,7 @@ async function loadSavedOrders() {
       returnName: state.returnName || null,
       returnSum: state.returnSum || 0,
       cancelledSum: state.cancelledSum || 0,
+      orderMoment: state.orderMoment || null,
       canPayment: state.hasDemand && !state.hasPayment && !state.hasReturn && !state.isCancelled,
       canDemand: !state.hasDemand && !state.isCancelled,
       canReturn: state.hasDemand && !state.hasReturn && !state.isCancelled,
@@ -437,11 +440,11 @@ function updateSortIndicators() {
   }
 }
 
-function getSortedOrders() {
+function getSortedOrders(data = ordersData) {
   const col = currentSort.column;
   const asc = currentSort.asc;
 
-  return [...ordersData].sort((a, b) => {
+  return [...data].sort((a, b) => {
     let va, vb;
 
     if (col === 'statusName') {
@@ -472,6 +475,10 @@ function getSortedOrders() {
     } else if (col === 'sum' || col === 'paid' || col === 'returnSum') {
       va = Number(a[col]) || 0;
       vb = Number(b[col]) || 0;
+    } else if (col === 'orderMoment') {
+      // ISO 8601 сортируется лексикографически — null/пустые в конец
+      va = a[col] || '';
+      vb = b[col] || '';
     } else {
       va = String(a[col] || '').toLowerCase();
       vb = String(b[col] || '').toLowerCase();
@@ -491,9 +498,13 @@ function toggleAll(checked) {
   renderCurrentStats();
 }
 
-function toggleEnabled(index) {
+function toggleEnabled(index, el) {
   ordersData[index].enabled = !ordersData[index].enabled;
-  updateTotals();
+  if (el && el.checked) {
+    el.classList.add('checkbox-bounce');
+    setTimeout(() => el.classList.remove('checkbox-bounce'), 350);
+  }
+  updateTotals(true);
   renderCurrentStats();
 }
 
@@ -523,10 +534,10 @@ async function checkNumbers() {
 
   await loadOrdersState();
 
-  const checkBtn = document.querySelector('#numbersInput + .button-row button');
+  const checkBtn = document.querySelector('.btn-ms');
   const abortBtn = document.getElementById('abortBtn');
-  checkBtn.disabled = true;
-  checkBtn.textContent = '';
+  if (checkBtn) checkBtn.disabled = true;
+  if (checkBtn) checkBtn.textContent = '';
   abortBtn.style.display = 'flex';
   isWorking = true;
   showProgress(true);
@@ -715,6 +726,254 @@ async function checkNumbers() {
 }
 
 /**
+ * Refresh WB sales cache (invalidate TTL + re-fetch from WB API)
+ * Reads wb_token from localStorage, POSTs to /api/wb-sales/refresh
+ */
+async function refreshWBSales() {
+   const wbToken = localStorage.getItem('wb_token');
+   if (!wbToken) {
+     showStatus('Ошибка: WB токен не найден. Нажмите "Токены" в шапке.');
+     return;
+   }
+
+   const msToken = loadToken();
+   if (!msToken) {
+     showStatus('Ошибка: токен МС не найден. Нажмите "Токены" в шапке.');
+     return;
+   }
+
+   showStatus('⟳ Загрузка данных WB...');
+   showProgress(true);
+
+   // Очищаем таблицу
+   const tbody = document.getElementById('tableBody');
+   tbody.innerHTML = '';
+   ordersData = [];
+
+   try {
+     const url = `/api/wb-all/stream?token=${encodeURIComponent(msToken)}`;
+     const response = await fetch(url, {
+       headers: { 'x-wb-token': wbToken }
+     });
+
+     if (!response.ok) {
+       showStatus(`Ошибка: ${response.status}`);
+       showProgress(false);
+       return;
+     }
+
+     const reader = response.body.getReader();
+     const decoder = new TextDecoder();
+     let buffer = '';
+
+     while (true) {
+       const { done, value } = await reader.read();
+       if (done) break;
+
+       buffer += decoder.decode(value, { stream: true });
+       const lines = buffer.split('\n');
+       buffer = lines.pop() || '';
+
+       for (const line of lines) {
+         if (!line.startsWith('data: ')) continue;
+         try {
+           const event = JSON.parse(line.slice(6));
+           if (event.type === 'progress') {
+             showStatus(`⟳ ${event.msg || 'Загрузка...'}`);
+           } else if (event.type === 'order') {
+             ordersData.push(event.order);
+             appendTableRow(event.order);
+           } else if (event.type === 'done') {
+             showStatus(`✅ WB: ${event.stats.total} записей (${event.stats.sales} продаж, ${event.stats.returns} возвратов)`);
+             showProgress(false);
+             renderCurrentStats();
+           } else if (event.type === 'error') {
+             showStatus(`Ошибка: ${event.error}`);
+             showProgress(false);
+           }
+         } catch (e) {
+           console.error('[WB Refresh] parse error:', e.message);
+         }
+       }
+     }
+   } catch (e) {
+     showStatus(`Ошибка: ${e.message}`);
+     showProgress(false);
+   }
+ }
+
+// Вспомогательная функция форматирования суммы для таблицы
+function fmtSum(n) {
+  return (n && Number(n) > 0 ? Number(n).toLocaleString() + ' ₽' : '-');
+}
+
+// Вспомогательная функция для добавления строки в таблицу
+function appendTableRow(order) {
+   const tbody = document.getElementById('tableBody');
+   const tr = document.createElement('tr');
+   const isReturn = order.status === 'return' || order.hasReturn;
+
+   let cssClass = 'status-other';
+   let displayText = order.statusName || '-';
+   if (isReturn) {
+     cssClass = 'status-return';
+   } else if (order.status === 'sale') {
+     cssClass = 'status-shipped';
+     displayText = 'Продажа';
+   }
+
+   const returnDisplay = order.returnSum
+     ? `<span class="payment-sum">${fmtSum(order.returnSum)}</span>`
+     : (isReturn ? `<span class="payment-sum">${fmtSum(order.sum || 0)}</span>` : '<span class="status-no">—</span>');
+
+   tr.innerHTML = `
+     <td>${order.shipmentNum || ''}</td>
+     <td>${order.orderName || '-'}</td>
+     <td>${fmtSum(order.sum || 0)}</td>
+     <td><span class="status-no">—</span></td>
+     <td><span class="status-no">—</span></td>
+     <td>${returnDisplay}</td>
+     <td><span class="${cssClass}">${displayText}</span></td>
+   `;
+   // Добавляем класс строки для возвратов
+   if (isReturn) tr.classList.add('row-return');
+   tbody.appendChild(tr);
+ }
+
+/**
+ * Refresh Ozon returns & FBS sales (invalidate TTL + re-fetch from Ozon API)
+ * Reads ozon_client_id and ozon_api_key from localStorage, SSE streams to /api/ozon-all/stream
+ */
+async function refreshOzonReturns() {
+  const ozonClientId = localStorage.getItem('ozon_client_id');
+  const ozonApiKey = localStorage.getItem('ozon_api_key');
+
+  if (!ozonClientId || !ozonApiKey) {
+    showStatus('Ошибка: ключи Ozon не найдены. Нажмите "Токены" в шапке.');
+    return;
+  }
+
+  const msToken = loadToken();
+  if (!msToken) {
+    showStatus('Ошибка: токен МС не найден.');
+    return;
+  }
+
+  const ozonBtn = document.querySelector('.btn-ozon');
+  const abortBtn = document.getElementById('abortBtn');
+  if (ozonBtn) ozonBtn.disabled = true;
+  abortBtn.style.display = 'flex';
+  isWorking = true;
+  showProgress(true);
+
+  hideFinalStats(true);
+  startOperationTimer();
+
+  document.querySelector('.stats-final')?.classList.add('scanning');
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  currentPage = 0;
+  ordersData = [];
+
+  currentDuplicates = 0;
+  renderCurrentStats();
+  realtimeMode = true;
+
+  try {
+    currentController = new AbortController();
+    const abortId = Math.random().toString(36).substring(2, 15);
+    window.__currentAbortId = abortId;
+
+    const url = `/api/ozon-all/stream?token=${encodeURIComponent(msToken)}&abortId=${abortId}`;
+
+    const response = await fetch(url, {
+      signal: currentController.signal,
+      headers: {
+        'x-ozon-client-id': ozonClientId,
+        'x-ozon-api-key': ozonApiKey,
+        'x-api-token': msToken
+      }
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      hideProgress(false, errData.error || `Ошибка: ${response.status}`);
+      document.querySelector('.stats-final')?.classList.remove('scanning');
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+
+          if (data.type === 'progress') {
+            showStatus(`⟳ ${data.msg || 'Загрузка Ozon...'}`);
+          } else if (data.type === 'order') {
+            const orderData = { ...data.order, enabled: true };
+            ordersData.push(orderData);
+            appendOrderRow(orderData);
+            updateTotals();
+            renderCurrentStats(true);
+          } else if (data.type === 'done') {
+            const elapsed = stopOperationTimer();
+            realtimeMode = false;
+            updateTotals();
+            renderCurrentStats();
+            saveLastActionStats();
+            hideProgress(true, `✅ Ozon: ${data.stats?.total || ordersData.length} записей`);
+            document.querySelector('.stats-final')?.classList.remove('scanning');
+          } else if (data.type === 'aborted') {
+            const elapsed = stopOperationTimer();
+            realtimeMode = false;
+            updateTotals();
+            renderCurrentStats();
+            hideProgress(false, 'Прервано. Обработано: ' + (data.processed || 0));
+            document.querySelector('.stats-final')?.classList.remove('scanning');
+          } else if (data.type === 'error') {
+            hideProgress(false, data.error || 'Ошибка');
+            document.querySelector('.stats-final')?.classList.remove('scanning');
+            return;
+          }
+        } catch (e) {
+          console.error('[Ozon Refresh] SSE parse error:', e);
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      hideProgress(false, 'Прервано');
+      stopOperationTimer();
+    } else {
+      hideProgress(false, 'Ошибка: ' + e.message);
+      stopOperationTimer();
+    }
+  } finally {
+    realtimeMode = false;
+    renderTable();
+
+    if (ozonBtn) ozonBtn.disabled = false;
+    abortBtn.style.display = 'none';
+    isWorking = false;
+    window.__currentAbortId = null;
+    document.querySelector('.stats-final')?.classList.remove('scanning');
+  }
+}
+
+/**
  * Поиск возврата WB по коду стикера
  * sticker → WB supplier/sales (поиск по sticker) → srid → orderId → checkNumbers(orderId)
  */
@@ -867,9 +1126,156 @@ async function wbReturnSearch() {
   }
 }
 
-/** Заглушка для Ozon возвратов */
-function ozonReturnSearch() {
-  showStatus('Возврат Ozon в разработке');
+/**
+ * Поиск возврата Ozon по коду возврата
+ * Ввод: код возврата (id или barcode) → поиск в кэше Ozon returns → posting_number → заказ в МС
+ */
+async function ozonReturnSearch() {
+  const text = document.getElementById('numbersInput').value;
+
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l);
+  currentDuplicates = lines.length - new Set(lines).size;
+
+  const numbers = [...new Set(lines)];
+
+  if (numbers.length === 0) {
+    showStatus('Введите коды возвратов Ozon');
+    return;
+  }
+
+  const ozonClientId = localStorage.getItem('ozon_client_id');
+  const ozonApiKey = localStorage.getItem('ozon_api_key');
+
+  if (!ozonClientId || !ozonApiKey) {
+    showStatus('Ошибка: ключи Ozon не найдены. Нажмите "Токены" в шапке.');
+    return;
+  }
+
+  const msToken = loadToken();
+  if (!msToken) {
+    showStatus('Ошибка: Токен МС не найден.');
+    return;
+  }
+
+  await loadOrdersState();
+
+  const ozonBtn = document.querySelector('.btn-ozon');
+  const abortBtn = document.getElementById('abortBtn');
+  if (ozonBtn) ozonBtn.disabled = true;
+  abortBtn.style.display = 'flex';
+  isWorking = true;
+  showProgress(true);
+
+  hideFinalStats(true);
+  startOperationTimer();
+
+  document.querySelector('.stats-final')?.classList.add('scanning');
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  currentPage = 0;
+  ordersData = [];
+
+  currentDuplicates = 0;
+  renderCurrentStats();
+  realtimeMode = true;
+
+  try {
+    currentController = new AbortController();
+    const abortId = Math.random().toString(36).substring(2, 15);
+    window.__currentAbortId = abortId;
+
+    const numbersParam = encodeURIComponent(numbers.join(','));
+    const url = `/api/ozon-return/stream?numbers=${numbersParam}&abortId=${abortId}`;
+
+    const response = await fetch(url, {
+      signal: currentController.signal,
+      headers: {
+        'x-ozon-client-id': ozonClientId,
+        'x-ozon-api-key': ozonApiKey,
+        'x-api-token': msToken
+      }
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      hideProgress(false, errData.error || `Ошибка: ${response.status}`);
+      document.querySelector('.stats-final')?.classList.remove('scanning');
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+
+          if (data.type === 'search-ms') {
+            document.getElementById('statusText').textContent =
+              `⟳ Поиск в МС: ${data.msg || ''}`;
+          } else if (data.type === 'result') {
+            const orderData = { ...data.order, enabled: true };
+            ordersData.push(orderData);
+            appendOrderRow(orderData);
+            updateTotals();
+            renderCurrentStats(true);
+          } else if (data.type === 'done') {
+            const elapsed = stopOperationTimer();
+            realtimeMode = false;
+            updateTotals();
+            renderCurrentStats();
+            saveLastActionStats();
+            hideProgress(true, 'Готово: ' + ordersData.length);
+            document.querySelector('.stats-final')?.classList.remove('scanning');
+          } else if (data.type === 'aborted') {
+            const elapsed = stopOperationTimer();
+            realtimeMode = false;
+            updateTotals();
+            renderCurrentStats();
+            hideProgress(false, 'Прервано. Обработано: ' + (data.processed || 0));
+            document.querySelector('.stats-final')?.classList.remove('scanning');
+          } else if (data.type === 'error') {
+            hideProgress(false, data.error || 'Ошибка');
+            document.querySelector('.stats-final')?.classList.remove('scanning');
+            return;
+          }
+        } catch (e) {
+          console.error('[Ozon Search] SSE parse error:', e);
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      hideProgress(false, 'Прервано');
+      stopOperationTimer();
+    } else {
+      hideProgress(false, 'Ошибка: ' + e.message);
+      stopOperationTimer();
+    }
+  } finally {
+    realtimeMode = false;
+    renderTable();
+
+    if (ozonBtn) ozonBtn.disabled = false;
+    abortBtn.style.display = 'none';
+    isWorking = false;
+    window.__currentAbortId = null;
+    document.querySelector('.stats-final')?.classList.remove('scanning');
+  }
 }
 
 function abortCheck() {
@@ -900,8 +1306,16 @@ function getRowActions(order, index) {
   // Demand - создать отгрузку (если её нет и заказ не отменён)
   btns += `<button class="btn btn-demand action-btn" onclick="createDemandByNum('${order.shipmentNum}')" title="${hasD ? 'Отгрузка есть' : 'Создать отгрузку'}" ${hasD || isCancelled ? 'disabled' : ''}>📦</button>`;
 
-  // Payment - создать платёж (если есть отгрузка, нет оплаты и нет возврата)
-  btns += `<button class="btn btn-payment action-btn" onclick="createPaymentByNum('${order.shipmentNum}')" title="${hasPayment ? 'Оплачено' : 'Создать платёж'}" ${hasPayment || isCancelled || !hasD || hasR ? 'disabled' : ''}>💰</button>`;
+   // Payment - создать платёж
+   // Если есть частичный возврат (returnSum < sum) → предлагаем частичный платёж
+   let paymentBtn;
+   if (hasR && order.returnSum && order.returnSum < order.sum) {
+     // Partial return → partial payment (not disabled)
+     paymentBtn = `<button class="btn btn-payment action-btn" onclick="createPartialPaymentByNum('${order.shipmentNum}')" title="Создать платёж (частичный, без возврата)">💰</button>`;
+   } else {
+     paymentBtn = `<button class="btn btn-payment action-btn" onclick="createPaymentByNum('${order.shipmentNum}')" title="${hasPayment ? 'Оплачено' : 'Создать платёж'}" ${hasPayment || isCancelled || !hasD || hasR ? 'disabled' : ''}>💰</button>`;
+   }
+   btns += paymentBtn;
 
   // Return - возврат (если есть отгрузка, возврат не создан, заказ не отменён)
   btns += `<button class="btn btn-return action-btn" onclick="createReturnByNum('${order.shipmentNum}')" title="${hasR ? 'Возврат есть' : 'Создать возврат'}" ${hasR || isCancelled || !hasD ? 'disabled' : ''}>↩</button>`;
@@ -912,6 +1326,171 @@ function getRowActions(order, index) {
 
   return btns;
 }
+
+function formatDate(isoStr) {
+  if (!isoStr) return '<span class="status-no">—</span>';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return isoStr;
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, '0');
+  const mins = String(d.getMinutes()).padStart(2, '0');
+  return `${day}.${month}.${year} ${hours}:${mins}`;
+}
+
+// ─── Date filter functions ────────────────────────────────────────────────────
+
+function getFilteredData() {
+  let data = [...ordersData];
+  if (dateFilter.from || dateFilter.to) {
+    data = data.filter(order => {
+      if (!order.orderMoment) return false;
+      const orderDate = order.orderMoment.substring(0, 10); // "YYYY-MM-DD"
+      if (dateFilter.from && orderDate < dateFilter.from) return false;
+      if (dateFilter.to && orderDate > dateFilter.to) return false;
+      return true;
+    });
+  }
+  return data;
+}
+
+function closeDateFilter() {
+  document.getElementById('dateFilterOverlay').style.display = 'none';
+  document.getElementById('dateFilterPopup').style.display = 'none';
+}
+
+// ─── Custom Date Range Picker ────────────────────────────────────────────────
+
+function drpUpdateDisplay() {
+  const fmt = (iso) => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return `${d}.${m}.${y}`;
+  };
+  const fromEl = document.getElementById('dfFromDisplay');
+  const toEl = document.getElementById('dfToDisplay');
+  if (fromEl) fromEl.value = fmt(dateFilter.from);
+  if (toEl) toEl.value = fmt(dateFilter.to);
+}
+
+function drpPrevMonth() {
+  drpState.month--;
+  if (drpState.month < 0) { drpState.month = 11; drpState.year--; }
+  drpRender();
+}
+
+function drpNextMonth() {
+  drpState.month++;
+  if (drpState.month > 11) { drpState.month = 0; drpState.year++; }
+  drpRender();
+}
+
+function drpSelect(dateStr) {
+  if (!dateFilter.from || (dateFilter.from && dateFilter.to)) {
+    dateFilter.from = dateStr;
+    dateFilter.to = '';
+  } else {
+    dateFilter.to = dateStr;
+    if (dateFilter.to < dateFilter.from) {
+      [dateFilter.from, dateFilter.to] = [dateFilter.to, dateFilter.from];
+    }
+  }
+  drpUpdateDisplay();
+  drpRender();
+}
+
+function drpRender() {
+  const { month, year } = drpState;
+  const daysEl = document.getElementById('drpDays');
+  if (!daysEl) return;
+
+  const months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  const titleEl = document.getElementById('drpTitle');
+  if (titleEl) titleEl.textContent = `${months[month]} ${year}`;
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const startOffset = firstDay === 0 ? 6 : firstDay - 1;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+  // Dates that exist in loaded table data
+  const availSet = new Set();
+  ordersData.forEach(o => {
+    if (o.orderMoment) availSet.add(o.orderMoment.substring(0, 10));
+  });
+
+  const { from, to } = dateFilter;
+
+  let html = '';
+  for (let i = 0; i < startOffset; i++) html += '<span class="drp-day drp-empty"></span>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    let cls = 'drp-day';
+    if (ds === todayStr) cls += ' drp-today';
+    if (availSet.has(ds)) cls += ' drp-has';
+    if (ds === from) cls += ' drp-from';
+    if (ds === to) cls += ' drp-to';
+    if (from && to && ds > from && ds < to) cls += ' drp-range';
+    html += `<span class="${cls}" data-date="${ds}">${d}</span>`;
+  }
+
+  daysEl.innerHTML = html;
+}
+
+// ─── Date Filter Popup ───────────────────────────────────────────────────────
+
+function toggleDateFilter() {
+  const popup = document.getElementById('dateFilterPopup');
+  if (popup.style.display === 'block') { closeDateFilter(); return; }
+  const th = document.querySelector('th.date-header');
+  const rect = th.getBoundingClientRect();
+  popup.style.top = rect.bottom + 'px';
+  drpState.month = dateFilter.from
+    ? parseInt(dateFilter.from.split('-')[1]) - 1
+    : new Date().getMonth();
+  drpState.year = dateFilter.from
+    ? parseInt(dateFilter.from.split('-')[0])
+    : new Date().getFullYear();
+  drpUpdateDisplay();
+  drpRender();
+  document.getElementById('dateFilterOverlay').style.display = 'block';
+  popup.style.display = 'block';
+}
+
+function applyDateFilter() {
+  dateFilter.from = dateFilter.from;
+  dateFilter.to = dateFilter.to;
+  currentPage = 0;
+  closeDateFilter();
+  updateFilterIndicator();
+  renderTable();
+}
+
+function resetDateFilter() {
+  dateFilter.from = '';
+  dateFilter.to = '';
+  drpUpdateDisplay();
+  currentPage = 0;
+  closeDateFilter();
+  updateFilterIndicator();
+  renderTable();
+}
+
+function updateFilterIndicator() {
+  const badge = document.getElementById('dateFilterBadge');
+  if (!badge) return;
+  if (dateFilter.from || dateFilter.to) {
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 
 // Render table
 function renderTable() {
@@ -925,14 +1504,16 @@ function renderTable() {
   if (!tbody) return;
   tbody.innerHTML = '';
 
-  const sorted = getSortedOrders();
-  console.log('Rendering table, orders count:', sorted.length);
+  const filtered = getFilteredData();
+  const sorted = getSortedOrders(filtered);
+  console.log('Rendering table, orders count:', sorted.length, '(filtered from', filtered.length, ')');
   const start = currentPage * PAGE_SIZE;
   const end = start + PAGE_SIZE;
   const pageOrders = sorted.slice(start, end);
+  updateFilterIndicator();
 
   if (pageOrders.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">Нет данных для текущей страницы</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">Нет данных для текущей страницы</td></tr>';
     return;
   }
 
@@ -979,6 +1560,14 @@ function renderTable() {
     const displayText = statusName || 'Новый';
     statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>';
 
+    // WB поля из объединённого кэша
+    const returnTypeDisplay = order.returnType
+      ? `<span class="${order.returnType === 'Брак' ? 'status-error' : 'status-return'}">${order.returnType}</span>`
+      : '<span class="status-no">—</span>';
+    const reasonDisplay = order.reason
+      ? `<span class="reason-text" title="${order.reason.replace(/"/g, '&quot;')}">${order.reason.length > 30 ? order.reason.slice(0, 30) + '…' : order.reason}</span>`
+      : '<span class="status-no">—</span>';
+
     // Статус заказа
     let statusClass = 'status-other';
     let statusText = order.statusName || 'Новый';
@@ -1005,17 +1594,29 @@ function renderTable() {
       statusText = 'Возврат';
     }
 
-    tr.innerHTML = `
-            <td><input type="checkbox" ${order.enabled ? 'checked' : ''} onchange="toggleEnabled(${actualIndex})"></td>
-            <td class="order-num">${order.extractedShipmentNum || order.shipmentNum}</td>
+  tr.innerHTML = `
+        <td><input type="checkbox" ${order.enabled ? 'checked' : ''} onchange="toggleEnabled(${actualIndex}, this)"></td>
+        <td class="order-num">${order.extractedShipmentNum || order.shipmentNum}${order.wbStickerId ? `<br><span class="sticker-id">стикер: ${order.wbStickerId}</span>` : ''}</td>
 <td class="order-name-cell">${order.orderName || '—'}</td>
             <td>${order.sum} ₽</td>
             <td>${demandDisplay}</td>
             <td>${paymentDisplay}</td>
             <td>${returnDisplay}</td>
             <td>${statusDisplay}</td>
+            <td>${returnTypeDisplay}</td>
+            <td>${reasonDisplay}</td>
+            <td class="date-cell">${formatDate(order.orderMoment)}</td>
             <td>${getRowActions(order, actualIndex)}</td>
         `;
+
+    // Сохраняем srid и lastChangeDate как data-атрибуты для отладки
+    if (order.srid) tr.dataset.srid = order.srid;
+    if (order.lastChangeDate) tr.dataset.lastChangeDate = order.lastChangeDate;
+
+    // Подсветка брака
+    if (order.returnType === 'Брак') {
+      tr.classList.add('row-defect');
+    }
 
     tbody.appendChild(tr);
 
@@ -1028,10 +1629,12 @@ function renderTable() {
       const posTr = document.createElement('tr');
       posTr.className = 'positions-row';
       const cells =
-        '<td colspan="9" class="positions-cell">' +
+        '<td colspan="12" class="positions-cell">' +
         allPositions
           .map((p) => {
-            const code = p.code ? `[${p.code}] ` : '';
+            const code = p.code
+              ? `<a href="#" onclick="searchProductByOEM('${(p.code || '').replace(/'/g, "\\'")}');return false;" style="color:var(--accent);text-decoration:underline;cursor:pointer;">[${p.code}]</a> `
+              : '';
             const name = p.name || 'Наименование';
             const price = p.price != null ? p.price : 0;
             const qty = p.quantity != null ? p.quantity : 0;
@@ -1090,17 +1693,54 @@ function appendOrderRow(order) {
   const displayText = statusName || 'Новый';
   const statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>';
 
+  // WB поля из объединённого кэша
+  const returnTypeDisplay = order.returnType
+    ? `<span class="${order.returnType === 'Брак' ? 'status-error' : 'status-return'}">${order.returnType}</span>`
+    : '<span class="status-no">—</span>';
+  const reasonDisplay = order.reason
+    ? `<span class="reason-text" title="${order.reason.replace(/"/g, '&quot;')}">${order.reason.length > 30 ? order.reason.slice(0, 30) + '…' : order.reason}</span>`
+    : '<span class="status-no">—</span>';
+
+  // WB article display (если есть — показываем рядом с orderName)
+  const wbArticleDisplay = order.wbArticle
+    ? `<span class="wb-badge" title="Артикул WB">WB: ${order.wbArticle}</span>`
+    : '';
+  const wbSubjectDisplay = order.wbSubjectName
+    ? `<br><span class="wb-subject">${order.wbSubjectName}</span>`
+    : '';
+  const wbStatusDisplay = order.wbStatus
+    ? `<span class="wb-status">[${order.wbStatus}]</span>`
+    : '';
+
+  // Дата: используем wbCompletedDt/wbOrderDt если нет orderMoment
+  const displayDate = order.orderMoment || order.wbCompletedDt || order.wbOrderDt || '';
+
   tr.innerHTML = `
-        <td><input type="checkbox" ${order.enabled ? 'checked' : ''} onchange="toggleEnabled(${actualIndex})"></td>
+        <td><input type="checkbox" ${order.enabled ? 'checked' : ''} onchange="toggleEnabled(${actualIndex}, this)"></td>
         <td class="order-num">${order.extractedShipmentNum || order.shipmentNum}</td>
-        <td class="order-name-cell">${order.orderName || '—'}</td>
+        <td class="order-name-cell">${order.orderName || '—'} ${wbArticleDisplay} ${wbStatusDisplay}${wbSubjectDisplay}</td>
         <td>${order.sum} ₽</td>
         <td>${demandDisplay}</td>
         <td>${paymentDisplay}</td>
         <td>${returnDisplay}</td>
         <td>${statusDisplay}</td>
+        <td>${returnTypeDisplay}</td>
+        <td>${reasonDisplay}</td>
+        <td class="date-cell">${formatDate(displayDate)}</td>
         <td>${getRowActions(order, actualIndex)}</td>
     `;
+
+  // Сохраняем WB поля как data-атрибуты
+  if (order.srid) tr.dataset.srid = order.srid;
+  if (order.lastChangeDate) tr.dataset.lastChangeDate = order.lastChangeDate;
+  if (order.wbStickerId) tr.dataset.wbStickerId = order.wbStickerId;
+  if (order.wbArticle) tr.dataset.wbArticle = order.wbArticle;
+  if (order.wbBarcode) tr.dataset.wbBarcode = order.wbBarcode;
+
+  // Подсветка брака
+  if (order.returnType === 'Брак') {
+    tr.classList.add('row-defect');
+  }
 
   // Добавляем строку в конец таблицы
   tbody.appendChild(tr);
@@ -1114,18 +1754,20 @@ function appendOrderRow(order) {
     const posTr = document.createElement('tr');
     posTr.className = 'positions-row';
     const cells =
-      '<td colspan="9" class="positions-cell">' +
+      '<td colspan="12" class="positions-cell">' +
       allPositions
         .map((p) => {
-          const code = p.code ? `[${p.code}] ` : '';
-          const name = p.name || 'Наименование';
-          const price = p.price != null ? p.price : 0;
-          const qty = p.quantity != null ? p.quantity : 0;
-          const sum = p.sum != null ? p.sum : price * qty;
-          const printBtn = p.code
-            ? `<button class="print-btn" onclick="printSticker('${(p.code || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>`
-            : '';
-          return `<div>${code}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`;
+          const code = p.code
+              ? `<a href="#" onclick="searchProductByOEM('${(p.code || '').replace(/'/g, "\\'")}');return false;" style="color:var(--accent);text-decoration:underline;cursor:pointer;">[${p.code}]</a> `
+              : '';
+            const name = p.name || 'Наименование';
+            const price = p.price != null ? p.price : 0;
+            const qty = p.quantity != null ? p.quantity : 0;
+            const sum = p.sum != null ? p.sum : price * qty;
+            const printBtn = p.code
+              ? `<button class="print-btn" onclick="printSticker('${(p.code || '').replace(/'/g, "\\'")}')" title="Печать стикера">🖨️</button>`
+              : '';
+            return `<div>${code}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`;
         })
         .join('') +
       '</td>';
@@ -1162,7 +1804,7 @@ function goNextPage() {
   }
 }
 
-function updateTotals() {
+function updateTotals(skipRender = false) {
   const enabled = ordersData.filter((o) => o.enabled);
   const toCreate = enabled.filter((o) => o.hasDemand && !o.hasPayment).length;
   const totalSum = enabled.reduce((sum, o) => sum + (Number(o.sum) || 0), 0);
@@ -1175,8 +1817,8 @@ function updateTotals() {
   if (toCreateCountEl) toCreateCountEl.textContent = toCreate;
   if (totalSumEl) totalSumEl.textContent = totalSum.toLocaleString() + ' ₽';
 
-  // Не перерисовываем таблицу в realtime режиме
-  if (!realtimeMode) renderTable();
+  // Не перерисовываем таблицу в realtime режиме или при skipRender
+  if (!skipRender && !realtimeMode) renderTable();
 }
 
 // Calculate statistics
@@ -2144,7 +2786,43 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Загружаем сохранённые заказы при старте
   await loadSavedOrdersAndRender();
+
+  // Делегированный клик по дням календаря (чтобы не откреплялся при innerHTML)
+  const drpDays = document.getElementById('drpDays');
+  if (drpDays) {
+    drpDays.addEventListener('click', function (e) {
+      const dayEl = e.target.closest('.drp-day:not(.drp-empty)');
+      if (!dayEl) return;
+      const ds = dayEl.dataset.date;
+      if (!ds) return;
+      drpSelect(ds);
+      e.stopPropagation();
+    });
+  }
 });
+
+// Глобальный обработчик закрытия попапа фильтра по дате
+document.addEventListener('click', function (e) {
+  const popup = document.getElementById('dateFilterPopup');
+  if (!popup || popup.style.display !== 'block') return;
+  const th = document.querySelector('th.date-header');
+  if (th && th.contains(e.target)) return;
+  if (popup.contains(e.target)) return;
+  closeDateFilter();
+});
+
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  const popup = document.getElementById('dateFilterPopup');
+  if (!popup || popup.style.display !== 'block') return;
+  closeDateFilter();
+});
+
+// Скрывать попап даты при прокрутке
+window.addEventListener('scroll', function () {
+  const popup = document.getElementById('dateFilterPopup');
+  if (popup && popup.style.display === 'block') closeDateFilter();
+}, true);
 
 // Очистка сохранённых данных
 async function clearSavedData() {
