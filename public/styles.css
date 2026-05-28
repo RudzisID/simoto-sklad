@@ -27,6 +27,8 @@
   --shadow-md: 0 3px 12px rgba(0, 0, 0, 0.25);
   --shadow-lg: 0 6px 24px rgba(0, 0, 0, 0.3);
   --font-base: 15px;
+  --sidebar-width: 220px;
+  --right-column-width: 242px;  /* 220 * 1.1 */
 }
 
 /* === Scrollbar Styling === */
@@ -72,7 +74,7 @@ body {
 /* === Layout === */
 .app-container {
   display: grid;
-  grid-template-columns: 280px 1fr 280px;
+  grid-template-columns: var(--sidebar-width) 1fr var(--right-column-width);
   gap: 8px;
   height: 100vh;
   padding: 8px;
@@ -458,9 +460,32 @@ body {
 
 
 .abort-btn {
-  flex: 0 0 28px !important;
+  flex: 0 0 32px !important;
+  width: 32px !important;
+  align-self: flex-end;
   padding: 0;
-  font-size: 0.9rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.abort-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.abort-btn:active {
+  background: rgba(239, 68, 68, 0.25);
+  transform: scale(0.92);
 }
 
 /* Icon inside buttons */
@@ -609,7 +634,7 @@ td {
 span.reason-text {
   cursor: help;
   border-bottom: 1px dashed var(--text-muted);
-  max-width: 200px;
+  max-width: 120px;
   display: inline-block;
   white-space: nowrap;
   overflow: hidden;
@@ -643,6 +668,30 @@ td.date-cell {
   white-space: nowrap;
   font-size: 0.78rem;
   color: var(--text);
+  line-height: 1.35;
+  text-align: center;
+}
+.date-cell .time-part {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  display: block;
+}
+
+/* Action buttons in 2×2 grid */
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+}
+td.action-cell {
+  width: 80px;
+  min-width: 80px;
+  max-width: 80px;
+  padding: 2px 4px;
+}
+.action-cell .action-btn {
+  margin: 0;
+  width: 100%;
 }
 
 /* === Date Filter Overlay === */
@@ -1345,6 +1394,91 @@ button:disabled {
   box-shadow: 0 0 15px rgba(0, 91, 255, 0.3), 0 0 30px rgba(0, 91, 255, 0.2);
 }
 
+/* WB price display in sum column */
+.price-wb {
+  font-size: 0.8em;
+  color: var(--accent);
+  display: inline-block;
+  margin-top: 2px;
+}
+
+/* === Mismatch panel — flexible height === */
+.stats-mismatch {
+  flex: 1;
+  max-height: 160px;
+  overflow: hidden;
+}
+
+.stats-mismatch .stats-output {
+  min-height: 0;
+}
+
+.stats-mismatch .mismatch-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stats-mismatch .mismatch-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+/* Кликабельные строки */
+.stats-mismatch [data-mismatch-type] {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+  padding: 2px 4px;
+  margin: 0 -4px;
+}
+
+.stats-mismatch [data-mismatch-type]:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Подсветка типов расхождений */
+.stats-mismatch .mismatch-error .stat-value {
+  color: var(--error);
+  font-weight: 700;
+}
+
+.stats-mismatch .mismatch-warn .stat-value {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.stats-mismatch .mismatch-ok-text {
+  color: var(--success);
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+/* Mismatch filter banner */
+.mismatch-filter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  background: rgba(249, 115, 22, 0.1);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.mismatch-filter-banner .btn-small {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
 /* === Save Token Button === */
 .token-row {
   display: flex;
@@ -1395,6 +1529,13 @@ button:disabled {
 
 .save-token-btn:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+/* Narrow bulk-action buttons for tight sidebar */
+.right-column .bulk-actions .btn {
+  padding: 6px 8px;
+  font-size: 0.7rem;
+  gap: 4px;
 }
 
 /* Stats panels with proper sizing */
@@ -1684,17 +1825,18 @@ button:disabled {
 }
 
 .stats-current {
-  flex: 6;
+  flex: 3;
 }
 
 .stats-final {
-  flex: 4;
+  flex: 2;
 }
 
 .stats-output {
   flex: 1;
   min-height: 80px;
   overflow-y: auto;
+  overflow-x: hidden;
   font-size: 0.8rem;
   line-height: 1.4;
 }
@@ -1738,6 +1880,58 @@ button:disabled {
   color: var(--text);
   font-weight: 700;
   margin-right: 8px;
+}
+
+/* Current stats — grid layout for consistent column widths */
+.stats-current .stat-row {
+  display: grid;
+  grid-template-columns: 1fr 30px 85px;
+  gap: 4px;
+  padding: 2px 0;
+  align-items: center;
+}
+.stats-current .stat-row .stat-label {
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: none;
+}
+.stats-current .stat-row .stat-value {
+  text-align: right;
+  margin-right: 0;
+  min-width: 0;
+  flex: none;
+}
+.stats-current .stat-row .stat-sum {
+  text-align: right;
+  margin-left: 0;
+  min-width: 0;
+  flex: none;
+}
+
+/* After-action stats — vertical stacking for narrow column */
+.stats-final .stat-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.stats-final .stat-row:last-child {
+  border-bottom: none;
+}
+.stats-final .stat-row .stat-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  flex: none;
+}
+.stats-final .stat-row .stat-value {
+  white-space: normal;
+  word-break: break-word;
+  font-size: 0.72rem;
+  margin-right: 0;
+  flex: none;
 }
 
 .stat-value.flash {

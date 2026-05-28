@@ -56,16 +56,8 @@
             <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
 <div class="button-grid">
    <button class="btn btn-ms" onclick="checkNumbers()"><img class="btn-icon" src="images/marketplace/ms-favicon.svg"> Поиск</button>
-   <div class="button-row">
-     <button class="btn btn-wb" onclick="refreshWBSales()"><img class="btn-icon" src="images/marketplace/wb-favicon.svg"> Обновить</button>
-     <button class="btn btn-ozon" onclick="refreshOzonReturns()"><img class="btn-icon" src="images/marketplace/ozon-favicon.svg"> Обновить</button>
-   </div>
-   <div class="button-row">
-     <button class="btn btn-wb" onclick="wbReturnSearch()"><img class="btn-icon" src="images/marketplace/wb-favicon.svg"> Поиск</button>
-     <button class="btn btn-ozon" onclick="ozonReturnSearch()"><img class="btn-icon" src="images/marketplace/ozon-favicon.svg"> Поиск</button>
-   </div>
    <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display:none">✕</button>
- </div>
+</div>
           </div>
         </div>
 
@@ -91,7 +83,6 @@
                     <th class="sortable" onclick="sortTable('paid')">Платёж</th>
                     <th class="sortable" onclick="sortTable('returnSum')">Возврат</th>
                     <th class="sortable" onclick="sortTable('statusName')">Статус</th>
-                    <th class="sortable" onclick="sortTable('returnType')">Тип</th>
                     <th class="sortable" onclick="sortTable('reason')">Причина</th>
                     <th class="sortable date-header" onclick="toggleDateFilter()">
                       Дата
@@ -102,7 +93,7 @@
                 </thead>
                 <tbody id="tableBody">
                   <tr>
-                    <td colspan="12" class="empty">Введите номера и нажмите "Проверить"</td>
+                    <td colspan="11" class="empty">Введите номера и нажмите "Проверить"</td>
                   </tr>
                 </tbody>
               </table>
@@ -150,13 +141,19 @@
             <button onclick="batchAction('cancel')" class="btn btn-cancel">Отмена</button>
           </div>
 
-          <!-- Current stats (60%) -->
+          <!-- Current stats -->
           <div class="stats-panel stats-current">
             <div class="stats-header">Текущее состояние</div>
             <div id="statsOutput" class="stats-output"></div>
           </div>
 
-          <!-- After action stats (40%) -->
+          <!-- Mismatch control panel -->
+          <div class="stats-panel stats-mismatch">
+            <div class="stats-header">Контроль статусов</div>
+            <div id="mismatchOutput" class="stats-output"></div>
+          </div>
+
+          <!-- After action stats -->
           <div class="stats-panel stats-final">
             <div id="statsFinalOutput" class="stats-output idle">
               <div class="terminal-message">Ожидание массовой операции</div>

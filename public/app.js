@@ -387,6 +387,7 @@ async function loadSavedOrders() {
 function loadSavedOrdersAndRender() {
   currentPage = 0;
   loadSavedOrders().then(function (orders) {
+    mismatchFilterOrders = null;
     ordersData = orders;
     renderTable();
     updateTotals();
@@ -490,9 +491,13 @@ function getSortedOrders(data = ordersData) {
   });
 }
 
-// Toggle all checkboxes
+// Toggle all checkboxes — только для видимых (прошедших фильтр) строк
 function toggleAll(checked) {
-  ordersData.forEach((o) => (o.enabled = checked));
+  const filtered = getFilteredData();
+  const filteredSet = new Set(filtered.map(o => o.shipmentNum));
+  ordersData.forEach((o) => {
+    if (filteredSet.has(o.shipmentNum)) o.enabled = checked;
+  });
   renderTable();
   updateTotals();
   renderCurrentStats();
@@ -523,12 +528,6 @@ async function checkNumbers() {
 
   if (numbers.length === 0) {
     showStatus('Введите номера');
-    return;
-  }
-
-  const token = loadToken();
-  if (!token) {
-    showStatus('Ошибка: Токен не найден. Нажмите "Токены" в шапке.');
     return;
   }
 
@@ -569,11 +568,21 @@ async function checkNumbers() {
     window.__currentAbortId = abortId; // Сохраняем для abortCheck()
 
     // SSE URL с параметрами
+    const msToken = loadToken() || '';
+    const wbToken = localStorage.getItem('wb_token') || '';
+    const ozonClientId = localStorage.getItem('ozon_client_id') || '';
+    const ozonApiKey = localStorage.getItem('ozon_api_key') || '';
     const numbersParam = encodeURIComponent(numbers.join(','));
-    const url = `/api/process/stream?token=${encodeURIComponent(token)}&numbers=${numbersParam}&abortId=${abortId}`;
+    const url = `/api/unified-search/stream?numbers=${numbersParam}&abortId=${abortId}`;
 
     const response = await fetch(url, {
-      signal: currentController.signal
+      signal: currentController.signal,
+      headers: {
+        'x-api-token': msToken,
+        'x-wb-token': wbToken,
+        'x-ozon-client-id': ozonClientId,
+        'x-ozon-api-key': ozonApiKey
+      }
     });
 
     if (!response.ok) {
@@ -725,83 +734,6 @@ async function checkNumbers() {
   }
 }
 
-/**
- * Refresh WB sales cache (invalidate TTL + re-fetch from WB API)
- * Reads wb_token from localStorage, POSTs to /api/wb-sales/refresh
- */
-async function refreshWBSales() {
-   const wbToken = localStorage.getItem('wb_token');
-   if (!wbToken) {
-     showStatus('Ошибка: WB токен не найден. Нажмите "Токены" в шапке.');
-     return;
-   }
-
-   const msToken = loadToken();
-   if (!msToken) {
-     showStatus('Ошибка: токен МС не найден. Нажмите "Токены" в шапке.');
-     return;
-   }
-
-   showStatus('⟳ Загрузка данных WB...');
-   showProgress(true);
-
-   // Очищаем таблицу
-   const tbody = document.getElementById('tableBody');
-   tbody.innerHTML = '';
-   ordersData = [];
-
-   try {
-     const url = `/api/wb-all/stream?token=${encodeURIComponent(msToken)}`;
-     const response = await fetch(url, {
-       headers: { 'x-wb-token': wbToken }
-     });
-
-     if (!response.ok) {
-       showStatus(`Ошибка: ${response.status}`);
-       showProgress(false);
-       return;
-     }
-
-     const reader = response.body.getReader();
-     const decoder = new TextDecoder();
-     let buffer = '';
-
-     while (true) {
-       const { done, value } = await reader.read();
-       if (done) break;
-
-       buffer += decoder.decode(value, { stream: true });
-       const lines = buffer.split('\n');
-       buffer = lines.pop() || '';
-
-       for (const line of lines) {
-         if (!line.startsWith('data: ')) continue;
-         try {
-           const event = JSON.parse(line.slice(6));
-           if (event.type === 'progress') {
-             showStatus(`⟳ ${event.msg || 'Загрузка...'}`);
-           } else if (event.type === 'order') {
-             ordersData.push(event.order);
-             appendTableRow(event.order);
-           } else if (event.type === 'done') {
-             showStatus(`✅ WB: ${event.stats.total} записей (${event.stats.sales} продаж, ${event.stats.returns} возвратов)`);
-             showProgress(false);
-             renderCurrentStats();
-           } else if (event.type === 'error') {
-             showStatus(`Ошибка: ${event.error}`);
-             showProgress(false);
-           }
-         } catch (e) {
-           console.error('[WB Refresh] parse error:', e.message);
-         }
-       }
-     }
-   } catch (e) {
-     showStatus(`Ошибка: ${e.message}`);
-     showProgress(false);
-   }
- }
-
 // Вспомогательная функция форматирования суммы для таблицы
 function fmtSum(n) {
   return (n && Number(n) > 0 ? Number(n).toLocaleString() + ' ₽' : '-');
@@ -839,139 +771,6 @@ function appendTableRow(order) {
    if (isReturn) tr.classList.add('row-return');
    tbody.appendChild(tr);
  }
-
-/**
- * Refresh Ozon returns & FBS sales (invalidate TTL + re-fetch from Ozon API)
- * Reads ozon_client_id and ozon_api_key from localStorage, SSE streams to /api/ozon-all/stream
- */
-async function refreshOzonReturns() {
-  const ozonClientId = localStorage.getItem('ozon_client_id');
-  const ozonApiKey = localStorage.getItem('ozon_api_key');
-
-  if (!ozonClientId || !ozonApiKey) {
-    showStatus('Ошибка: ключи Ozon не найдены. Нажмите "Токены" в шапке.');
-    return;
-  }
-
-  const msToken = loadToken();
-  if (!msToken) {
-    showStatus('Ошибка: токен МС не найден.');
-    return;
-  }
-
-  const ozonBtn = document.querySelector('.btn-ozon');
-  const abortBtn = document.getElementById('abortBtn');
-  if (ozonBtn) ozonBtn.disabled = true;
-  abortBtn.style.display = 'flex';
-  isWorking = true;
-  showProgress(true);
-
-  hideFinalStats(true);
-  startOperationTimer();
-
-  document.querySelector('.stats-final')?.classList.add('scanning');
-
-  const tbody = document.getElementById('tableBody');
-  tbody.innerHTML = '';
-  currentPage = 0;
-  ordersData = [];
-
-  currentDuplicates = 0;
-  renderCurrentStats();
-  realtimeMode = true;
-
-  try {
-    currentController = new AbortController();
-    const abortId = Math.random().toString(36).substring(2, 15);
-    window.__currentAbortId = abortId;
-
-    const url = `/api/ozon-all/stream?token=${encodeURIComponent(msToken)}&abortId=${abortId}`;
-
-    const response = await fetch(url, {
-      signal: currentController.signal,
-      headers: {
-        'x-ozon-client-id': ozonClientId,
-        'x-ozon-api-key': ozonApiKey,
-        'x-api-token': msToken
-      }
-    });
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      hideProgress(false, errData.error || `Ошибка: ${response.status}`);
-      document.querySelector('.stats-final')?.classList.remove('scanning');
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const data = JSON.parse(line.slice(6));
-
-          if (data.type === 'progress') {
-            showStatus(`⟳ ${data.msg || 'Загрузка Ozon...'}`);
-          } else if (data.type === 'order') {
-            const orderData = { ...data.order, enabled: true };
-            ordersData.push(orderData);
-            appendOrderRow(orderData);
-            updateTotals();
-            renderCurrentStats(true);
-          } else if (data.type === 'done') {
-            const elapsed = stopOperationTimer();
-            realtimeMode = false;
-            updateTotals();
-            renderCurrentStats();
-            saveLastActionStats();
-            hideProgress(true, `✅ Ozon: ${data.stats?.total || ordersData.length} записей`);
-            document.querySelector('.stats-final')?.classList.remove('scanning');
-          } else if (data.type === 'aborted') {
-            const elapsed = stopOperationTimer();
-            realtimeMode = false;
-            updateTotals();
-            renderCurrentStats();
-            hideProgress(false, 'Прервано. Обработано: ' + (data.processed || 0));
-            document.querySelector('.stats-final')?.classList.remove('scanning');
-          } else if (data.type === 'error') {
-            hideProgress(false, data.error || 'Ошибка');
-            document.querySelector('.stats-final')?.classList.remove('scanning');
-            return;
-          }
-        } catch (e) {
-          console.error('[Ozon Refresh] SSE parse error:', e);
-        }
-      }
-    }
-  } catch (e) {
-    if (e.name === 'AbortError') {
-      hideProgress(false, 'Прервано');
-      stopOperationTimer();
-    } else {
-      hideProgress(false, 'Ошибка: ' + e.message);
-      stopOperationTimer();
-    }
-  } finally {
-    realtimeMode = false;
-    renderTable();
-
-    if (ozonBtn) ozonBtn.disabled = false;
-    abortBtn.style.display = 'none';
-    isWorking = false;
-    window.__currentAbortId = null;
-    document.querySelector('.stats-final')?.classList.remove('scanning');
-  }
-}
 
 /**
  * Поиск возврата WB по коду стикера
@@ -1070,12 +869,18 @@ async function wbReturnSearch() {
             const data = JSON.parse(line.slice(6));
 
             if (data.type === 'progress') {
-              const order = data.order;
-              const orderData = { ...order, enabled: true };
+              // WB rate limit (onWait) — обновляем статус, строку не добавляем
+              document.getElementById('statusText').textContent =
+                `⏳ ${data.order?.orderName || 'Ожидание...'}`;
+            } else if (data.type === 'search-ms') {
+              document.getElementById('statusText').textContent =
+                `⟳ Поиск в МС: ${data.msg || ''}`;
+            } else if (data.type === 'result') {
+              const orderData = { ...data.order, enabled: true };
               ordersData.push(orderData);
 
               document.getElementById('statusText').textContent =
-                `Загружено ${data.index}/${data.total}`;
+                `Загружено ${data.processed || ordersData.length}/${data.total || numbers.length}`;
 
               appendOrderRow(orderData);
               updateTotals();
@@ -1279,16 +1084,23 @@ async function ozonReturnSearch() {
 }
 
 function abortCheck() {
+  // Check if unified search is active first
+  if (window._unifiedAbort) {
+    window._unifiedAbort()
+    return
+  }
+
+  // Legacy abort for currentController-based searches
   if (currentController) {
-    currentController.abort();
-    // Также уведомляем сервер для быстрого прекращения
-    const abortId = window.__currentAbortId;
+    currentController.abort()
+    // Also notify server for fast termination
+    const abortId = window.__currentAbortId
     if (abortId) {
       fetch('/api/abort', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ abortId })
-      }).catch(() => {});
+      }).catch(() => {})
     }
   }
 }
@@ -1301,7 +1113,7 @@ function getRowActions(order, index) {
   const hasR = order.hasReturn;
   const isCancelled = order.isCancelled;
 
-  let btns = '';
+  let btns = '<div class="action-grid">';
 
   // Demand - создать отгрузку (если её нет и заказ не отменён)
   btns += `<button class="btn btn-demand action-btn" onclick="createDemandByNum('${order.shipmentNum}')" title="${hasD ? 'Отгрузка есть' : 'Создать отгрузку'}" ${hasD || isCancelled ? 'disabled' : ''}>📦</button>`;
@@ -1324,6 +1136,7 @@ function getRowActions(order, index) {
   const canCancel = !hasD && !isCancelled;
   btns += `<button class="btn btn-cancel action-btn" onclick="cancelOrderByNum('${order.shipmentNum}')" title="Отменить заказ" ${canCancel ? '' : 'disabled'}>✗</button>`;
 
+  btns += '</div>';
   return btns;
 }
 
@@ -1336,7 +1149,7 @@ function formatDate(isoStr) {
   const year = d.getFullYear();
   const hours = String(d.getHours()).padStart(2, '0');
   const mins = String(d.getMinutes()).padStart(2, '0');
-  return `${day}.${month}.${year} ${hours}:${mins}`;
+  return `${day}.${month}.${year}<br><span class="time-part">${hours}:${mins}</span>`;
 }
 
 // ─── Date filter functions ────────────────────────────────────────────────────
@@ -1352,6 +1165,12 @@ function getFilteredData() {
       return true;
     });
   }
+  
+  // ── Mismatch filter ──
+  if (mismatchFilterOrders && mismatchFilterOrders.length > 0) {
+    data = data.filter(o => mismatchFilterOrders.includes(o.shipmentNum));
+  }
+  
   return data;
 }
 
@@ -1468,6 +1287,8 @@ function applyDateFilter() {
   closeDateFilter();
   updateFilterIndicator();
   renderTable();
+  updateTotals();
+  renderCurrentStats();
 }
 
 function resetDateFilter() {
@@ -1478,6 +1299,8 @@ function resetDateFilter() {
   closeDateFilter();
   updateFilterIndicator();
   renderTable();
+  updateTotals();
+  renderCurrentStats();
 }
 
 function updateFilterIndicator() {
@@ -1512,8 +1335,18 @@ function renderTable() {
   const pageOrders = sorted.slice(start, end);
   updateFilterIndicator();
 
+  // mismatch filter banner
+  if (mismatchFilterOrders) {
+    const banner = document.createElement('div');
+    banner.className = 'mismatch-filter-banner';
+    banner.innerHTML = '<span>Показано <strong>' + filtered.length + '</strong> заказов по фильтру расхождений</span>' +
+      '<button onclick="clearMismatchFilter()" class="btn-small">✕ Сбросить</button>';
+    const tableContainer = document.getElementById('tableContainer');
+    if (tableContainer) tableContainer.insertBefore(banner, tableContainer.firstChild);
+  }
+
   if (pageOrders.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12" class="empty">Нет данных для текущей страницы</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="empty">Нет данных для текущей страницы</td></tr>';
     return;
   }
 
@@ -1529,9 +1362,19 @@ function renderTable() {
     const paymentDisplay = order.paid
       ? `<span class="payment-sum">${order.paid} ₽</span>`
       : '<span class="status-no">—</span>';
-    const returnDisplay = order.returnSum
-      ? `<span class="payment-sum">${order.returnSum} ₽</span>`
-      : '<span class="status-no">—</span>';
+    // Return column: MS return status (top) + Ozon return sum (bottom, smaller)
+    let returnDisplay = '';
+    if (order.hasReturn) {
+      returnDisplay += `<span class="payment-sum">${order.returnSum} ₽</span>`;
+    } else {
+      returnDisplay += '<span class="status-no">—</span>';
+    }
+    if (order.ozonReturnInfo && order.returnSum) {
+      returnDisplay += `<br><span class="payment-sum" style="font-size:0.85em">${order.returnSum} ₽ (Ozon)</span>`;
+    }
+    if (order.wbReturnInfo && order.returnSum) {
+      returnDisplay += `<br><span class="payment-sum" style="font-size:0.85em">${order.returnSum} ₽ (WB)</span>`;
+    }
 
     // Статус документа - показываем directly из API statusName
     let statusDisplay = '';
@@ -1559,11 +1402,13 @@ function renderTable() {
 
     const displayText = statusName || 'Новый';
     statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>';
+    const ozonLine = order.ozonReturnInfo
+      ? `<br><span class="status-return" style="font-size:0.85em">${order.ozonReturnInfo}</span>`
+      : '';
+    const wbLine = order.wbReturnInfo
+      ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
+      : '';
 
-    // WB поля из объединённого кэша
-    const returnTypeDisplay = order.returnType
-      ? `<span class="${order.returnType === 'Брак' ? 'status-error' : 'status-return'}">${order.returnType}</span>`
-      : '<span class="status-no">—</span>';
     const reasonDisplay = order.reason
       ? `<span class="reason-text" title="${order.reason.replace(/"/g, '&quot;')}">${order.reason.length > 30 ? order.reason.slice(0, 30) + '…' : order.reason}</span>`
       : '<span class="status-no">—</span>';
@@ -1594,19 +1439,26 @@ function renderTable() {
       statusText = 'Возврат';
     }
 
+  // Sub-elements for № column
+  let numSub = '';
+  if (order.ozonReturnInfo && order.barcode) {
+    numSub = `<br><span style="font-size:0.85em">Ozon: ${order.barcode}</span>`;
+  } else if (order.wbStickerId) {
+    numSub = `<br><span style="font-size:0.85em">Стикер: ${order.wbStickerId}</span>`;
+  }
+
   tr.innerHTML = `
         <td><input type="checkbox" ${order.enabled ? 'checked' : ''} onchange="toggleEnabled(${actualIndex}, this)"></td>
-        <td class="order-num">${order.extractedShipmentNum || order.shipmentNum}${order.wbStickerId ? `<br><span class="sticker-id">стикер: ${order.wbStickerId}</span>` : ''}</td>
-<td class="order-name-cell">${order.orderName || '—'}</td>
-            <td>${order.sum} ₽</td>
+        <td class="order-num">${order.extractedShipmentNum || order.shipmentNum}${numSub}</td>
+        <td class="order-name-cell">${order.orderName || '—'}</td>
+            <td>${order.sum} ₽${order.wbForPay > 0 ? `<br><span class="price-wb">К выплате: ${Number(order.wbForPay).toLocaleString('ru-RU')} ₽</span>` : ''}</td>
             <td>${demandDisplay}</td>
             <td>${paymentDisplay}</td>
             <td>${returnDisplay}</td>
-            <td>${statusDisplay}</td>
-            <td>${returnTypeDisplay}</td>
+            <td>${statusDisplay}${ozonLine}${wbLine}</td>
             <td>${reasonDisplay}</td>
             <td class="date-cell">${formatDate(order.orderMoment)}</td>
-            <td>${getRowActions(order, actualIndex)}</td>
+            <td class="action-cell">${getRowActions(order, actualIndex)}</td>
         `;
 
     // Сохраняем srid и lastChangeDate как data-атрибуты для отладки
@@ -1629,7 +1481,7 @@ function renderTable() {
       const posTr = document.createElement('tr');
       posTr.className = 'positions-row';
       const cells =
-        '<td colspan="12" class="positions-cell">' +
+      '<td colspan="11" class="positions-cell">' +
         allPositions
           .map((p) => {
             const code = p.code
@@ -1687,16 +1539,28 @@ function appendOrderRow(order) {
   const paymentDisplay = order.paid
     ? `<span class="payment-sum">${order.paid} ₽</span>`
     : '<span class="status-no">—</span>';
-  const returnDisplay = order.returnSum
-    ? `<span class="payment-sum">${order.returnSum} ₽</span>`
-    : '<span class="status-no">—</span>';
+  // Return column: MS return status (top) + marketplace return sums (bottom, smaller)
+  let returnDisplay = '';
+  if (order.hasReturn) {
+    returnDisplay += `<span class="payment-sum">${order.returnSum} ₽</span>`;
+  } else {
+    returnDisplay += '<span class="status-no">—</span>';
+  }
+  if (order.ozonReturnInfo && order.returnSum) {
+    returnDisplay += `<br><span class="payment-sum" style="font-size:0.85em">${order.returnSum} ₽ (Ozon)</span>`;
+  }
+  if (order.wbReturnInfo && order.returnSum) {
+    returnDisplay += `<br><span class="payment-sum" style="font-size:0.85em">${order.returnSum} ₽ (WB)</span>`;
+  }
   const displayText = statusName || 'Новый';
   const statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>';
+  const ozonLine = order.ozonReturnInfo
+    ? `<br><span class="status-return" style="font-size:0.85em">${order.ozonReturnInfo}</span>`
+    : '';
+  const wbLine = order.wbReturnInfo
+    ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
+    : '';
 
-  // WB поля из объединённого кэша
-  const returnTypeDisplay = order.returnType
-    ? `<span class="${order.returnType === 'Брак' ? 'status-error' : 'status-return'}">${order.returnType}</span>`
-    : '<span class="status-no">—</span>';
   const reasonDisplay = order.reason
     ? `<span class="reason-text" title="${order.reason.replace(/"/g, '&quot;')}">${order.reason.length > 30 ? order.reason.slice(0, 30) + '…' : order.reason}</span>`
     : '<span class="status-no">—</span>';
@@ -1715,19 +1579,26 @@ function appendOrderRow(order) {
   // Дата: используем wbCompletedDt/wbOrderDt если нет orderMoment
   const displayDate = order.orderMoment || order.wbCompletedDt || order.wbOrderDt || '';
 
+  // Sub-elements for № column
+  let numSub = '';
+  if (order.ozonReturnInfo && order.barcode) {
+    numSub = `<br><span style="font-size:0.85em">Ozon: ${order.barcode}</span>`;
+  } else if (order.wbStickerId) {
+    numSub = `<br><span style="font-size:0.85em">Стикер: ${order.wbStickerId}</span>`;
+  }
+
   tr.innerHTML = `
         <td><input type="checkbox" ${order.enabled ? 'checked' : ''} onchange="toggleEnabled(${actualIndex}, this)"></td>
-        <td class="order-num">${order.extractedShipmentNum || order.shipmentNum}</td>
+        <td class="order-num">${order.extractedShipmentNum || order.shipmentNum}${numSub}</td>
         <td class="order-name-cell">${order.orderName || '—'} ${wbArticleDisplay} ${wbStatusDisplay}${wbSubjectDisplay}</td>
         <td>${order.sum} ₽</td>
         <td>${demandDisplay}</td>
         <td>${paymentDisplay}</td>
         <td>${returnDisplay}</td>
-        <td>${statusDisplay}</td>
-        <td>${returnTypeDisplay}</td>
+        <td>${statusDisplay}${ozonLine}${wbLine}</td>
         <td>${reasonDisplay}</td>
         <td class="date-cell">${formatDate(displayDate)}</td>
-        <td>${getRowActions(order, actualIndex)}</td>
+        <td class="action-cell">${getRowActions(order, actualIndex)}</td>
     `;
 
   // Сохраняем WB поля как data-атрибуты
@@ -1805,7 +1676,8 @@ function goNextPage() {
 }
 
 function updateTotals(skipRender = false) {
-  const enabled = ordersData.filter((o) => o.enabled);
+  const filtered = getFilteredData();
+  const enabled = filtered.filter((o) => o.enabled);
   const toCreate = enabled.filter((o) => o.hasDemand && !o.hasPayment).length;
   const totalSum = enabled.reduce((sum, o) => sum + (Number(o.sum) || 0), 0);
 
@@ -1918,6 +1790,154 @@ function calculateStats(orderList) {
   return stats;
 }
 
+function calculateMismatches(orderList) {
+  const list = (orderList || ordersData).filter(o => o.enabled);
+  
+  const result = {
+    wbCount: 0,
+    ozonCount: 0,
+    marketplaceReturnNoMs: 0,
+    marketplaceReturnNoMsOrders: [],
+    msReturnNoMarketplace: 0,
+    msReturnNoMarketplaceOrders: [],
+    financialMismatchCount: 0,
+    financialMismatchOrders: [],
+    totalMismatches: 0
+  };
+  
+  list.forEach(o => {
+    const hasMarketplaceReturn = !!(o.wbReturnInfo || o.ozonReturnInfo);
+    
+    if (o.wbArticle || o.srid || o.wbStickerId) result.wbCount++;
+    if (o.offerId || o.ozonReturnInfo) result.ozonCount++;
+    
+    if (hasMarketplaceReturn && !o.hasReturn) {
+      result.marketplaceReturnNoMs++;
+      if (o.shipmentNum) result.marketplaceReturnNoMsOrders.push(o.shipmentNum);
+      result.totalMismatches++;
+    }
+    
+    if (o.hasReturn && !hasMarketplaceReturn) {
+      result.msReturnNoMarketplace++;
+      if (o.shipmentNum) result.msReturnNoMarketplaceOrders.push(o.shipmentNum);
+      result.totalMismatches++;
+    }
+    
+    // Financial mismatch: msReturnSum vs marketplaceReturnPrice
+    const msRS = o.msReturnSum || 0;
+    const mpRP = o.marketplaceReturnPrice || 0;
+    if (msRS > 0 && mpRP > 0 && Math.abs(msRS - mpRP) > 1) {
+      result.financialMismatchCount++;
+      if (o.shipmentNum) result.financialMismatchOrders.push(o.shipmentNum);
+      result.totalMismatches++;
+    }
+  });
+  
+  return result;
+}
+
+function renderMismatchStats() {
+  const el = document.getElementById('mismatchOutput');
+  if (!el) return;
+  
+  mismatchData = calculateMismatches();
+  const s = mismatchData;
+  const hasMismatches = s.totalMismatches > 0;
+  
+  let html = '<div class="mismatch-body">';
+  
+  html += `<div class="stat-row">
+    <span class="stat-label">Заказы WB:</span>
+    <span class="stat-value">${s.wbCount}</span>
+  </div>`;
+  html += `<div class="stat-row">
+    <span class="stat-label">Заказы Ozon:</span>
+    <span class="stat-value">${s.ozonCount}</span>
+  </div>`;
+  
+  html += '<div class="mismatch-separator"></div>';
+  
+  if (hasMismatches) {
+    const mpOrdersAttr = encodeURIComponent(JSON.stringify(s.marketplaceReturnNoMsOrders));
+    html += `<div class="stat-row mismatch-error" data-mismatch-type="mp-return-no-ms" data-orders="${mpOrdersAttr}">
+      <span class="stat-label">↳ Возврат на площадке, нет в МС:</span>
+      <span class="stat-value">${s.marketplaceReturnNoMs}</span>
+    </div>`;
+    
+    const msOrdersAttr = encodeURIComponent(JSON.stringify(s.msReturnNoMarketplaceOrders));
+    html += `<div class="stat-row mismatch-warn" data-mismatch-type="ms-return-no-mp" data-orders="${msOrdersAttr}">
+      <span class="stat-label">↳ Возврат в МС, нет на площадке:</span>
+      <span class="stat-value">${s.msReturnNoMarketplace}</span>
+    </div>`;
+    
+    if (s.financialMismatchCount > 0) {
+      const finOrdersAttr = encodeURIComponent(JSON.stringify(s.financialMismatchOrders));
+      html += `<div class="stat-row mismatch-error" data-mismatch-type="financial" data-orders="${finOrdersAttr}">
+        <span class="stat-label">↳ Сумма возврата не совпадает:</span>
+        <span class="stat-value">${s.financialMismatchCount}</span>
+      </div>`;
+    }
+  } else {
+    html += `<div class="stat-row">
+      <span class="stat-value mismatch-ok-text">✓ Нет расхождений</span>
+    </div>`;
+  }
+  
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function initMismatchClickHandler() {
+  const container = document.getElementById('mismatchOutput');
+  if (!container) return;
+  
+  container.addEventListener('click', function(e) {
+    const row = e.target.closest('[data-mismatch-type]');
+    if (!row) return;
+    
+    const type = row.dataset.mismatchType;
+    const ordersAttr = row.dataset.orders;
+    let orders = [];
+    
+    if (ordersAttr) {
+      try {
+        orders = JSON.parse(decodeURIComponent(ordersAttr));
+      } catch (err) {
+        console.warn('mismatch: failed to parse orders attr', err);
+      }
+    }
+    
+    if (orders.length === 0) return;
+    
+    const sameFilter = mismatchFilterOrders &&
+      mismatchFilterOrders.length === orders.length &&
+      mismatchFilterOrders.every((v, i) => v === orders[i]);
+    
+    if (sameFilter) {
+      mismatchFilterOrders = null;
+    } else {
+      mismatchFilterOrders = orders;
+    }
+    
+    renderTable();
+    highlightMismatchFilter(type);
+  });
+}
+
+function highlightMismatchFilter(activeType) {
+  document.querySelectorAll('#mismatchOutput [data-mismatch-type]').forEach(el => {
+    el.style.outline = el.dataset.mismatchType === activeType && mismatchFilterOrders
+      ? '1px solid var(--accent)'
+      : 'none';
+  });
+}
+
+function clearMismatchFilter() {
+  mismatchFilterOrders = null;
+  highlightMismatchFilter(null);
+  renderTable();
+}
+
 // Render current stats
 // force - принудительно обновить даже в realtime режиме
 function renderCurrentStats(force = false) {
@@ -1926,7 +1946,7 @@ function renderCurrentStats(force = false) {
 
   console.log('DEBUG renderCurrentStats called, ordersData length:', ordersData?.length);
   try {
-    const stats = calculateStats();
+    const stats = calculateStats(getFilteredData());
     console.log('DEBUG stats:', stats);
     const container = document.getElementById('statsOutput');
     console.log('DEBUG container:', container);
@@ -1987,6 +2007,8 @@ function renderCurrentStats(force = false) {
                 }
             </div>
         `;
+    // ── render mismatch stats ──
+    renderMismatchStats();
   } catch (e) {
     console.log('DEBUG renderCurrentStats error:', e.message, e.stack);
   }
@@ -1994,6 +2016,10 @@ function renderCurrentStats(force = false) {
 
 // Last action stats for comparison
 let lastActionStats = null;
+
+// ─── Mismatch Control ─────────────────────────────────────────────
+let mismatchData = null;
+let mismatchFilterOrders = null; // null = no filter, array = shipmentNums to show
 
 function saveLastActionStats() {
   lastActionStats = calculateStats();
@@ -2016,15 +2042,17 @@ function renderFinalStats() {
 
   const diffCount = (label, wasVal, nowVal) => {
     const diffVal = nowVal - wasVal;
-    const cls = diffVal > 0 ? 'success' : diffVal < 0 ? 'error' : '';
-    const arrow = diffVal > 0 ? '↑' : diffVal < 0 ? '↓' : '—';
+    if (diffVal === 0) return '';
+    const cls = diffVal > 0 ? 'success' : 'error';
+    const arrow = diffVal > 0 ? '↑' : '↓';
     return `<div class="stat-row"><span class="stat-label">${label}:</span><span class="stat-value ${cls}">${fmt(wasVal)} → ${fmt(nowVal)} ${arrow}</span></div>`;
   };
 
   const diffSum = (label, wasVal, nowVal) => {
     const diffVal = nowVal - wasVal;
-    const cls = diffVal > 0 ? 'success' : diffVal < 0 ? 'error' : '';
-    const arrow = diffVal > 0 ? '↑' : diffVal < 0 ? '↓' : '—';
+    if (diffVal === 0) return '';
+    const cls = diffVal > 0 ? 'success' : 'error';
+    const arrow = diffVal > 0 ? '↑' : '↓';
     return `<div class="stat-row"><span class="stat-label">${label}:</span><span class="stat-value ${cls}">${fmtSum(wasVal)} → ${fmtSum(nowVal)} ${arrow}</span></div>`;
   };
 
@@ -2349,7 +2377,8 @@ async function batchAction(actionType) {
   };
   if (!(await showConfirm(`Создать ${actionNames[actionType]} для отмеченных?`))) return;
 
-  const orders = ordersData.filter((o) => o.enabled);
+  const filtered = getFilteredData();
+  const orders = filtered.filter((o) => o.enabled);
   if (orders.length === 0) {
     alert('Нет отмеченных заказов');
     return;
@@ -2786,6 +2815,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Загружаем сохранённые заказы при старте
   await loadSavedOrdersAndRender();
+
+  // Инициализируем обработчик кликов для блока расхождений
+  initMismatchClickHandler();
 
   // Делегированный клик по дням календаря (чтобы не откреплялся при innerHTML)
   const drpDays = document.getElementById('drpDays');
