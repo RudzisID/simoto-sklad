@@ -1974,6 +1974,11 @@ button:disabled {
   min-width: 80px;
 }
 
+.stat-sum.wb-payout {
+  color: #6F01FB;
+  font-weight: 600;
+}
+
 @keyframes valueFlash {
   0%,
   100% {

@@ -639,6 +639,7 @@ app.get('/api/unified-search/stream', async (req, res) => {
   function buildOrderData({ orderResult, marketplace, marketplaceData, code }) {
     const orderData = {
       shipmentNum: code,
+      orderId: orderResult?.orderId || null,
       orderName: orderResult?.orderName || code,
       sum: orderResult?.sum || 0,
       statusName: orderResult?.statusName || '',
@@ -734,18 +735,46 @@ app.get('/api/unified-search/stream', async (req, res) => {
           orderResult = await checkOrder(code, ulog)
           if (orderResult && orderResult.orderId) {
             marketplace = detectMarketplace(orderResult.orderName || '')
+
+            // Если имя заказа не содержит названия маркета (76505),
+            // определяем по extractedShipmentNum:
+            //   WB: 7-12 цифр (стикер)  |  Ozon: XXX-XXX-XXX
+            if (!marketplace && orderResult.extractedShipmentNum) {
+              if (/^\d{7,12}$/.test(orderResult.extractedShipmentNum)) {
+                marketplace = 'wb'
+              } else if (/^\d+-\d+-\d+$/.test(orderResult.extractedShipmentNum)) {
+                marketplace = 'ozon'
+              }
+            }
             if (marketplace === 'wb') {
               marketplaceData = wb.findInCache(code)
-              if (marketplaceData) ulog(`WB cache found for ${code}: source=${marketplaceData._source}`)
             } else if (marketplace === 'ozon') {
               marketplaceData = ozon.findInCache(code)
-              if (marketplaceData) ulog(`Ozon cache found for ${code}`)
             }
           }
         }
 
+        // Шаг 1.5: Если МС нашёлся, а данных маркета нет — ищем в кэшах
+        // (code может быть номером сборочного задания, а не стикером)
+        if (orderResult && orderResult.orderId && !marketplaceData) {
+          if (marketplace === 'wb') {
+            marketplaceData = wb.findInCache(code)
+            if (!marketplaceData && orderResult.extractedShipmentNum && orderResult.extractedShipmentNum !== code) {
+              marketplaceData = wb.findInCache(orderResult.extractedShipmentNum)
+            }
+          } else if (marketplace === 'ozon') {
+            marketplaceData = ozon.findInCache(code)
+            if (!marketplaceData && orderResult.extractedShipmentNum && orderResult.extractedShipmentNum !== code) {
+              marketplaceData = ozon.findInCache(orderResult.extractedShipmentNum)
+            }
+          } else {
+            marketplaceData = wb.findInCache(code) || ozon.findInCache(code)
+            if (marketplaceData) marketplace = marketplaceData._source?.includes('ozon') ? 'ozon' : 'wb'
+          }
+        }
+
         // Шаг 2: Не найден в МС → ищем в кэшах напрямую
-        if (!orderResult) {
+        if (!orderResult || !orderResult.foundBy) {
           const ozonData = ozon.findInCache(code)
           if (ozonData) {
             marketplace = 'ozon'
@@ -783,7 +812,7 @@ app.get('/api/unified-search/stream', async (req, res) => {
         res.write(`data: ${JSON.stringify({
           type: 'progress',
           order: {
-            shipmentNum: code, orderName: '-', sum: 0,
+            shipmentNum: code, orderId: null, orderName: '-', sum: 0,
             statusName: `Ошибка: ${e.message}`, status: 'error',
             hasReturn: false, hasDemand: false, hasPayment: false, isCancelled: false,
             demandName: null, paid: 0, returnSum: 0, returnType: '', reason: '',
@@ -993,7 +1022,7 @@ app.post('/api/save-report', async (req, res) => {
 
 // Create single payment
 app.post('/api/create-payment', async (req, res) => {
-  const { shipmentNum } = req.body
+  const { shipmentNum, orderId: directOrderId } = req.body
   const token = req.headers['x-api-token']
 
   if (!token || !shipmentNum) {
@@ -1001,28 +1030,33 @@ app.post('/api/create-payment', async (req, res) => {
   }
 
   initApi(token)
-  log(`Создание платежа: ${shipmentNum}`, { token: token.slice(0, 8) + '...' })
+  log(`Создание платежа: ${shipmentNum}${directOrderId ? ` (orderId: ${directOrderId})` : ''}`, { token: token.slice(0, 8) + '...' })
 
   try {
-    log(`Проверка заказа: ${shipmentNum}`)
-    const checkResult = await checkOrder(shipmentNum, log)
+    let orderId = directOrderId
 
-    if (!checkResult.canPayment) {
-      log(`Нельзя создать платёж: ${checkResult.statusName}`, {
-        shipmentNum,
-        status: checkResult.status
-      })
-      updateOrderState(shipmentNum, 'payment_check', 'skipped: ' + checkResult.statusName)
-      return res.json({ error: 'Невозможно создать платёж: ' + checkResult.statusName })
+    if (!orderId) {
+      log(`Проверка заказа: ${shipmentNum}`)
+      const checkResult = await checkOrder(shipmentNum, log)
+
+      if (!checkResult.canPayment) {
+        log(`Нельзя создать платёж: ${checkResult.statusName}`, {
+          shipmentNum,
+          status: checkResult.status
+        })
+        updateOrderState(shipmentNum, 'payment_check', 'skipped: ' + checkResult.statusName)
+        return res.json({ error: 'Невозможно создать платёж: ' + checkResult.statusName })
+      }
+      orderId = checkResult.orderId
     }
 
-    log(`Заказ найден, создаю платёж: ${shipmentNum}`)
-    const payment = await createPayment(checkResult.orderId)
+    log(`Заказ найден, создаю платёж: ${shipmentNum} (orderId: ${orderId})`)
+    const payment = await createPayment(orderId)
     log(`Платёж создан: ${payment.name}`, { shipmentNum })
 
     // Получаем данные для обновления состояния
     const { getOrderFullForCreate, getDemand } = require('./lib/order')
-    const orderFull = await getOrderFullForCreate(checkResult.orderId)
+    const orderFull = await getOrderFullForCreate(orderId)
     const demandId = orderFull.demands[0].meta.href.split('/').pop()
     const demand = await getDemand(demandId)
 
@@ -1044,7 +1078,7 @@ app.post('/api/create-payment', async (req, res) => {
 
 // Create partial payment (with returns deduction) - manual only
 app.post('/api/create-partial-payment', async (req, res) => {
-  const { shipmentNum } = req.body
+  const { shipmentNum, orderId: directOrderId } = req.body
   const token = req.headers['x-api-token']
 
   if (!token || !shipmentNum) {
@@ -1052,20 +1086,25 @@ app.post('/api/create-partial-payment', async (req, res) => {
   }
 
   initApi(token)
-  log(`Создание частичного платежа: ${shipmentNum}`, { token: token.slice(0, 8) + '...' })
+  log(`Создание частичного платежа: ${shipmentNum}${directOrderId ? ` (orderId: ${directOrderId})` : ''}`, { token: token.slice(0, 8) + '...' })
 
   try {
-    log(`Проверка заказа: ${shipmentNum}`)
-    const order = await findOrderByShipmentNum(shipmentNum, log)
-    if (!order) {
-      log(`Заказ не найден: ${shipmentNum}`)
-      updateOrderState(shipmentNum, 'partial_payment_check', 'order_not_found')
-      return res.json({ error: 'Заказ не найден' })
+    let orderId = directOrderId
+
+    if (!orderId) {
+      log(`Проверка заказа: ${shipmentNum}`)
+      const order = await findOrderByShipmentNum(shipmentNum, log)
+      if (!order) {
+        log(`Заказ не найден: ${shipmentNum}`)
+        updateOrderState(shipmentNum, 'partial_payment_check', 'order_not_found')
+        return res.json({ error: 'Заказ не найден' })
+      }
+      orderId = order.id
     }
 
-    log(`Создаю частичный платёж: ${shipmentNum}`, { orderId: order.id })
+    log(`Создаю частичный платёж: ${shipmentNum}`, { orderId })
     const { createPartialPayment } = require('./lib/payment')
-    const result = await createPartialPayment(order.id)
+    const result = await createPartialPayment(orderId)
     log(`Частичный платёж создан: ${result.name}`, { 
       shipmentNum, 
       paymentId: result.id,
@@ -1074,7 +1113,7 @@ app.post('/api/create-partial-payment', async (req, res) => {
 
     // Получаем данные для обновления состояния
     const { getOrderFullForCreate } = require('./lib/order')
-    const orderFull = await getOrderFullForCreate(order.id)
+    const orderFull = await getOrderFullForCreate(orderId)
 
     updateOrderState(shipmentNum, 'partial_payment_created', result.name, {
       orderName: orderFull.name,
@@ -1399,7 +1438,7 @@ app.post('/api/create-partial-payment', async (req, res) => {
 
   // Create demand (отгрузка) - see Skills/moysklad-demand.md
  app.post('/api/create-demand', async (req, res) => {
-  const { shipmentNum } = req.body
+  const { shipmentNum, orderId: directOrderId } = req.body
   const token = req.headers['x-api-token']
 
   if (!token || !shipmentNum) {
@@ -1407,24 +1446,29 @@ app.post('/api/create-partial-payment', async (req, res) => {
   }
 
   initApi(token)
-  log(`Создание отгрузки: ${shipmentNum}`, { token: token.slice(0, 8) + '...' })
+  log(`Создание отгрузки: ${shipmentNum}${directOrderId ? ` (orderId: ${directOrderId})` : ''}`, { token: token.slice(0, 8) + '...' })
 
   try {
-    log(`Поиск заказа: ${shipmentNum}`)
-    const order = await findOrderByShipmentNum(shipmentNum, log)
-    if (!order) {
-      log(`Заказ не найден: ${shipmentNum}`)
-      updateOrderState(shipmentNum, 'demand_check', 'order_not_found')
-      return res.json({ error: 'Заказ не найден' })
+    let orderId = directOrderId
+
+    if (!orderId) {
+      log(`Поиск заказа: ${shipmentNum}`)
+      const order = await findOrderByShipmentNum(shipmentNum, log)
+      if (!order) {
+        log(`Заказ не найден: ${shipmentNum}`)
+        updateOrderState(shipmentNum, 'demand_check', 'order_not_found')
+        return res.json({ error: 'Заказ не найден' })
+      }
+      orderId = order.id
     }
 
-    log(`Создаю отгрузку: ${shipmentNum}`, { orderId: order.id })
-    const demand = await createDemand(order.id)
+    log(`Создаю отгрузку: ${shipmentNum}`, { orderId })
+    const demand = await createDemand(orderId)
     log(`Отгрузка создана: ${demand.name}`, { shipmentNum, demandId: demand.id })
 
     // Получаем данные для обновления состояния
     const { getOrderFullForCreate } = require('./lib/order')
-    const orderFull = await getOrderFullForCreate(order.id)
+    const orderFull = await getOrderFullForCreate(orderId)
 
     updateOrderState(shipmentNum, 'demand_created', demand.name, {
       orderName: orderFull.name,
@@ -1441,7 +1485,7 @@ app.post('/api/create-partial-payment', async (req, res) => {
 
 // Create return (возврат) - see Skills/moysklad-return.md
 app.post('/api/create-return', async (req, res) => {
-  const { shipmentNum } = req.body
+  const { shipmentNum, orderId: directOrderId } = req.body
   const token = req.headers['x-api-token']
 
   if (!token || !shipmentNum) {
@@ -1449,24 +1493,29 @@ app.post('/api/create-return', async (req, res) => {
   }
 
   initApi(token)
-  log(`Создание возврата: ${shipmentNum}`, { token: token.slice(0, 8) + '...' })
+  log(`Создание возврата: ${shipmentNum}${directOrderId ? ` (orderId: ${directOrderId})` : ''}`, { token: token.slice(0, 8) + '...' })
 
   try {
-    log(`Поиск заказа для возврата: ${shipmentNum}`)
-    const order = await findOrderByShipmentNum(shipmentNum, log)
-    if (!order) {
-      log(`Заказ не найден для возврата: ${shipmentNum}`)
-      updateOrderState(shipmentNum, 'return_check', 'order_not_found')
-      return res.json({ error: 'Заказ не найден' })
+    let orderId = directOrderId
+
+    if (!orderId) {
+      log(`Поиск заказа для возврата: ${shipmentNum}`)
+      const order = await findOrderByShipmentNum(shipmentNum, log)
+      if (!order) {
+        log(`Заказ не найден для возврата: ${shipmentNum}`)
+        updateOrderState(shipmentNum, 'return_check', 'order_not_found')
+        return res.json({ error: 'Заказ не найден' })
+      }
+      orderId = order.id
     }
 
-    log(`Создаю возврат: ${shipmentNum}`, { orderId: order.id })
-    const salesReturn = await createReturn(order.id)
+    log(`Создаю возврат: ${shipmentNum}`, { orderId })
+    const salesReturn = await createReturn(orderId)
     log(`Возврат создан: ${salesReturn.name}`, { shipmentNum, returnId: salesReturn.id })
 
     // Получаем данные для обновления состояния
     const { getOrderFullForCreate } = require('./lib/order')
-    const orderFull = await getOrderFullForCreate(order.id)
+    const orderFull = await getOrderFullForCreate(orderId)
 
     updateOrderState(shipmentNum, 'return_created', salesReturn.name, {
       orderName: orderFull.name,
@@ -1484,7 +1533,7 @@ app.post('/api/create-return', async (req, res) => {
 
 // Cancel order (отмена) - see Skills/moysklad-return.md (change status to "Отменён")
 app.post('/api/cancel-order', async (req, res) => {
-  const { shipmentNum } = req.body
+  const { shipmentNum, orderId: directOrderId } = req.body
   const token = req.headers['x-api-token']
 
   if (!token || !shipmentNum) {
@@ -1492,19 +1541,24 @@ app.post('/api/cancel-order', async (req, res) => {
   }
 
   initApi(token)
-  log(`Отмена заказа: ${shipmentNum}`, { token: token.slice(0, 8) + '...' })
+  log(`Отмена заказа: ${shipmentNum}${directOrderId ? ` (orderId: ${directOrderId})` : ''}`, { token: token.slice(0, 8) + '...' })
 
   try {
-    log(`Поиск заказа для отмены: ${shipmentNum}`)
-    const order = await findOrderByShipmentNum(shipmentNum, log)
-    if (!order) {
-      log(`Заказ не найден для отмены: ${shipmentNum}`)
-      updateOrderState(shipmentNum, 'cancel_check', 'order_not_found')
-      return res.json({ error: 'Заказ не найден' })
+    let orderId = directOrderId
+
+    if (!orderId) {
+      log(`Поиск заказа для отмены: ${shipmentNum}`)
+      const order = await findOrderByShipmentNum(shipmentNum, log)
+      if (!order) {
+        log(`Заказ не найден для отмены: ${shipmentNum}`)
+        updateOrderState(shipmentNum, 'cancel_check', 'order_not_found')
+        return res.json({ error: 'Заказ не найден' })
+      }
+      orderId = order.id
     }
 
-    log(`Отменяю заказ: ${shipmentNum}`, { orderId: order.id })
-    const result = await cancelOrder(order.id)
+    log(`Отменяю заказ: ${shipmentNum}`, { orderId })
+    const result = await cancelOrder(orderId)
     log(`Заказ отменён: ${shipmentNum}`, { result })
 
     // Получаем данные для обновления состояния

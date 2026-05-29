@@ -373,7 +373,7 @@ async function loadSavedOrders() {
       returnSum: state.returnSum || 0,
       cancelledSum: state.cancelledSum || 0,
       orderMoment: state.orderMoment || null,
-      canPayment: state.hasDemand && !state.hasPayment && !state.hasReturn && !state.isCancelled,
+      canPayment: state.hasDemand && !state.hasPayment && !state.hasReturn && !state.isCancelled && !state.returnType,
       canDemand: !state.hasDemand && !state.isCancelled,
       canReturn: state.hasDemand && !state.hasReturn && !state.isCancelled,
       canCancel: !state.hasDemand && !state.isCancelled,
@@ -1110,7 +1110,9 @@ function getRowActions(order, index) {
   // Use properties directly from order (comes from server, verified in Moysklad)
   const hasD = order.hasDemand;
   const hasPayment = order.hasPayment;
-  const hasR = order.hasReturn;
+  const hasMSReturn = order.hasReturn;
+  const hasMarketplaceReturn = !!(order.returnType);
+  const hasReturn = hasMSReturn || hasMarketplaceReturn; // для платежа — любой возврат блокирует
   const isCancelled = order.isCancelled;
 
   let btns = '<div class="action-grid">';
@@ -1121,16 +1123,18 @@ function getRowActions(order, index) {
    // Payment - создать платёж
    // Если есть частичный возврат (returnSum < sum) → предлагаем частичный платёж
    let paymentBtn;
-   if (hasR && order.returnSum && order.returnSum < order.sum) {
+   if (hasReturn && order.returnSum && order.returnSum < order.sum) {
      // Partial return → partial payment (not disabled)
      paymentBtn = `<button class="btn btn-payment action-btn" onclick="createPartialPaymentByNum('${order.shipmentNum}')" title="Создать платёж (частичный, без возврата)">💰</button>`;
    } else {
-     paymentBtn = `<button class="btn btn-payment action-btn" onclick="createPaymentByNum('${order.shipmentNum}')" title="${hasPayment ? 'Оплачено' : 'Создать платёж'}" ${hasPayment || isCancelled || !hasD || hasR ? 'disabled' : ''}>💰</button>`;
+     paymentBtn = `<button class="btn btn-payment action-btn" onclick="createPaymentByNum('${order.shipmentNum}')" title="${hasPayment ? 'Оплачено' : 'Создать платёж'}" ${hasPayment || isCancelled || !hasD || hasReturn ? 'disabled' : ''}>💰</button>`;
    }
    btns += paymentBtn;
 
   // Return - возврат (если есть отгрузка, возврат не создан, заказ не отменён)
-  btns += `<button class="btn btn-return action-btn" onclick="createReturnByNum('${order.shipmentNum}')" title="${hasR ? 'Возврат есть' : 'Создать возврат'}" ${hasR || isCancelled || !hasD ? 'disabled' : ''}>↩</button>`;
+  // Для маркетплейс-возвратов (returnType установлен) кнопка остаётся доступной,
+  // чтобы можно было создать возврат в МС
+  btns += `<button class="btn btn-return action-btn" onclick="createReturnByNum('${order.shipmentNum}')" title="${hasMSReturn ? 'Возврат есть' : 'Создать возврат'}" ${hasMSReturn || isCancelled || !hasD ? 'disabled' : ''}>↩</button>`;
 
   // Cancel - отмена (только если нет отгрузки и не отменён)
   const canCancel = !hasD && !isCancelled;
@@ -1711,6 +1715,12 @@ function calculateStats(orderList) {
     errorSum: 0,
     notFoundCount: 0,
 
+    // WB выплаты (продажи) и возвраты
+    wbPayoutCount: 0,
+    wbPayoutSum: 0,
+    wbReturnCount: 0,
+    wbReturnSum: 0,
+
     // Вариант A: Раздельный подсчёт (оба могут быть)
     returnCount_A: 0,
     returnSum_A: 0,
@@ -1756,6 +1766,18 @@ function calculateStats(orderList) {
     }
     if (o.status === 'not_found' || o.statusName === 'Не найден') {
       stats.notFoundCount++;
+    }
+
+    // WB: выплаты (продажи) и возвраты
+    const wbAmount = Number(o.wbForPay) || 0;
+    if (wbAmount > 0) {
+      if (o.returnType) {
+        stats.wbReturnCount++;
+        stats.wbReturnSum += wbAmount;
+      } else {
+        stats.wbPayoutCount++;
+        stats.wbPayoutSum += wbAmount;
+      }
     }
 
     // Вариант A: Раздельный (oba mogut byt true)
@@ -1965,6 +1987,8 @@ function renderCurrentStats(force = false) {
     const cancelledSum = stats.cancelledSum || 0;
     const paymentSum = stats.paymentSum || 0;
     const errorSum = stats.errorSum || 0;
+    const wbPayoutSum = stats.wbPayoutSum || 0;
+    const wbReturnSum = stats.wbReturnSum || 0;
 
     const totalAccounted = paymentSum + returnSum + cancelledSum + errorSum;
     const isMatch = Math.abs(demandSum - totalAccounted) < 1;
@@ -1979,6 +2003,8 @@ function renderCurrentStats(force = false) {
             <div class="stat-row"><span class="stat-label">Ошибок:</span><span class="stat-value error">${stats.errorCount || 0}</span><span class="stat-sum">${fmtSum(errorSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Не найден:</span><span class="stat-value">${stats.notFoundCount || 0}</span><span class="stat-sum">-</span></div>
             ${currentDuplicates > 0 ? `<div class="stat-row"><span class="stat-label">Дублей:</span><span class="stat-value duplicates">${currentDuplicates}</span><span class="stat-sum">-</span></div>` : ''}
+            ${wbReturnSum > 0 ? `<div class="stat-row"><span class="stat-label">WB возврат:</span><span class="stat-value">${stats.wbReturnCount || 0}</span><span class="stat-sum wb-payout">${fmtSum(wbReturnSum)}</span></div>` : ''}
+            ${wbPayoutSum > 0 ? `<div class="stat-row"><span class="stat-label">WB к выплате:</span><span class="stat-value">${stats.wbPayoutCount || 0}</span><span class="stat-sum wb-payout">${fmtSum(wbPayoutSum)}</span></div>` : ''}
             <div class="calculator">
                 <div class="calc-divider"></div>
                 <div class="calc-formula">
@@ -2069,25 +2095,30 @@ function renderFinalStats() {
     `;
 }
 
-// Single order actions
+// Single order actions — передаём orderId (MC UUID из уже выполненного поиска)
 async function createPaymentByNum(shipmentNum) {
-  await createSingleAction(shipmentNum, 'payment');
+  const order = ordersData.find(o => o.shipmentNum === shipmentNum);
+  await createSingleAction(shipmentNum, 'payment', order?.orderId);
 }
 
 async function createDemandByNum(shipmentNum) {
-  await createSingleAction(shipmentNum, 'demand');
+  const order = ordersData.find(o => o.shipmentNum === shipmentNum);
+  await createSingleAction(shipmentNum, 'demand', order?.orderId);
 }
 
 async function createReturnByNum(shipmentNum) {
-  await createSingleAction(shipmentNum, 'return');
+  const order = ordersData.find(o => o.shipmentNum === shipmentNum);
+  await createSingleAction(shipmentNum, 'return', order?.orderId);
 }
 
 async function cancelOrderByNum(shipmentNum) {
-  await createSingleAction(shipmentNum, 'cancel');
+  const order = ordersData.find(o => o.shipmentNum === shipmentNum);
+  await createSingleAction(shipmentNum, 'cancel', order?.orderId);
 }
 
 async function createPartialPaymentByNum(shipmentNum) {
-  await createSingleAction(shipmentNum, 'partial_payment');
+  const order = ordersData.find(o => o.shipmentNum === shipmentNum);
+  await createSingleAction(shipmentNum, 'partial_payment', order?.orderId);
 }
 
 // Print sticker for product by code
@@ -2220,7 +2251,7 @@ async function printSticker(code) {
   }
 }
 
-async function createSingleAction(shipmentNum, actionType) {
+async function createSingleAction(shipmentNum, actionType, orderId) {
   const token = saveToken();
   if (!token) {
     alert('Введите токен API');
@@ -2243,7 +2274,7 @@ async function createSingleAction(shipmentNum, actionType) {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Token': token },
-      body: JSON.stringify({ shipmentNum })
+      body: JSON.stringify({ shipmentNum, orderId })
     });
 
     const data = await response.json();
@@ -2423,10 +2454,10 @@ async function batchAction(actionType) {
         shipmentNum: o.shipmentNum,
         orderId: o.orderId,
         statusName: o.statusName,
-        canPayment: o.canPayment,
-        canDemand: o.canDemand,
-        canReturn: o.canReturn,
-        canCancel: o.canCancel,
+        canPayment: o.canPayment ?? (o.hasDemand && !o.hasPayment && !o.hasReturn && !o.isCancelled && !o.returnType),
+        canDemand: o.canDemand ?? (!o.hasDemand && !o.isCancelled),
+        canReturn: o.canReturn ?? (o.hasDemand && !o.hasReturn && !o.isCancelled),
+        canCancel: o.canCancel ?? (!o.hasDemand && !o.isCancelled),
         demandName: o.demandName,
         orderName: o.orderName,
         sum: o.sum,
