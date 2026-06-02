@@ -3,6 +3,12 @@ node_modules/
 logs/
 *.log
 temp_*.txt
+temp/
+server_*.txt
+server-*.txt
+review-report*.md
+review*.js
+simoto-sklad.bat
 update.zip
 simoto-sklad-main/logs/
 .opencode/

@@ -1,19 +1,43 @@
 'use strict'
 
+/**
+ * @file Wildberries / Ozon — синхронизация товаров, цен, остатков, изображений и атрибутов
+ * @module wb_ozon_sync
+ * @description
+ *   Модуль интеграции с API Wildberries (Content, Prices, Stocks, Statistics, Marketplace)
+ *   и Ozon Seller API (Product, Import, Prices, Stocks, Returns, Postings).
+ *   Реализует двухстороннюю синхронизацию данных между площадками:
+ *   поиск товаров, получение/обновление цен, остатков, описаний, характеристик и изображений.
+ *   Содержит retry-логику для обработки rate limiting (429) и таймаутов.
+ *
+ * @see https://dev.wildberries.ru/openapi/work-with-products
+ * @see https://docs.ozon.ru/api/seller
+ */
+
 // Real implementation for Wildberries / Ozon product sync
 const https = require('https')
 const { info, success, warn, error, debug } = require('../lib/logger')
 
-// ──────────────────────────────────────────
-// Ozon attribute name cache
-// Ключ: `${descriptionCategoryId}_${typeId}`
-// Значение: Map<attribute_id, name>
-// ──────────────────────────────────────────
+/**
+ * Кэш названий атрибутов Ozon
+ * Ключ: `${descriptionCategoryId}_${typeId}`
+ * Значение: Map<attribute_id (number), name (string)>
+ * Заполняется в fetchOzonCategoryAttributes
+ * @type {Map<string, Map<number, string>>}
+ */
 const attributesCache = new Map()
 
 /**
- * Generic HTTPS request helper
- * Автоматически добавляет Content-Length при наличии тела запроса
+ * Базовый помощник для HTTPS-запросов
+ * Автоматически добавляет Content-Length при наличии тела запроса.
+ * Устанавливает User-Agent, таймаут 30 с. Возвращает разобранный JSON
+ * или сырой текст, если ответ не в JSON.
+ *
+ * @param {object} options - Параметры https.request (hostname, path, method, headers)
+ * @param {string|null} [postData=null] - Строка тела POST-запроса (JSON)
+ * @returns {Promise<{status: number, headers: object, body: any, isJSON?: boolean}>}
+ *   Объект ответа: HTTP-статус, заголовки, тело (JSON или текст), флаг isJSON
+ * @throws {Error} При превышении таймаута 30 с или сетевой ошибке
  */
 function makeRequest(options, postData = null) {
   return new Promise((resolve, reject) => {
@@ -61,10 +85,30 @@ function makeRequest(options, postData = null) {
 }
 
 /**
- * Wildberries: Search product by article (OEM)
- * Docs: https://dev.wildberries.ru/openapi/work-with-products/
- * Endpoint: POST /content/v2/get/cards/list
- * Search: textSearch (exact vendorCode match)
+ * Wildberries: поиск товаров по артикулам (vendorCode)
+ * Endpoint: POST /content/v2/get/cards/list (Content API)
+ * Поиск по textSearch — точное совпадение vendorCode.
+ * Для каждого найденного товара также запрашивает розничную цену
+ * через Prices API (см. fetchWBPrice).
+ *
+ * @param {string[]} codes - Массив артикулов (vendorCode) для поиска
+ * @param {string} token - WB API токен (Authorization header)
+ * @returns {Promise<Array<{
+ *   code: string,
+ *   title: string,
+ *   price: number,
+ *   site: string,
+ *   vendorCode: string,
+ *   brand: string,
+ *   nmID: number|string,
+ *   barcode: string,
+ *   description: string,
+ *   characteristics: Array,
+ *   subjectName: string,
+ *   images: Array<{url: string, c246x328: string, c516x688: string}>,
+ *   error?: string,
+ *   details?: string
+ * }>>} Массив результатов поиска по каждому коду
  */
 async function fetchWBData(codes, token) {
   if (!token) return codes.map(code => ({ code, error: 'No WB token' }))
@@ -186,12 +230,16 @@ async function fetchWBData(codes, token) {
   return results
 }
 
-// ──────────────────────────────────────────
-// Wildberries: Get retail price via Prices API
-// Docs: https://dev.wildberries.ru/openapi/prices
-// Endpoint: POST /api/v2/list/goods/filter (discounts-prices-api)
-// Требуется токен с правом "Цены и скидки"
-// ──────────────────────────────────────────
+/**
+ * Wildberries: получение розничной цены товара через Prices API
+ * Endpoint: POST /api/v2/list/goods/filter (discounts-prices-api)
+ * Требуется токен с правом "Цены и скидки"
+ * Цена возвращается в рублях (API отдаёт в копейках — деление на 100)
+ *
+ * @param {string} token - WB API токен (с правом доступа к ценам)
+ * @param {number} nmID - Идентификатор товара WB (nmID)
+ * @returns {Promise<number|null>} Цена в рублях или null при ошибке/отсутствии
+ */
 async function fetchWBPrice(token, nmID) {
   try {
     const options = {
@@ -226,6 +274,27 @@ async function fetchWBPrice(token, nmID) {
   }
 }
 
+/**
+ * Wildberries: получение полной информации о товаре по артикулу
+ * Комбинирует fetchWBData (поиск карточки) и fetchWBPrice (розничная цена).
+ *
+ * @param {string} token - WB API токен
+ * @param {string} vendorCode - Артикул товара (vendorCode)
+ * @returns {Promise<{
+ *   code: string,
+ *   title: string,
+ *   price: number,
+ *   brand: string,
+ *   nmID: string,
+ *   barcode: string,
+ *   description: string,
+ *   characteristics: Array,
+ *   images: Array,
+ *   subjectName: string,
+ *   vendorCode: string,
+ *   error?: string
+ * }>} Полные данные товара или { error: 'Not found in WB' }
+ */
 async function fetchWBProductFull(token, vendorCode) {
   const results = await fetchWBData([vendorCode], token)
   const product = results[0]
@@ -257,13 +326,30 @@ async function fetchWBProductFull(token, vendorCode) {
 }
 
 /**
- * Ozon: Search product by offer_id (SKU/Article)
- * Docs: см. .opencode/context/external/ozon-api.md
+ * Ozon: поиск товаров по offer_id (артикулам)
+ * Двухшаговый подход:
+ *   1. POST /v3/product/list — поиск product_id по offer_id
+ *   2. POST /v3/product/info/list — детали по числовому product_id
+ * Дополнительно получает описание (fetchOzonDescription),
+ * характеристики/габариты (fetchOzonAttributes) и изображения.
  *
- * Ozon API не имеет прямого поиска по offer_id.
- * Используем двухшаговый подход:
- *   1. POST /v3/product/list — ищем offer_id по страницам
- *   2. POST /v3/product/info/list — детали по numeric product_id
+ * @param {string[]} codes - Массив артикулов (offer_id) для поиска
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @returns {Promise<Array<{
+ *   code: string,
+ *   title: string,
+ *   price: number,
+ *   site: string,
+ *   sku: number,
+ *   product_id: number,
+ *   type_id: number,
+ *   description: string,
+ *   attributes: Array,
+ *   dimensions: object|null,
+ *   images: string[],
+ *   error?: string
+ * }>>} Массив результатов поиска по каждому коду
  */
 async function fetchOzonData(codes, clientId, apiKey) {
   if (!clientId || !apiKey) return codes.map(code => ({ code, error: 'No Ozon credentials' }))
@@ -342,6 +428,18 @@ async function fetchOzonData(codes, clientId, apiKey) {
   return results
 }
 
+/**
+ * Ozon: получение полной информации о товаре по offer_id
+ * Комбинирует findOzonProductIdByOfferId, getOzonProductInfo,
+ * fetchOzonDescription и fetchOzonAttributes.
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {string} offerId - Артикул товара (offer_id)
+ * @returns {Promise<object|null>} Полные данные товара:
+ *   { offer_id, product_id, type_id, name, price, description, images, attributes, dimensions }
+ *   или null, если товар не найден или ошибка получения деталей
+ */
 async function fetchOzonProductFull(clientId, apiKey, offerId) {
   const productId = await findOzonProductIdByOfferId(offerId, clientId, apiKey)
   if (!productId) return null
@@ -373,11 +471,15 @@ async function fetchOzonProductFull(clientId, apiKey, offerId) {
 }
 
 /**
- * Поиск product_id по offer_id через /v3/product/list с фильтром offer_id
- * Docs: .opencode/context/external/ozon-api.md
- * 
- * /v3/product/list поддерживает прямую фильтрацию по offer_id:
- * { filter: { offer_id: ["SKU-001"], visibility: "ALL" }, limit: 100 }
+ * Ozon: поиск числового product_id по строковому offer_id
+ * Endpoint: POST /v3/product/list с фильтром offer_id
+ * Фильтр: { offer_id: ["SKU-001"], visibility: "ALL" }
+ *
+ * @param {string} offerId - Артикул товара (offer_id)
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @returns {Promise<number|null>} Числовой product_id или null, если не найден
+ * @throws {Error} При HTTP-статусе, отличном от 200
  */
 async function findOzonProductIdByOfferId(offerId, clientId, apiKey) {
   const options = {
@@ -419,7 +521,14 @@ async function findOzonProductIdByOfferId(offerId, clientId, apiKey) {
 }
 
 /**
- * Получение детальной информации о товаре по product_id
+ * Ozon: получение детальной информации о товаре по числовому product_id
+ * Endpoint: POST /v3/product/info/list
+ *
+ * @param {number} productId - Числовой идентификатор товара Ozon
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @returns {Promise<object|null>} Объект товара (items[0]) или null, если не найден
+ * @throws {Error} При HTTP-статусе, отличном от 200
  */
 async function getOzonProductInfo(productId, clientId, apiKey) {
   const options = {
@@ -449,11 +558,17 @@ async function getOzonProductInfo(productId, clientId, apiKey) {
   return items.length > 0 ? items[0] : null
 }
 
-// ──────────────────────────────────────────
-// Ozon: Get product description
-// Docs: .opencode/context/external/ozon-api.md
-// Endpoint: POST /v1/product/info/description
-// ──────────────────────────────────────────
+/**
+ * Ozon: получение описания товара
+ * Endpoint: POST /v1/product/info/description
+ * При ошибке возвращает пустую строку (не бросает исключение).
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {number} productId - Числовой идентификатор товара
+ * @param {string} offerId - Артикул товара (offer_id)
+ * @returns {Promise<string>} HTML-описание товара или пустая строка
+ */
 async function fetchOzonDescription(clientId, apiKey, productId, offerId) {
   try {
     const options = {
@@ -486,13 +601,18 @@ async function fetchOzonDescription(clientId, apiKey, productId, offerId) {
   }
 }
 
-// ──────────────────────────────────────────
-// Ozon: Get attribute names by description category
-// Docs: .opencode/context/external/ozon-api.md
-// Endpoint: POST /v1/description-category/attribute
-// Возвращает Map<attribute_id, name> для подстановки имён атрибутов
-// Результат кэшируется по ключу `${descriptionCategoryId}_${typeId}`
-// ──────────────────────────────────────────
+/**
+ * Ozon: получение названий атрибутов категории описания
+ * Endpoint: POST /v1/description-category/attribute
+ * Возвращает Map<attribute_id, name> для подстановки имён атрибутов.
+ * Результат кэшируется в attributesCache по ключу `${descriptionCategoryId}_${typeId}`.
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {number} descriptionCategoryId - ID категории описания
+ * @param {number} typeId - ID типа товара
+ * @returns {Promise<Map<number, string>>} Map { attribute_id → name }
+ */
 async function fetchOzonCategoryAttributes(clientId, apiKey, descriptionCategoryId, typeId) {
   const cacheKey = `${descriptionCategoryId}_${typeId}`
 
@@ -547,13 +667,20 @@ async function fetchOzonCategoryAttributes(clientId, apiKey, descriptionCategory
   }
 }
 
-// ──────────────────────────────────────────
-// Ozon: Get product attributes (characteristics + dimensions)
-// Docs: .opencode/context/external/ozon-api.md
-// Endpoint: POST /v4/product/info/attributes
-// Возвращает характеристики товара + габариты (weight, height, width, depth)
-// Так же извлекает description_category_id и type_id для получения имён атрибутов
-// ──────────────────────────────────────────
+/**
+ * Ozon: получение характеристик и габаритов товара
+ * Endpoint: POST /v4/product/info/attributes
+ * Возвращает обогащённый массив атрибутов (с подстановкой имён
+ * через fetchOzonCategoryAttributes) и объект габаритов.
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {number} productId - Числовой идентификатор товара
+ * @returns {Promise<{
+ *   attributes: Array<{attribute_id: number, name: string, ...}>,
+ *   dimensions: {weight: number|null, weight_unit: string, height: number|null, width: number|null, depth: number|null, dimension_unit: string}|null
+ * }>} Характеристики и габариты товара
+ */
 async function fetchOzonAttributes(clientId, apiKey, productId) {
   try {
     const options = {
@@ -625,7 +752,15 @@ async function fetchOzonAttributes(clientId, apiKey, productId) {
 }
 
 /**
- * Compare and aggregate data from WB and Ozon
+ * Сравнение и агрегация данных из WB и Ozon.
+ * Объединяет результаты поиска по обеим площадкам в единый массив.
+ * Если товар найден на обеих площадках — берётся минимальная цена
+ * и суммируются остатки.
+ *
+ * @param {Array} wbData - Результаты поиска по WB (из fetchWBData)
+ * @param {Array} ozonData - Результаты поиска по Ozon (из fetchOzonData)
+ * @returns {Array<{code: string, sources: string[], ...}>}
+ *   Агрегированный массив с полем sources (['WB'], ['Ozon'] или ['WB', 'Ozon'])
  */
 function compareAndAggregate(wbData, ozonData) {
   const map = new Map()
@@ -649,11 +784,17 @@ function compareAndAggregate(wbData, ozonData) {
   return Array.from(map.values())
 }
 
-// ──────────────────────────────────────────
-// Wildberries: Push price update
-// Docs: https://dev.wildberries.ru/openapi/prices
-// Endpoint: POST /api/v2/upload/task
-// ──────────────────────────────────────────
+/**
+ * Wildberries: обновление цены товара
+ * Endpoint: POST /api/v2/upload/task (discounts-prices-api)
+ * Цена передаётся в рублях, API ожидает в копейках (умножение на 100).
+ *
+ * @param {string} token - WB API токен (с правом "Цены и скидки")
+ * @param {number} nmId - nmID товара WB
+ * @param {number} priceRub - Новая цена в рублях
+ * @returns {Promise<void>}
+ * @throws {Error} При HTTP-статусе, отличном от 200
+ */
 async function pushWBPrice(token, nmId, priceRub) {
   const body = JSON.stringify({
     data: [{
@@ -679,11 +820,16 @@ async function pushWBPrice(token, nmId, priceRub) {
   success(`[WB] Price updated for nmID ${nmId}: ${priceRub} rub`)
 }
 
-// ──────────────────────────────────────────
-// Wildberries: Push stock update
-// Docs: https://dev.wildberries.ru/openapi/stocks
-// Endpoint: PUT /api/v2/stocks/stocks
-// ──────────────────────────────────────────
+/**
+ * Wildberries: обновление остатков товара
+ * Endpoint: PUT /api/v2/stocks/stocks (marketplace-api)
+ *
+ * @param {string} token - WB API токен (с правами на управление остатками)
+ * @param {string} barcode - Штрихкод товара (SKU)
+ * @param {number} stock - Количество остатка
+ * @returns {Promise<void>}
+ * @throws {Error} При HTTP-статусе, отличном от 200
+ */
 async function pushWBStock(token, barcode, stock) {
   const body = JSON.stringify({
     stocks: [{
@@ -709,12 +855,19 @@ async function pushWBStock(token, barcode, stock) {
   success(`[WB] Stock updated for barcode ${barcode}: ${stock} pcs`)
 }
 
-// ──────────────────────────────────────────
-// Ozon: Push price update
-// Docs: .opencode/context/external/ozon-api.md
-// Endpoint: POST /v1/product/import/prices
-// Важно: API принимает product_id (числовой), НЕ offer_id
-// ──────────────────────────────────────────
+/**
+ * Ozon: обновление цены товара
+ * Endpoint: POST /v1/product/import/prices
+ * Важно: API принимает числовой product_id (НЕ offer_id).
+ * Цена передаётся строкой в рублях.
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {number} productId - Числовой идентификатор товара Ozon
+ * @param {number} priceRub - Новая цена в рублях
+ * @returns {Promise<void>}
+ * @throws {Error} При HTTP-статусе, отличном от 200
+ */
 async function pushOzonPrice(clientId, apiKey, productId, priceRub) {
   const body = JSON.stringify({
     prices: [{
@@ -742,12 +895,19 @@ async function pushOzonPrice(clientId, apiKey, productId, priceRub) {
   success(`[Ozon] Price updated for product_id ${productId}: ${priceRub} rub`)
 }
 
-// ──────────────────────────────────────────
-// Ozon: Push stock update
-// Docs: .opencode/context/external/ozon-api.md
-// Endpoint: POST /v2/products/stocks
-// Принимает offer_id И/ИЛИ product_id
-// ──────────────────────────────────────────
+/**
+ * Ozon: обновление остатков товара
+ * Endpoint: POST /v2/products/stocks
+ * Принимает offer_id И/ИЛИ product_id (хотя бы один обязателен).
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {string|null} offerId - Артикул товара (offer_id) или null
+ * @param {number|null} productId - Числовой идентификатор товара или null
+ * @param {number} stock - Количество остатка
+ * @returns {Promise<void>}
+ * @throws {Error} При HTTP-статусе, отличном от 200
+ */
 async function pushOzonStock(clientId, apiKey, offerId, productId, stock) {
   const stockEntry = { stock: stock }
   if (offerId) stockEntry.offer_id = offerId
@@ -775,13 +935,24 @@ async function pushOzonStock(clientId, apiKey, offerId, productId, stock) {
   success(`[Ozon] Stock updated for ${offerId || productId}: ${stock} pcs`)
 }
 
-// ──────────────────────────────────────────
-// Ozon: Push product import (title, description, images)
-// Docs: .opencode/context/external/ozon-api.md
-// Endpoint: POST /v3/product/import
-// ⚠ Асинхронная операция — возвращает task_id
-// Принимает опциональный массив images (URL-строки)
-// ──────────────────────────────────────────
+/**
+ * Ozon: импорт/обновление товара (название, описание, изображения)
+ * Endpoint: POST /v3/product/import
+ * Асинхронная операция — возвращает task_id для отслеживания статуса.
+ * Если товар уже существует, загружает текущие данные через fetchOzonProductFull
+ * и мержит с переданными полями (частичное обновление).
+ * Запускает checkOzonImportStatus для отслеживания результата (неблокирующий).
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {string} offerId - Артикул товара (offer_id)
+ * @param {string} [title] - Новое название товара
+ * @param {string} [description] - Новое описание товара
+ * @param {string[]} [images] - Массив URL изображений
+ * @param {number} [typeId] - ID типа товара Ozon
+ * @returns {Promise<void>}
+ * @throws {Error} При HTTP-статусе, отличном от 200
+ */
 async function pushOzonImport(clientId, apiKey, offerId, title, description, images, typeId) {
   let item
 
@@ -849,8 +1020,16 @@ async function pushOzonImport(clientId, apiKey, offerId, title, description, ima
 }
 
 /**
- * Check the status of an Ozon import task after a 3-second delay.
- * Non-blocking — logs result but does not throw.
+ * Ozon: проверка статуса задачи импорта товара
+ * Endpoint: POST /v1/product/import/info
+ * Выполняется с задержкой 3 секунды перед запросом.
+ * Неблокирующая — логирует результат, но не бросает исключения.
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {string} taskId - ID задачи импорта (из ответа pushOzonImport)
+ * @param {string} offerId - Артикул товара (для логирования)
+ * @returns {Promise<void>}
  */
 async function checkOzonImportStatus(clientId, apiKey, taskId, offerId) {
   try {
@@ -902,11 +1081,20 @@ async function checkOzonImportStatus(clientId, apiKey, taskId, offerId) {
 // Alias for backward compatibility
 const pushOzonTitle = pushOzonImport
 
-// ──────────────────────────────────────────
-// Wildberries: Update card data (description + characteristics)
-// Docs: https://dev.wildberries.ru/openapi/work-with-products
-// Endpoint: POST /content/v2/cards/upload
-// ──────────────────────────────────────────
+/**
+ * Wildberries: обновление карточки товара (описание + характеристики)
+ * Endpoint: POST /content/v2/cards/upload (Content API)
+ * Если карточка существует, загружает текущие данные через fetchWBProductFull
+ * и мержит с переданными полями (частичное обновление).
+ *
+ * @param {string} token - WB API токен
+ * @param {number} nmID - nmID товара WB
+ * @param {string} vendorCode - Артикул товара (vendorCode)
+ * @param {string} [description] - Новое описание товара
+ * @param {Array} [characteristics] - Массив характеристик
+ * @returns {Promise<void>}
+ * @throws {Error} При HTTP-статусе, отличном от 200
+ */
 async function pushWBCard(token, nmID, vendorCode, description, characteristics) {
   let current = null
   try {
@@ -941,45 +1129,17 @@ async function pushWBCard(token, nmID, vendorCode, description, characteristics)
   success(`[WB] Card updated for nmID ${nmID}: desc=${description ? 'yes' : 'no'}, chars=${characteristics ? characteristics.length : 0}`)
 }
 
-// ──────────────────────────────────────────
-// Ozon: Update product attributes (via attributes/update endpoint)
-// Docs: .opencode/context/external/ozon-api.md
-// Endpoint: POST /v1/product/attributes/update
-// ──────────────────────────────────────────
-async function pushOzonAttributes(clientId, apiKey, productId, attributes) {
-  if (!attributes || !Array.isArray(attributes) || attributes.length === 0) return
-
-  const body = JSON.stringify({
-    items: [{
-      product_id: Number(productId),
-      attributes: attributes
-    }]
-  })
-
-  const options = {
-    hostname: 'api-seller.ozon.ru',
-    path: '/v1/product/attributes/update',
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Client-Id': clientId,
-      'Api-Key': apiKey
-    }
-  }
-
-  const response = await makeRequest(options, body)
-  if (response.status !== 200) {
-    throw new Error(`Ozon Attributes Update: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
-  }
-  success(`[Ozon] Attributes updated for product_id ${productId}: ${attributes.length} attrs`)
-}
-
-// ──────────────────────────────────────────
-// Wildberries: Upload media files by URLs
-// Docs: https://dev.wildberries.ru/openapi/content-service
-// Endpoint: POST /content/v3/media/save
-// Принимает массив URL-строк или объектов с полем url / big
-// ──────────────────────────────────────────
+/**
+ * Wildberries: загрузка изображений товара по URL
+ * Endpoint: POST /content/v3/media/save (Content API)
+ * Принимает массив URL-строк или объектов с полями url / big.
+ *
+ * @param {string} token - WB API токен
+ * @param {number} nmId - nmID товара WB
+ * @param {Array} images - Массив URL изображений (строки или объекты {url, big})
+ * @returns {Promise<object|null>} Ответ API или null, если нет валидных URL
+ * @throws {Error} При HTTP-статусе, отличном от 200, или сетевой ошибке
+ */
 async function pushWBMedia(token, nmId, images) {
   try {
     // Извлекаем URL из массива (поддерживает строки и объекты { url, name })
@@ -1027,10 +1187,16 @@ async function pushWBMedia(token, nmId, images) {
   }
 }
 
-// ──────────────────────────────────────────
-// Sync single image to Wildberries
-// Reuses pushWBMedia with a single-element array
-// ──────────────────────────────────────────
+/**
+ * Sync: синхронизация одного изображения на Wildberries
+ * Делегирует pushWBMedia с массивом из одного URL.
+ *
+ * @param {string} token - WB API токен
+ * @param {number} nmId - nmID товара WB
+ * @param {string} imageUrl - URL изображения для загрузки
+ * @returns {Promise<object|null>} Ответ от pushWBMedia
+ * @throws {Error} При отсутствии token, nmId или imageUrl, а также при ошибке API
+ */
 async function syncImageToWB(token, nmId, imageUrl) {
   try {
     if (!token) throw new Error('WB token is required')
@@ -1049,11 +1215,17 @@ async function syncImageToWB(token, nmId, imageUrl) {
   }
 }
 
-// ──────────────────────────────────────────
-// Sync single image to Ozon
-// Imports image URL via /v1/product/import
-// Returns task_id from API response
-// ──────────────────────────────────────────
+/**
+ * Sync: синхронизация одного изображения на Ozon
+ * Импортирует URL изображения через /v1/product/import.
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {string} offerId - Артикул товара (offer_id)
+ * @param {string} imageUrl - URL изображения для загрузки
+ * @returns {Promise<string|null>} task_id задачи импорта или null
+ * @throws {Error} При отсутствии credentials/offerId/imageUrl или ошибке API
+ */
 async function syncImageToOzon(clientId, apiKey, offerId, imageUrl) {
   try {
     if (!clientId || !apiKey) throw new Error('Ozon credentials are required')
@@ -1096,11 +1268,15 @@ async function syncImageToOzon(clientId, apiKey, offerId, imageUrl) {
 }
 
 /**
- * WB: найти сборочное задание по коду стикера возврата
+ * WB: поиск сборочного задания по коду стикера возврата
+ * Endpoint: GET /api/v1/supplier/sales (statistics-api)
+ * Ищет по sticker среди продаж за последние daysBack дней.
+ *
  * @param {string} stickerCode - Код стикера с возвратной наклейки (например, "51250075718")
- * @param {string} token - WB API token (raw, без Bearer — statistics-api)
+ * @param {string} token - WB API токен (raw, без Bearer — statistics-api)
  * @param {number} [daysBack=90] - На сколько дней назад искать
  * @returns {Promise<{srid: string|null, gNumber: string|null, nmId: string|null}>}
+ *   Объект с srid, gNumber и nmId найденного заказа или null-поля
  */
 async function fetchWBOrderBySticker(stickerCode, token, daysBack = 90) {
   const dateFrom = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -1129,10 +1305,13 @@ async function fetchWBOrderBySticker(stickerCode, token, daysBack = 90) {
 }
 
 /**
- * WB: получить номер сборочного задания (orderId) по srid
- * @param {string} srid - Уникальный идентификатор из отчёта продаж (e.g. "eAz.rdf3f976...04")
- * @param {string} token - WB API token (с Bearer — marketplace-api)
- * @returns {Promise<string|null>} - id сборочного задания (orderId) или null
+ * WB: получение номера сборочного задания (orderId) по srid
+ * Endpoint: GET /api/v3/orders (marketplace-api)
+ * Извлекает orderUid из srid, перебирает заказы постранично.
+ *
+ * @param {string} srid - Уникальный идентификатор из отчёта продаж (например, "eAz.rdf3f976...04")
+ * @param {string} token - WB API токен (с Bearer — marketplace-api)
+ * @returns {Promise<string|null>} ID сборочного задания (orderId) или null
  */
 async function fetchWBOrderIdBySrid(srid, token) {
   // Извлекаем orderUid из srid: "eAz.ORDERUID" → "ORDERUID"
@@ -1171,8 +1350,18 @@ async function fetchWBOrderIdBySrid(srid, token) {
 // ──────────────────────────────────────────
 
 /**
- * Helper: make a retryable request to Ozon API with 429 handling
- * Reads Retry-After header, falls back to 60s, max 3 retries
+ * Ozon: выполнение HTTP-запроса с повторными попытками при rate limiting (429).
+ * Читает заголовок Retry-After, при отсутствии ждёт 60 с.
+ * Максимум {maxRetries} повторных попыток.
+ *
+ * @param {string} hostname - Хост API (например, 'api-seller.ozon.ru')
+ * @param {string} path - Путь эндпоинта (например, '/v1/returns/list')
+ * @param {string} method - HTTP-метод (GET, POST, PUT)
+ * @param {object} headers - Заголовки запроса
+ * @param {string} [body] - Тело запроса (JSON-строка)
+ * @param {number} [maxRetries=3] - Максимальное количество повторных попыток
+ * @returns {Promise<{status: number, headers: object, body: any}>} Ответ API
+ * @throws {Error} Если превышено максимальное количество попыток (429)
  */
 async function ozonRequestWithRetry(hostname, path, method, headers, body, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -1195,13 +1384,31 @@ async function ozonRequestWithRetry(hostname, path, method, headers, body, maxRe
 }
 
 /**
- * Fetch returns list from Ozon Seller API
+ * Ozon: получение списка возвратов
  * Endpoint: POST /v1/returns/list
- * Cursor-based pagination via last_id
+ * Курсорная пагинация через last_id.
+ * Фильтр по дате возврата: от daysBack дней назад до текущего момента.
  *
  * @param {string} clientId - Ozon Client-Id
  * @param {string} apiKey - Ozon Api-Key
- * @param {number} [daysBack=120] - How many days back to search for returns
+ * @param {number} [daysBack=120] - Количество дней назад для поиска возвратов
+ * @returns {Promise<Array<{
+ *   id: number,
+ *   posting_number: string,
+ *   order_id: number,
+ *   order_number: string,
+ *   return_reason_name: string,
+ *   type: string,
+ *   schema: string,
+ *   barcode: string,
+ *   offer_id: string,
+ *   product_name: string,
+ *   product_price: number,
+ *   status_display: string,
+ *   status_sys: string,
+ *   return_date: string
+ * }>>} Массив возвратов
+ * @throws {Error} При HTTP-статусе, отличном от 200
  */
 async function fetchOzonReturnsList(clientId, apiKey, daysBack = 120) {
   const returns = []
@@ -1289,13 +1496,24 @@ async function fetchOzonReturnsList(clientId, apiKey, daysBack = 120) {
 }
 
 /**
- * Fetch FBS postings list from Ozon Seller API
+ * Ozon: получение списка FBS-отправлений
  * Endpoint: POST /v3/posting/fbs/list
- * Offset-based pagination
+ * Постраничная пагинация через offset.
+ * Фильтр по дате: от daysBack дней назад до текущего момента.
  *
  * @param {string} clientId - Ozon Client-Id
  * @param {string} apiKey - Ozon Api-Key
- * @param {number} [daysBack=120] - How many days back to search
+ * @param {number} [daysBack=120] - Количество дней назад для поиска отправлений
+ * @returns {Promise<Array<{
+ *   posting_number: string,
+ *   order_id: number,
+ *   status: string,
+ *   products: Array<{offer_id: string, name: string, price: string, sku: number, quantity: number}>,
+ *   shipment_date: string,
+ *   delivering_date: string,
+ *   price: number
+ * }>>} Массив отправлений FBS
+ * @throws {Error} При HTTP-статусе, отличном от 200
  */
 async function fetchOzonPostingsList(clientId, apiKey, daysBack = 120) {
   const postings = []
@@ -1386,13 +1604,14 @@ async function fetchOzonPostingsList(clientId, apiKey, daysBack = 120) {
 }
 
 /**
- * Get detail of a single FBS posting
+ * Ozon: получение деталей одного FBS-отправления
  * Endpoint: POST /v3/posting/fbs/get
  *
  * @param {string} clientId - Ozon Client-Id
  * @param {string} apiKey - Ozon Api-Key
- * @param {string} postingNumber - FBS posting number
- * @returns {Promise<Object|null>} Posting result object or null
+ * @param {string} postingNumber - Номер отправления FBS
+ * @returns {Promise<Object|null>} Объект отправления или null при ошибке
+ * @throws {Error} При HTTP-статусе, отличном от 200
  */
 async function fetchOzonPostingDetail(clientId, apiKey, postingNumber) {
   const headers = {
@@ -1434,13 +1653,14 @@ async function fetchOzonPostingDetail(clientId, apiKey, postingNumber) {
 }
 
 /**
- * Search for a return by its barcode
- * Endpoint: POST /v1/returns/list with filter.barcode
+ * Ozon: поиск возврата по штрихкоду
+ * Endpoint: POST /v1/returns/list с фильтром barcode
  *
  * @param {string} clientId - Ozon Client-Id
  * @param {string} apiKey - Ozon Api-Key
- * @param {string} barcode - Return barcode (e.g. "ii5275210303")
- * @returns {Promise<Object|null>} Matching return in simplified format, or null
+ * @param {string} barcode - Штрихкод возврата (например, "ii5275210303")
+ * @returns {Promise<Object|null>} Найденный возврат в упрощённом формате или null
+ * @throws {Error} При HTTP-статусе, отличном от 200
  */
 async function fetchOzonReturnByBarcode(clientId, apiKey, barcode) {
   const headers = {
@@ -1495,6 +1715,83 @@ async function fetchOzonReturnByBarcode(clientId, apiKey, barcode) {
     error(`[Ozon] fetchOzonReturnByBarcode error: ${e.message}`)
     return null
   }
+}
+
+/**
+ * Ozon: обновление характеристик товара
+ * Endpoint: POST /v1/product/attributes/update
+ * Принимает offer_id (строка) или product_id (число).
+ * Атрибуты должны быть в формате:
+ *   [{ id: number, complex_id: number, values: [{ dictionary_value_id?: number, value?: string }] }]
+ * Если атрибуты приходят в упрощённом формате { attribute_id, value },
+ * функция автоматически преобразует их в нужный вид.
+ *
+ * @param {string} clientId - Ozon Client-Id
+ * @param {string} apiKey - Ozon Api-Key
+ * @param {string|number} productId - Артикул (offer_id) или числовой ID товара
+ * @param {Array<Object>} attributes - Массив атрибутов
+ * @returns {Promise<Object>} Результат обновления
+ * @throws {Error} При HTTP-статусе, отличном от 200
+ */
+async function pushOzonAttributes(clientId, apiKey, productId, attributes) {
+  // Преобразование упрощённого формата { attribute_id, value }
+  // в формат Ozon API: { id, complex_id, values: [...] }
+  const normalized = attributes.map(attr => {
+    // Если уже в формате Ozon API (id + values)
+    if (attr.id !== undefined && attr.values !== undefined) {
+      return attr
+    }
+    // Если в формате { attribute_id, value } — преобразуем
+    if (attr.attribute_id !== undefined) {
+      const values = []
+      if (attr.dictionary_value_id !== undefined) {
+        values.push({ dictionary_value_id: attr.dictionary_value_id })
+      } else if (attr.value !== undefined) {
+        values.push({ value: String(attr.value) })
+      }
+      return {
+        id: attr.attribute_id,
+        complex_id: attr.complex_id || 0,
+        values
+      }
+    }
+    // fallback: передаём как есть
+    return attr
+  }).filter(attr => attr.values && attr.values.length > 0)
+
+  if (normalized.length === 0) {
+    warn('[Ozon] pushOzonAttributes: нет атрибутов для отправки')
+    return { result: [] }
+  }
+
+  const item = {}
+  if (typeof productId === 'number' || /^\d+$/.test(String(productId))) {
+    item.product_id = Number(productId)
+  } else {
+    item.offer_id = String(productId)
+  }
+  item.attributes = normalized
+
+  const body = JSON.stringify({ items: [item] })
+
+  const options = {
+    hostname: 'api-seller.ozon.ru',
+    path: '/v1/product/attributes/update',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Client-Id': clientId,
+      'Api-Key': apiKey
+    }
+  }
+
+  const response = await makeRequest(options, body)
+  if (response.status !== 200) {
+    throw new Error(`Ozon Attributes Update API: HTTP ${response.status} — ${JSON.stringify(response.body)}`)
+  }
+
+  info(`[Ozon] Attributes updated for ${productId}: ${normalized.length} attributes`)
+  return response.body
 }
 
 module.exports = {

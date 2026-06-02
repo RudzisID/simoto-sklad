@@ -15,7 +15,7 @@ const moduleRoot = path.resolve(__dirname, '..')
 
 // ── Файлы ──
 const XLSX_DIR = path.join(moduleRoot, 'tmp', 'Отчёты')
-const CACHE_FILE = path.join(moduleRoot, 'logs', 'wb_orders_cache.json')
+const CACHE_FILE = path.join(moduleRoot, 'cache', 'wb_orders_cache.json')
 
 // ── Маппинг колонок XLSX → поле в объекте ──
 const COLUMN_MAP = {
@@ -182,7 +182,7 @@ function main() {
     console.log(`  Прочитано строк: ${rows.length - 1}, импортировано: ${importedOrders.length - (totalRows - (rows.length - 1))}`)
   }
 
-  console.log(`\n=== Merge ===`)
+  console.log('\n=== Merge ===')
   console.log(`Всего прочитано: ${totalRows} строк из XLSX`)
 
   // 4. Merge в кэш (upsert по id)
@@ -232,7 +232,7 @@ function main() {
     }
   }
 
-  console.log(`\n=== Итоговые индексы ===`)
+  console.log('\n=== Итоговые индексы ===')
   console.log(`byId: ${byId.size}`)
   console.log(`byRid: ${byRid.size}`)
   console.log(`byNmId: ${byNmId.size} nmIds`)
@@ -256,7 +256,7 @@ function main() {
         .slice(0, 5)
         .map(([id, order]) => ({ id, nmId: order.nmId, price: order.price, createdAt: order.createdAt }))
     }
-    console.log(`\nПримеры новых записей:`)
+    console.log('\nПримеры новых записей:')
     for (const s of indexDump.sampleNew) {
       console.log(`  id=${s.id} nmId=${s.nmId} price=${s.price} date=${s.createdAt}`)
     }

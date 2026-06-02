@@ -64,7 +64,9 @@
 html,
 body {
   height: 100%;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: linear-gradient(135deg, #0a0a0a 0%, #141414 50%, #1a1a1a 100%);
   color: var(--text);
@@ -75,6 +77,7 @@ body {
 .app-container {
   display: grid;
   grid-template-columns: var(--sidebar-width) 1fr var(--right-column-width);
+  grid-template-rows: auto auto 1fr;
   gap: 8px;
   height: 100vh;
   padding: 8px;
@@ -94,8 +97,9 @@ body {
 }
 
 /* Columns */
-.left-column,
-.center-column {
+.left-column {
+  grid-column: 1;
+  grid-row: 1 / 4;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -104,8 +108,33 @@ body {
   overflow-y: hidden;
 }
 
-/* Right column - special handling for stats panels */
+.center-column {
+  grid-column: 2;
+  grid-row: 1 / 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+}
+
+/* Bulk actions — справа, над статистикой */
+.bulk-actions {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+/* Stats-final — между bulk и статистикой */
+.stats-final {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+/* Right column — статистика текущего состояния и контроля */
 .right-column {
+  grid-column: 3;
+  grid-row: 3;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -510,14 +539,31 @@ body {
 
 #tableContainer {
   flex: 1;
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: none;
   min-height: 80px;
+}
+
+/* Scroll indicator gradient (right edge) */
+#tableContainer.has-scroll::after {
+  content: '';
+  position: sticky;
+  right: 0;
+  top: 0;
+  width: 24px;
+  height: 100%;
+  background: linear-gradient(to right, transparent, rgba(10, 10, 10, 0.4));
+  pointer-events: none;
+  z-index: 2;
+  flex-shrink: 0;
 }
 
 table {
   width: 100%;
-  min-width: 0;
+  min-width: 1100px;
   border-collapse: collapse;
   font-size: 0.85rem;
 }
@@ -570,6 +616,57 @@ th.cycle::after {
 td {
   font-size: 0.85rem;
   padding: 5px 8px;
+}
+
+/* Sticky first 2 columns for horizontal table scroll */
+th:nth-child(1),
+td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  z-index: 6;
+  background: inherit;
+}
+th:nth-child(2),
+td:nth-child(2) {
+  position: sticky;
+  left: 30px;
+  z-index: 6;
+  background: inherit;
+}
+/* Override background for sticky th */
+thead th:nth-child(1),
+thead th:nth-child(2) {
+  z-index: 7;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+/* Override background for sticky td */
+tbody td:nth-child(1),
+tbody td:nth-child(2) {
+  background: rgba(20, 20, 20, 0.98);
+}
+/* Row-specific overrides for sticky columns */
+.table-panel tbody tr.row-error td:nth-child(1),
+.table-panel tbody tr.row-error td:nth-child(2) {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(239, 68, 68, 0.15) 100%);
+}
+.table-panel tbody tr.row-by-name td:nth-child(1),
+.table-panel tbody tr.row-by-name td:nth-child(2) {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(59, 130, 246, 0.1) 100%);
+}
+.table-panel tbody tr.row-return td:nth-child(1),
+.table-panel tbody tr.row-return td:nth-child(2) {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%);
+}
+.table-panel tbody tr.row-defect td:nth-child(1),
+.table-panel tbody tr.row-defect td:nth-child(2) {
+  background: rgba(255, 80, 80, 0.08);
+}
+/* Override for hover */
+.table-panel tbody tr:hover td:nth-child(1),
+.table-panel tbody tr:hover td:nth-child(2) {
+  background: rgba(249, 115, 22, 0.1);
 }
 
 /* Table Rows - Clean transparent background */
@@ -677,7 +774,7 @@ td.date-cell {
   display: block;
 }
 
-/* Action buttons in 2×2 grid */
+/* === Action Grid (2×2 action buttons) === */
 .action-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -934,7 +1031,7 @@ td.action-cell {
   padding: 10px 8px;
 }
 
-/* Status indicators */
+/* === Status Indicators === */
 .status-shipped {
   color: var(--success);
 }
@@ -1067,6 +1164,24 @@ td.action-cell {
   transform: scale(0.95);
 }
 
+/* Touch-friendly: увеличенные кнопки на сенсорных устройствах */
+@media (hover: none) and (pointer: coarse) {
+  .action-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+    font-size: 1.1rem;
+  }
+  td.action-cell {
+    min-width: 48px;
+    width: 48px;
+  }
+  .print-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 /* === Print Button (Sticker) === */
 .print-btn {
   width: 19px;
@@ -1107,7 +1222,7 @@ td.action-cell {
   background: var(--bg-dark);
 }
 
-/* === Checkbox (унифицирован: базовый + стикерный используют единый стиль) === */
+/* === Checkbox Styles (унифицирован: базовый + стикерный используют единый стиль) === */
 input[type='checkbox'] {
   width: 16px;
   height: 16px;
@@ -1405,7 +1520,6 @@ button:disabled {
 /* === Mismatch panel — flexible height === */
 .stats-mismatch {
   flex: 1;
-  max-height: 160px;
   overflow: hidden;
 }
 
@@ -1532,7 +1646,7 @@ button:disabled {
 }
 
 /* Narrow bulk-action buttons for tight sidebar */
-.right-column .bulk-actions .btn {
+.bulk-actions .btn {
   padding: 6px 8px;
   font-size: 0.7rem;
   gap: 4px;
@@ -1591,7 +1705,7 @@ button:disabled {
 
 /* Terminal dots animation - removed */
 
-/* Terminal status lines */
+/* === Terminal Status Lines === */
 .terminal-line {
   font-size: 0.7rem;
   color: var(--text-muted);
@@ -1629,7 +1743,7 @@ button:disabled {
   }
 }
 
-/* Status bar in terminal */
+/* === Terminal Status Bar === */
 .terminal-status {
   display: flex;
   align-items: center;
@@ -1654,7 +1768,7 @@ button:disabled {
   animation: statusPulse 1s ease-in-out infinite;
 }
 
-/* Блок "После действий" - анимация сканирования */
+/* === Scanning Animation (stats-final) === */
 .stats-final {
   position: relative;
   overflow: hidden;
@@ -1809,6 +1923,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
+  cursor: default;
 }
 
 .stats-header::before {
@@ -1817,12 +1932,15 @@ button:disabled {
   height: 14px;
   background: var(--accent);
   border-radius: 2px;
+  flex-shrink: 0;
 }
 
 /* Hide stats-final header when idle */
 .stats-header.hidden {
   display: none;
 }
+
+
 
 .stats-current {
   flex: 3;
@@ -2094,24 +2212,283 @@ button:disabled {
 }
 
 /* === Responsive === */
-@media (max-width: 900px) {
+/* Tablet (601-900px): left+bulk сверху, stats-final под bulk, сты справа, таблица */
+@media (max-width: 900px) and (min-width: 601px) {
   .app-container {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr auto;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto 1fr;
+    gap: 6px;
+    padding: 6px;
+    height: calc(100vh - 60px);
+    height: calc(100dvh - 60px);
+    overflow: hidden;
   }
-
   .left-column {
-    flex-direction: row;
+    grid-column: 1;
+    grid-row: 1;
   }
-  .header-box {
+  .bulk-actions {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 6px 10px;
+    gap: 4px;
+    align-content: start;
+  }
+  .bulk-actions .btn {
+    padding: 6px 8px;
+    font-size: 0.7rem;
+  }
+  /* Stats-final — компактно под bulk-actions */
+  .stats-final {
+    grid-column: 2;
+    grid-row: 2;
+    padding: 4px 10px;
     flex: 0 0 auto;
   }
+  .stats-final .stats-output.idle {
+    min-height: 24px;
+    font-size: 0.65rem;
+  }
+  .stats-final .terminal-message {
+    padding: 2px 0;
+  }
+  /* Right column: current + mismatch — в flex-row, во всю ширину */
+  .right-column {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+    overflow: visible;
+  }
+  .right-column > .stats-panel {
+    flex: 1;
+    min-width: 180px;
+    padding: 6px 10px;
+  }
+  .stats-header {
+    margin-bottom: 4px;
+    font-size: 0.65rem;
+  }
+  .stats-output {
+    min-height: 0;
+    font-size: 0.72rem;
+    line-height: 1.2;
+  }
+  .stats-current .stat-row {
+    padding: 1px 0;
+  }
+  .center-column {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    min-height: 350px;
+  }
+  #tableContainer {
+    max-height: none;
+    min-height: 0;
+    overflow: auto;
+  }
+}
+
+/* Phone (≤600px): left+bulk в ряд, stats scroll, таблица на всю высоту */
+@media (max-width: 600px) {
+  .app-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto 1fr;
+    gap: 4px;
+    padding: 6px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    height: calc(100vh - 60px);
+    height: calc(100dvh - 60px);
+    overflow: hidden;
+  }
+  .app-container > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Row 1, Col 1 — Input panel (glass card, вровень с bulk-actions) */
+  .left-column {
+    grid-column: 1;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    min-height: 0;
+    overflow: hidden;
+  }
+  #numbersInput {
+    min-height: 72px;
+    max-height: 90px;
+    font-size: 16px;
+    margin-bottom: 0;
+  }
   .input-panel {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 0;
+  }
+
+  /* Scan button — мобильный сканер штрихкодов */
+  .scan-row {
+    display: flex !important;
+  }
+  .btn-scan {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 10px;
+    background: rgba(255,255,255,0.08);
+    border: 1px dashed rgba(255,255,255,0.2);
+    border-radius: var(--radius-md);
+    color: #c0c0c0;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-height: 40px;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  .btn-scan:active {
+    background: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.35);
+    transform: scale(0.98);
+  }
+  .scan-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+  .scan-text {
+    opacity: 0.8;
+  }
+
+  .button-grid {
+    margin-top: 0;
+    gap: 4px;
+    flex-direction: row;
+  }
+  .button-grid .btn {
+    padding: 8px 10px;
+    font-size: 0.7rem;
     flex: 1;
   }
 
-  #tableContainer {
+  /* Row 1, Col 2 — Bulk actions */
+  .bulk-actions {
+    grid-column: 2;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 6px 8px;
+    align-content: start;
+  }
+  .bulk-actions::before {
+    display: none;
+  }
+  .bulk-actions .btn {
+    padding: 8px 4px;
+    font-size: 0.65rem;
+    min-height: 36px;
+  }
+
+  /* Row 2 — Stats-final под bulk-actions */
+  .stats-final {
+    grid-column: 2;
+    grid-row: 2;
+    padding: 4px 8px;
+    flex: 0 0 auto;
+  }
+  .stats-final .stats-output.idle {
+    min-height: 20px;
+    font-size: 0.65rem;
+  }
+  .stats-final .terminal-message {
+    padding: 2px 0;
+  }
+
+  /* Row 3 — Stats (компактно, с внутренним скроллом) */
+  .right-column {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
     max-height: 200px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: var(--radius-lg);
+  }
+  .right-column::-webkit-scrollbar {
+    width: 3px;
+  }
+  .right-column::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+  }
+
+  .stats-panel {
+    flex: 0 0 auto;
+    padding: 5px 8px;
+  }
+  .stats-header {
+    margin-bottom: 2px;
+    font-size: 0.6rem;
+    padding: 2px 0;
+  }
+  .stats-output {
+    min-height: 0;
+    font-size: 0.68rem;
+    line-height: 1.2;
+  }
+  .stats-current .stat-row {
+    padding: 0;
+    gap: 2px;
+  }
+
+  /* Row 4 — Table */
+  .center-column {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .table-panel {
+    flex: 1;
+    min-height: 0;
+  }
+  #tableContainer {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Touch scrollbar для таблицы */
+  #tableContainer::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  #tableContainer::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
   }
 }
 
@@ -2164,6 +2541,18 @@ span[id$='Dot']:not(#statusDot),
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   transform: scale(0.9);
   transition: transform 0.3s ease;
+}
+
+@media (max-width: 600px) {
+  .modal-dialog {
+    min-width: 0;
+    width: 92vw;
+    max-width: 92vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 16px;
+    margin: 0 auto;
+  }
 }
 
 .modal-overlay:not(.hidden) .modal-dialog {
@@ -2288,6 +2677,60 @@ span[id$='Dot']:not(#statusDot),
   flex-shrink: 0;
 }
 
+/* Mobile header — app-like компактный */
+@media (max-width: 600px) {
+  .app-header {
+    padding: 8px 10px 4px;
+    padding-bottom: calc(4px + env(safe-area-inset-top, 0px));
+    gap: 6px;
+    flex-wrap: nowrap;
+    border-bottom-width: 0;
+    box-shadow: 0 1px 0 var(--border);
+  }
+  .header-logo {
+    height: 22px;
+  }
+  .header-left .btn {
+    padding: 4px 8px;
+    font-size: 0.65rem;
+    min-height: 32px;
+  }
+  .header-center {
+    flex: 0 1 auto;
+  }
+  .tab-btn {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+  }
+  .header-right .btn {
+    padding: 4px 6px;
+    font-size: 0.65rem;
+    min-height: 32px;
+  }
+  .sticker-btn .btn-text {
+    display: none;
+  }
+  .sticker-btn svg {
+    margin: 0;
+    width: 16px;
+    height: 16px;
+  }
+  .progress-container {
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    margin: 0;
+    border-radius: 0;
+    height: 2px;
+  }
+  .app-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+}
+
 /* Sticker modal fields */
 .sticker-modal-body {
   display: flex;
@@ -2348,13 +2791,26 @@ span[id$='Dot']:not(#statusDot),
 
 /* Adjust app-container to not overlap header */
 .app-container {
-  height: calc(100vh - 60px); /* Adjust based on header height */
+  height: calc(100vh - 60px);
+  height: calc(100dvh - 60px);
 }
 
 /* === Market Tab === */
 #tab-market {
   height: calc(100vh - 60px);
+  height: calc(100dvh - 60px);
   overflow: hidden;
+}
+
+@media (max-width: 600px) {
+  #tab-market {
+    height: auto;
+    min-height: calc(100dvh - 60px);
+  }
+  .market-container {
+    padding: 10px;
+    overflow-y: auto;
+  }
 }
 
 .market-container {
@@ -2520,7 +2976,8 @@ span[id$='Dot']:not(#statusDot),
   transition: all 0.2s ease;
 }
 
-/* ── Images row (thumbnails in market product view) ── */
+/* ── Images Row (thumbnails in market product view) ── */
+/* === Thumbnail Grid === */
 .images-row {
   display: flex;
   flex-wrap: wrap;
@@ -2555,7 +3012,7 @@ span[id$='Dot']:not(#statusDot),
   cursor: pointer;
 }
 
-/* ── Popup-увеличение при наведении ── */
+/* === Thumbnail Popup (hover zoom) === */
 .thumb-popup {
   display: none;
   position: absolute;
@@ -2595,7 +3052,7 @@ span[id$='Dot']:not(#statusDot),
   z-index: 100;
 }
 
-/* Overlay actions on hover — 2 ряда, полный оверлей */
+/* === Thumbnail Overlay Actions === */
 .thumb-actions {
   position: absolute;
   top: 0;
@@ -2700,14 +3157,14 @@ span[id$='Dot']:not(#statusDot),
   transform: scale(1.05);
 }
 
-/* Drag & drop states for thumbnail sorting */
+/* === Drag & Drop Thumbnail Sorting === */
 .thumb-wrap.dragging {
   opacity: 0.4;
   outline: 2px dashed var(--accent);
   outline-offset: -2px;
 }
 
-/* Pending thumbnail — not yet pushed to marketplace */
+/* === Pending Thumbnail (not yet pushed) === */
 .thumb-wrap.thumb-pending {
   opacity: 0.65;
   outline: 2px dashed #f59e0b;
@@ -2736,7 +3193,7 @@ span[id$='Dot']:not(#statusDot),
   opacity: 0.6;
 }
 
-/* ── Drag-active highlight on images-row (NO border/padding to avoid layout shift) ── */
+/* ── Drag-active highlight on images-row ── */
 .images-row.drag-active {
   outline: 2px dashed #3b82f6;
   outline-offset: 3px;
@@ -2801,7 +3258,7 @@ span[id$='Dot']:not(#statusDot),
   margin-bottom: 12px;
 }
 
-/* Search status in Market tab */
+/* === Search Status Messages === */
 .search-status {
   display: flex;
   align-items: center;
@@ -2835,7 +3292,7 @@ span[id$='Dot']:not(#statusDot),
   }
 }
 
-/* Cell error and not-found styles */
+/* === Cell Error & Not-Found Styles === */
 .cell-error,
 .error {
   color: var(--error);
@@ -3115,6 +3572,7 @@ span[id$='Dot']:not(#statusDot),
 @media (max-width: 768px) {
   .market-row {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
   
   .title-row .ms-cell {
@@ -3124,9 +3582,75 @@ span[id$='Dot']:not(#statusDot),
   .title-row {
     grid-template-columns: 1fr 1fr;
   }
-  
+
+  .aligned-char-row {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 4px;
+  }
+  .aligned-char-cell {
+    padding: 4px 6px;
+    min-height: 28px;
+  }
+  .aligned-char-name {
+    min-width: 0;
+    max-width: 60px;
+    font-size: 0.65rem;
+  }
+
   .title-row .ozon-cell,
   .title-row .wb-cell {
     min-width: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .market-container {
+    padding: 10px;
+  }
+
+  .market-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .title-row,
+  .btn-row {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .title-row .ms-cell {
+    display: none;
+  }
+
+  .desc-textarea {
+    min-height: 150px;
+  }
+
+  .aligned-char-row {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 3px;
+  }
+  .aligned-char-cell {
+    padding: 3px 4px;
+    min-height: 24px;
+  }
+  .aligned-char-name {
+    min-width: 0;
+    max-width: 50px;
+    font-size: 0.6rem;
+  }
+
+  .thumb-wrap {
+    width: 60px;
+    height: 60px;
+  }
+
+  /* Disable hover-zoom popup on touch devices (always hidden) */
+  .touch-device .thumb-popup {
+    display: none !important;
+  }
+
+  .push-btn {
+    padding: 8px 12px;
+    font-size: 0.8rem;
   }
 }

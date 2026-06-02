@@ -21,7 +21,7 @@
         </div>
       </div>
       <div class="header-right">
-        <button class="btn btn-accent sticker-btn" onclick="toggleStickerModal(true)" title="Печать наклейки">
+          <button class="btn btn-accent sticker-btn" onclick="toggleStickerModal(true)" title="Печать наклейки">
           <svg
             width="16"
             height="16"
@@ -38,7 +38,7 @@
             ></path>
             <rect x="6" y="14" width="12" height="8"></rect>
           </svg>
-          Печать стикеров
+          <span class="btn-text">Печать стикеров</span>
         </button>
         <div class="progress-container" id="progressContainer">
           <div class="progress-bar" id="progressBar"></div>
@@ -52,8 +52,22 @@
         <!-- Left column -->
         <div class="left-column">
           <!-- Input block -->
-          <div class="input-panel">
-            <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
+           <div class="input-panel">
+             <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
+             <!-- Scan button — видна только на мобильных -->
+             <div class="scan-row" style="display:none">
+               <button class="btn btn-scan" id="scanBtn" onclick="startScan()" title="Сканировать штрихкод или QR-код">
+                 <svg class="scan-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                   <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
+                   <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+                   <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
+                   <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+                   <line x1="7" y1="12" x2="17" y2="12"/>
+                   <line x1="12" y1="7" x2="12" y2="17"/>
+                 </svg>
+                 <span class="scan-text">Сканировать</span>
+               </button>
+             </div>
 <div class="button-grid">
    <button class="btn btn-ms" onclick="checkNumbers()"><img class="btn-icon" src="images/marketplace/ms-favicon.svg"> Поиск</button>
    <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display:none">✕</button>
@@ -97,7 +111,9 @@
                   </tr>
                 </tbody>
               </table>
+<!-- Date Filter Overlay -->
 <div id="dateFilterOverlay" class="date-filter-overlay" style="display:none"></div>
+<!-- Date Filter Popup -->
 <div id="dateFilterPopup" class="date-filter-popup" style="display:none">
   <div class="df-range">
     <div class="drp-row">
@@ -131,16 +147,23 @@
           </div>
         </div>
 
-        <!-- Right column: Stats -->
-        <div class="right-column">
-          <!-- Bulk actions moved to right column -->
-          <div class="bulk-actions">
-            <button onclick="createAllDemands()" class="btn btn-demand">Отгрузка</button>
-            <button onclick="createAllPayments()" class="btn btn-payment">Платёж</button>
-            <button onclick="batchAction('return')" class="btn btn-return">Возврат</button>
-            <button onclick="batchAction('cancel')" class="btn btn-cancel">Отмена</button>
-          </div>
+        <!-- Bulk actions — на десктопе справа, на мобильных вровень с полем ввода -->
+        <div class="bulk-actions">
+          <button onclick="createAllDemands()" class="btn btn-demand">Отгрузка</button>
+          <button onclick="createAllPayments()" class="btn btn-payment">Платёж</button>
+          <button onclick="batchAction('return')" class="btn btn-return">Возврат</button>
+          <button onclick="batchAction('cancel')" class="btn btn-cancel">Отмена</button>
+        </div>
 
+        <!-- After action stats — отдельно: на планшете под bulk-actions, на десктопе между ними -->
+        <div class="stats-panel stats-final">
+          <div id="statsFinalOutput" class="stats-output idle">
+            <div class="terminal-message">Ожидание массовой операции</div>
+          </div>
+        </div>
+
+        <!-- Right column: Current + Mismatch stats -->
+        <div class="right-column">
           <!-- Current stats -->
           <div class="stats-panel stats-current">
             <div class="stats-header">Текущее состояние</div>
@@ -151,13 +174,6 @@
           <div class="stats-panel stats-mismatch">
             <div class="stats-header">Контроль статусов</div>
             <div id="mismatchOutput" class="stats-output"></div>
-          </div>
-
-          <!-- After action stats -->
-          <div class="stats-panel stats-final">
-            <div id="statsFinalOutput" class="stats-output idle">
-              <div class="terminal-message">Ожидание массовой операции</div>
-            </div>
           </div>
         </div>
       </div>
@@ -284,6 +300,7 @@
 
     <script src="sticker.js"></script>
     <script src="app.js"></script>
+    <!-- Inline Script: Tab Switching, Modal Handlers, Image Sync -->
     <script>
       // Tab switching logic
       function switchTab(tabName) {
@@ -343,6 +360,27 @@
           }
         });
 
+        // Touch device detection
+        if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+          document.body.classList.add('touch-device');
+        }
+        // Table scroll indicator
+        function updateTableScrollIndicator() {
+          var tc = document.getElementById('tableContainer');
+          if (!tc) return;
+          if (tc.scrollWidth > tc.clientWidth) {
+            tc.classList.add('has-scroll');
+          } else {
+            tc.classList.remove('has-scroll');
+          }
+        }
+        var _tableScrollObserver = new ResizeObserver(updateTableScrollIndicator);
+        var tcEl = document.getElementById('tableContainer');
+        if (tcEl) _tableScrollObserver.observe(tcEl);
+        document.addEventListener('DOMContentLoaded', function() { setTimeout(updateTableScrollIndicator, 500); });
+
+        // No accordion — user prefers all stats visible at all times
+
         // Sticker modal
         const stickerModal = document.getElementById('stickerModal');
 
@@ -355,15 +393,21 @@
           if (e.target === stickerModal) stickerModal.classList.add('hidden');
         });
       });
-      // Cross-platform image sync state
+      // ── Cross-platform image sync state ──
       // Хранит URL картинок, добавленных через drag между маркетами (ещё не отправленных на площадку)
       var _pendingCrossSyncs = { wb: [], ozon: [], ms: [] };
       var _syncedOemCode = '';
 
-      // Global HTML-escaping helper (used by addThumbToRow and renderImageThumbs)
+      // Global HTML-escaping helper (used by addThumbToRow, renderImageThumbs, and XSS protection)
       function esc(v) {
-        return String(v == null ? '' : v).replace(/"/g, '&quot;');
+        return String(v == null ? '' : v)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
       }
+      window.esc = esc;
 
       // Collect image URLs from DOM in current order (global — called from push functions)
       function collectImageUrls(platform) {
@@ -508,7 +552,7 @@
         });
       }
 
-      // Market search logic
+      // ── Market Search & Product Display ──
       async function searchProductByOEM(oemCode) {
         let oem;
         if (oemCode) {
@@ -524,7 +568,7 @@
         // Show loading state
         resultsDiv.innerHTML =
           '<div class="search-status"><span class="search-spinner"></span> Поиск кода: <strong>' +
-          oem +
+          esc(oem) +
           '</strong></div>';
 
         const token = localStorage.getItem('ms_token') || '';
@@ -833,7 +877,7 @@
           function getCanonicalName(name) {
             return aliasCanonical[name] || name;
           }
-          // ── Helper: render image thumbnails row ──
+          // ── Helper: render image thumbnails row (inline) ──
           function renderImageThumbs(images, platform) {
             if (!images || images.length === 0) return '';
             var html = '';
@@ -1351,9 +1395,11 @@
             });
           });
         } catch (error) {
-          resultsDiv.innerHTML = `<div class="search-status error">Ошибка: ${error.message}</div>`;
+          resultsDiv.innerHTML = `<div class="search-status error">Ошибка: ${esc(error.message)}</div>`;
         }
       }
+
+      // ── Inline Script: Push to Marketplaces ──
 
       // ── Helper: get description value (if unchanged → original HTML; if changed → clean text) ──
       function getDescriptionValue(textarea) {
@@ -1597,6 +1643,8 @@
           statusDiv.innerHTML = `❌ Ошибка отправки в Ozon: ${error.message}`;
         }
       }
+
+      // ── Inline Script: Image Upload & URL Popup ──
 
       // ── Show popup for adding image by URL ──
       function showAddImagePopup(platform) {

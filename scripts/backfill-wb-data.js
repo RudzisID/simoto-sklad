@@ -15,8 +15,8 @@ const https = require('https')
 const moduleRoot = path.resolve(__dirname, '..')
 
 // ── Файлы кэша ──
-const SALES_CACHE_FILE = path.join(moduleRoot, 'logs', 'wb_sales_cache.json')
-const ANALYTICS_CACHE_FILE = path.join(moduleRoot, 'logs', 'wb_analytics_returns_cache.json')
+const SALES_CACHE_FILE = path.join(moduleRoot, 'cache', 'wb_sales_cache.json')
+const ANALYTICS_CACHE_FILE = path.join(moduleRoot, 'cache', 'wb_analytics_returns_cache.json')
 const ENV_FILE = path.join(moduleRoot, '.env')
 
 // ── Дата для backfill ──
@@ -201,7 +201,7 @@ async function backfillAnalytics(token) {
   console.log(`Ответ: ${res.status} ${res.statusText}`)
 
   if (res.status === 429) {
-    console.log(`  Рейт-лимит (429). Пропускаем.`)
+    console.log('  Рейт-лимит (429). Пропускаем.')
     return
   }
 

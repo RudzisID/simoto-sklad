@@ -1,63 +1,107 @@
 # API Documentation
 
-Справочник по всем API эндпойнтам SiMOTO-sklad.
+Справочник по всем REST API и SSE эндпойнтам SiMOTO-sklad v1.6.1.
 
 ## Общие сведения
 
 - **Базовый URL**: `http://localhost:3000`
-- **Формат**: JSON
-- **Аутентификация**: Токен передаётся в заголовке `X-Api-Token` или `token` (query)
+- **Формат**: JSON (кроме SSE — `text/event-stream`)
+- **Аутентификация**: Токен в заголовке `X-Api-Token` или query-параметре `token`
 - **Кодировка**: UTF-8
-- **Цветное логирование**: Сервер использует цветовую кодировку сообщений в консоли (server.js):
-  - 🔴 Красный — ошибки
-  - 🟢 Зеленый — успешные операции
-  - 🟡 Желтый — пропущенные операции
-  - 🔵 Голубой — завершение операций
-  - 🟣 Пурпурный — начало batch операций
+
+## Содержание
+
+- [REST API (routes/api.js)](#rest-api)
+  - [Health & Status](#health--status)
+  - [Проверка заказов](#проверка-заказов)
+  - [Пакетные операции](#пакетные-операции)
+  - [Создание документов](#создание-документов)
+  - [Состояние заказов](#состояние-заказов)
+  - [Управление сервером](#управление-сервером)
+  - [Интеграции](#интеграции)
+- [SSE Endpoints (routes/sse.js)](#sse-endpoints)
+  - [SSE: Проверка](#sse-проверка-processstream)
+  - [SSE: Пакетная обработка](#sse-пакетная-обработка-batchstream)
+  - [SSE: WB Return](#sse-wb-return-wb-returnstream)
+  - [SSE: Unified Search](#sse-unified-search-unified-searchstream)
+  - [SSE: WB All](#sse-wb-all-wb-allstream)
+  - [SSE: Ozon All](#sse-ozon-all-ozon-allstream)
+  - [SSE: Ozon Return](#sse-ozon-return-ozon-returnstream)
+- [Market Endpoints (routes/market.js)](#market-endpoints)
+  - [Поиск товаров](#поиск-товаров)
+  - [Обновление товаров](#обновление-товаров)
+  - [Синхронизация изображений](#синхронизация-изображений)
+- [Debug (routes/debug.js)](#debug-endpoints)
+- [Коды ошибок](#коды-ошибок)
 
 ---
 
-## Эндпойнты
+## REST API
 
-### Health Check
+### Health & Status
 
 #### `GET /api/health`
 
 Проверка работоспособности сервера.
 
 **Ответ:**
+```json
+{ "status": "ok", "time": "2026-05-30T10:30:00.000Z" }
+```
 
+#### `GET /api/status`
+
+Состояние сервера (PID, uptime).
+
+**Ответ:**
+```json
+{ "running": true, "pid": 12345, "uptime": 3600 }
+```
+
+#### `GET /api/logs`
+
+Последние 100 строк лога за текущий день.
+
+**Ответ:**
 ```json
 {
-  "status": "ok",
-  "time": "2026-04-27T10:30:00.000Z"
+  "logs": "[2026-05-30 10:30:00] === Начало check ===\n...",
+  "file": "C:/.../logs/payments_2026-05-30.log"
 }
 ```
+
+#### `POST /api/abort`
+
+Установка сигнала отмены для активного процесса.
+
+**Запрос:**
+```json
+{ "abortId": "abc123" }
+```
+**Ответ:** `{ "success": true }`
 
 ---
 
-### Проверка номеров (process)
+### Проверка заказов
 
 #### `POST /api/process`
 
-Проверка списка номеров заказов.
+Проверка (check) одного или нескольких заказов по номерам отправлений.
 
-**Запрос:**
+**Заголовки:** `X-Api-Token: <токен МойСклад>`
 
+**Параметры:**
+
+| Поле | Тип | Обязательно | Описание |
+|------|-----|-------------|----------|
+| `numbers` | `string[]` | Да | Массив номеров отправлений |
+
+**Пример запроса:**
 ```json
-{
-  "numbers": ["0128545550-0011-1", "4965524118"]
-}
-```
-
-**Заголовки:**
-
-```
-X-Api-Token: ваш_токен
+{ "numbers": ["0128545550-0011-1", "4965524118"] }
 ```
 
 **Ответ:**
-
 ```json
 {
   "orders": [
@@ -76,7 +120,9 @@ X-Api-Token: ваш_токен
       "hasPayment": false,
       "hasReturn": false,
       "isCancelled": false,
-      "demandName": "ДО-000456"
+      "demandName": "ДО-000456",
+      "orderPositions": [],
+      "demandPositions": []
     }
   ]
 }
@@ -84,275 +130,135 @@ X-Api-Token: ваш_токен
 
 ---
 
-### SSE проверка (process/stream)
-
-#### `GET /api/process/stream`
-
-Проверка номеров в режиме realtime через Server-Sent Events.
-
-**Параметры query:**
-
-| Параметр | Тип | Обязательно | Описание |
-|---------|-----|-------------|----------|
-| token | string | Да | Токен API |
-| numbers | string | Да | Номера через запятую |
-| abortId | string | Нет | ID для отмены |
-
-**Пример:**
-
-```
-GET /api/process/stream?token=...&numbers=0128545550-0011-1,4965524118
-```
-
-**Ответ (SSE):**
-
-```javascript
-data: {"type":"progress","index":1,"total":2,"order":{...}}
-data: {"type":"progress","index":2,"total":2,"order":{...}}
-data: {"type":"done","orders":[...]}
-```
-
-**События SSE:**
-
-| Тип | Описание |
-|-----|----------|
-| `progress` | Промежуточный результат |
-| `done` | Завершение |
-| `aborted` | Отменено пользователем |
-| `error` | Ошибка |
-
----
-
-### Пакетная операция (batch)
+### Пакетные операции
 
 #### `POST /api/batch`
 
-Массовая операция над списком номеров.
+Пакетное выполнение действия над списком заказов.
 
-**Запрос:**
+**Заголовки:** `X-Api-Token: <токен МойСклад>`
 
+**Параметры:**
+
+| Поле | Тип | Обязательно | Описание |
+|------|-----|-------------|----------|
+| `numbers` | `string[]` | Да | Массив номеров отправлений |
+| `action` | `string` | Да | `demand` \| `payment` \| `return` \| `cancel` |
+
+**Пример запроса:**
 ```json
-{
-  "numbers": ["0128545550-0011-1", "4965524118"],
-  "action": "payment"
-}
+{ "numbers": ["0128545550-0011-1"], "action": "payment" }
 ```
 
-**Действия (action):**
-
-| Значение | Описание |
-|----------|----------|
-| `demand` | Создать отгрузку |
-| `payment` | Создать платёж |
-| `return` | Создать возврат |
-| `cancel` | Отменить заказ |
-
 **Ответ:**
-
 ```json
 {
-  "created": 2,
+  "created": 1,
   "skipped": 0,
   "errors": 0,
   "orders": [
-    { "status": "created", "paymentName": "Пл-001", ... }
+    { "status": "created", "paymentName": "Пл-000001", "shipmentNum": "0128545550-0011-1" }
   ]
 }
 ```
 
----
+#### `POST /api/save-report`
 
-### SSE batch (batch/stream)
+Сохранение отчёта проверки/операций в JSON-файл (`logs/report_YYYY-MM-DD.json`).
 
-#### `GET /api/batch/stream`
+**Параметры:**
 
-Массовая операция в режиме realtime.
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `ordersData` | `object[]` | Данные заказов |
+| `resultsData` | `object[]` | Результаты операций |
 
-**Параметры query:**
-
-| Параметр | Тип | Обязательно | Описание |
-|---------|-----|-------------|----------|
-| token | string | Да | Токен API |
-| numbers | string | Да | Номера через запятую |
-| action | string | Да | Действие |
-| abortId | string | Нет | ID для отмены |
-
-**Ответ (SSE):**
-
-```javascript
-data: {"type":"progress","index":1,"total":2,"action":"payment","result":{...},"stats":{"created":1,"skipped":0,"errors":0}}
-data: {"type":"done","stats":{"created":2,"skipped":0,"errors":0},"orders":[...]}
-```
+**Ответ:** `{ "success": true, "file": "logs/report_2026-05-30.json" }`
 
 ---
 
-### Create Payment
+### Создание документов
+
+Общие параметры для всех эндпойнтов создания:
+
+| Поле | Тип | Обязательно | Описание |
+|------|-----|-------------|----------|
+| `shipmentNum` | `string` | Да | Номер отправления |
+| `orderId` | `string` | Нет | UUID заказа (пропускает поиск) |
+| `X-Api-Token` | header | Да | Токен МойСклад |
 
 #### `POST /api/create-payment`
 
-Создание входящего платежа.
-
-**Запрос:**
-
-```json
-{
-  "shipmentNum": "0128545550-0011-1"
-}
-```
+Создание входящего платежа. Автоматически проверяет возможность оплаты.
 
 **Ответ:**
-
 ```json
-{
-  "success": true,
-  "paymentName": "Пл-000001"
-}
+{ "success": true, "paymentName": "Пл-000001" }
 ```
 
-**Ошибки:**
+#### `POST /api/create-partial-payment`
 
+Создание частичного платежа по возврату.
+
+**Ответ:**
 ```json
-{
-  "error": "Невозможно создать платёж: Уже оплачено"
-}
+{ "success": true, "paymentName": "Пл-000001", "paymentSum": 500 }
 ```
-
----
-
-### Create Demand
 
 #### `POST /api/create-demand`
 
-Создание отгрузки (demand).
-
-**Запрос:**
-
-```json
-{
-  "shipmentNum": "0128545550-0011-1"
-}
-```
+Создание отгрузки (demand) с копированием позиций из заказа.
 
 **Ответ:**
-
 ```json
-{
-  "success": true,
-  "demandName": "ДО-000001"
-}
+{ "success": true, "demandName": "ДО-000001" }
 ```
-
----
-
-### Create Return
 
 #### `POST /api/create-return`
 
-Создание возврата покупателя (salesreturn).
-
-**Запрос:**
-
-```json
-{
-  "shipmentNum": "0128545550-0011-1"
-}
-```
+Создание возврата (salesReturn) с копированием позиций из отгрузки.
 
 **Ответ:**
-
 ```json
-{
-  "success": true,
-  "returnName": "РО-000001"
-}
+{ "success": true, "returnName": "РО-000001", "returnSum": 1500 }
 ```
-
----
-
-### Cancel Order
 
 #### `POST /api/cancel-order`
 
-Отмена заказа.
-
-**Запрос:**
-
-```json
-{
-  "shipmentNum": "0128545550-0011-1"
-}
-```
+Отмена заказа со сбросом резерва позиций.
 
 **Ответ:**
-
 ```json
-{
-  "success": true,
-  "orderId": "...",
-  "status": "cancelled",
-  "reserveCleared": true
-}
+{ "success": true, "orderId": "...", "status": "cancelled", "reserveCleared": true }
 ```
-
----
-
-### Print Sticker (Печать этикетки)
 
 #### `POST /api/print-sticker`
 
-Поиск товара по коду и генерация PDF-этикетки через МойСклад.
+Генерация PDF-стикера для товара по коду (OEM/артикул).
 
-**Запрос:**
+**Заголовки:** `X-Api-Token: <токен МойСклад>`
 
+**Параметры:**
+
+| Поле | Тип | Обязательно | Описание |
+|------|-----|-------------|----------|
+| `code` | `string` | Да | Код товара (OEM/артикул) |
+
+**Ответ (URL):**
 ```json
-{
-  "code": "ABC123"
-}
+{ "success": true, "pdfUrl": "https://api.moysklad.ru/..." }
 ```
-
-**Заголовки:**
-
-```
-X-Api-Token: ваш_токен
-```
-
-**Ответ (успех — URL):**
-
-```json
-{
-  "success": true,
-  "pdfUrl": "https://api.moysklad.ru/..."
-}
-```
-
-**Ответ (успех — файл):**
-
-PDF файл отправляется напрямую с `Content-Type: application/pdf`
-
-**Ошибки:**
-
-```json
-{
-  "error": "Товар не найден"
-}
-```
-
-**Процесс:**
-
-1. Поиск товара по коду (`findProductByCode`)
-2. Генерация PDF через API МойСклад (`exportStickerPdf`)
-3. Возврат URL (303) или файла (200)
+**Ответ (файл):** PDF с `Content-Type: application/pdf` и `Content-Disposition: inline`
 
 ---
 
-### Orders State
+### Состояние заказов
 
 #### `GET /api/orders-state`
 
-Получить состояние всех заказов.
+Получить сохранённое состояние заказов.
 
 **Ответ:**
-
 ```json
 {
   "0128545550-0011-1": {
@@ -360,20 +266,21 @@ PDF файл отправляется напрямую с `Content-Type: applica
     "sum": 1500,
     "paid": 0,
     "status": "other",
+    "statusName": "Отгружен",
+    "canCreate": true,
+    "orderId": "...",
+    "savedAt": "2026-05-30T10:30:00.000Z",
     "lastAction": "payment_created",
     "lastResult": "Пл-000001"
   }
 }
 ```
 
----
-
 #### `POST /api/orders-state`
 
-Сохранить состояние заказов.
+Сохранить состояние (полный скан или обновление одного заказа).
 
-**Запрос (полный скан):**
-
+**Полный скан:**
 ```json
 {
   "orders": [
@@ -383,14 +290,16 @@ PDF файл отправляется напрямую с `Content-Type: applica
       "sum": 1500,
       "paid": 0,
       "status": "other",
-      "canCreate": true
+      "statusName": "Отгружен",
+      "canCreate": true,
+      "orderPositions": [],
+      "demandPositions": []
     }
   ]
 }
 ```
 
-**Запрос (единичный):**
-
+**Обновление одного:**
 ```json
 {
   "shipmentNum": "0128545550-0011-1",
@@ -399,36 +308,13 @@ PDF файл отправляется напрямую с `Content-Type: applica
 }
 ```
 
----
+**Ответ:** `{ "success": true, "count": 1 }`
 
 #### `DELETE /api/orders-state`
 
-Очистить состояние заказов.
+Очистка всего сохранённого состояния.
 
-**Ответ:**
-
-```json
-{
-  "success": true
-}
-```
-
----
-
-### Логи
-
-#### `GET /api/logs`
-
-Получить логи за текущий день.
-
-**Ответ:**
-
-```json
-{
-  "logs": "[2026-04-27 10:30:00] Проверен: 0128545550-0011-1",
-  "file": "C:/.../logs/payments_2026-04-27.log"
-}
-```
+**Ответ:** `{ "success": true }`
 
 ---
 
@@ -436,54 +322,350 @@ PDF файл отправляется напрямую с `Content-Type: applica
 
 #### `POST /api/restart`
 
-Перезапустить сервер.
+Перезапуск сервера через graceful shutdown с флагом `shouldRestart`.
 
 **Ответ:**
-
 ```json
-{
-  "success": true,
-  "message": "Перезапуск сервера..."
-}
+{ "success": true, "message": "Перезапуск сервера..." }
+```
+
+#### `POST /api/start`
+
+Запуск нового экземпляра сервера в отдельном процессе (через `simoto-sklad.bat`).
+
+**Ответ:**
+```json
+{ "success": true, "message": "Сервер запущен в новом окне" }
 ```
 
 ---
 
-#### `GET /api/status`
+### Интеграции
 
-Получить статус сервера.
+#### `POST /api/wb-sales/refresh`
+
+Принудительное обновление всех кэшей Wildberries (сброс TTL).
+
+**Заголовки:** `X-Wb-Token: <токен WB>`
 
 **Ответ:**
-
 ```json
-{
-  "running": true,
-  "pid": 12345,
-  "uptime": 3600
-}
+{ "success": true, "message": "Кэш WB обновлён" }
+```
+
+#### `POST /api/wb-returns/refresh`
+
+Алиас для `/api/wb-sales/refresh` (legacy).
+
+#### `POST /api/sync-products`
+
+Синхронизация товаров: поиск на WB и Ozon по кодам, агрегация.
+
+**Параметры:**
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `wbCodes` | `string[]` | Коды для поиска на Wildberries |
+| `ozonCodes` | `string[]` | Коды для поиска на Ozon |
+
+**Ответ:**
+```json
+{ "success": true, "merged": { ... } }
 ```
 
 ---
 
-### Abort
+## SSE Endpoints
 
-#### `POST /api/abort`
+SSE (Server-Sent Events) — потоковая передача данных в реальном времени. Поддерживает отмену через `abortId`.
 
-Прервать текущую операцию.
+Все SSE эндпойнты монтируются на `/api`.
 
-**Запрос:**
+### SSE: Проверка (`/api/process/stream`)
 
+**Метод:** `GET`
+
+**Query-параметры:**
+
+| Параметр | Тип | Обязательно | Описание |
+|----------|-----|-------------|----------|
+| `token` | `string` | Да | Токен API МойСклад |
+| `numbers` | `string` | Да | Номера отправлений через запятую |
+| `abortId` | `string` | Нет | ID для отмены |
+
+**События SSE:**
+
+| Тип | Описание |
+|-----|----------|
+| `progress` | Промежуточный результат (index, total, order) |
+| `done` | Завершение (orders — массив результатов) |
+| `error` | Ошибка |
+| `aborted` | Отменено пользователем |
+
+**Пример:**
+```
+GET /api/process/stream?token=...&numbers=0128545550-0011-1,4965524118
+
+data: {"type":"progress","index":1,"total":2,"order":{...}}
+data: {"type":"done","orders":[...]}
+```
+
+### SSE: Пакетная обработка (`/api/batch/stream`)
+
+**Метод:** `POST`
+
+**Параметры тела:**
+
+| Поле | Тип | Обязательно | Описание |
+|------|-----|-------------|----------|
+| `token` | `string` | Да | Токен API МойСклад |
+| `numbers` | `string[]` | Да | Массив номеров отправлений |
+| `action` | `string` | Да | `demand` \| `payment` \| `return` \| `cancel` |
+| `abortId` | `string` | Нет | ID для отмены |
+| `checkData` | `object` | Нет | Готовые результаты проверки (пропускает re-check) |
+
+**События SSE:**
+
+| Тип | Описание |
+|-----|----------|
+| `progress` | Результат одного заказа + статистика (created/skipped/errors) |
+| `done` | Завершение с финальной статистикой |
+| `error` | Ошибка |
+| `aborted` | Отменено |
+
+### SSE: WB Return (`/api/wb-return/stream`)
+
+Поиск возвратов Wildberries по стикерам.
+
+**Метод:** `GET`
+
+**Заголовки:** `X-Wb-Token: <токен WB>`
+
+**Query-параметры:**
+
+| Параметр | Тип | Обязательно | Описание |
+|----------|-----|-------------|----------|
+| `token` | `string` | Да | Токен API МойСклад |
+| `numbers` | `string` | Да | Номера стикеров через запятую |
+| `abortId` | `string` | Нет | ID для отмены |
+
+**События SSE:**
+
+| Тип | Описание |
+|-----|----------|
+| `progress` | Ожидание при лимите WB API |
+| `search-ms` | Поиск в МойСклад по orderId |
+| `result` | Результат по одному стикеру |
+| `done` | Завершение |
+| `error` | Ошибка |
+| `aborted` | Отменено |
+
+### SSE: Unified Search (`/api/unified-search/stream`)
+
+Универсальный поиск заказов по МойСклад + WB + Ozon. Определяет маркетплейс по описанию заказа.
+
+**Метод:** `GET`
+
+**Заголовки:** (хотя бы один набор)
+
+| Заголовок | Описание |
+|-----------|----------|
+| `X-Api-Token` | Токен МойСклад |
+| `X-Wb-Token` | Токен Wildberries |
+| `X-Ozon-Client-Id` | Client-ID Ozon |
+| `X-Ozon-Api-Key` | API-Key Ozon |
+
+**Query-параметры:**
+
+| Параметр | Тип | Обязательно | Описание |
+|----------|-----|-------------|----------|
+| `numbers` | `string` | Да | Коды поиска через запятую |
+| `abortId` | `string` | Нет | ID для отмены |
+
+**События SSE:** `progress`, `done`, `error`, `aborted`
+
+### SSE: WB All (`/api/wb-all/stream`)
+
+Обновление всех кэшей Wildberries.
+
+**Метод:** `GET`
+
+**Заголовки:** `X-Wb-Token: <токен WB>`
+
+**Query:** `token` — токен МойСклад
+
+**События SSE:** `progress`, `done`, `error`
+
+### SSE: Ozon All (`/api/ozon-all/stream`)
+
+Обновление всех кэшей Ozon.
+
+**Метод:** `GET`
+
+**Заголовки:** `X-Ozon-Client-Id`, `X-Ozon-Api-Key`
+
+**Query:** `token` — токен МойСклад
+
+**События SSE:** `progress`, `done`, `error`
+
+### SSE: Ozon Return (`/api/ozon-return/stream`)
+
+Поиск возвратов Ozon по кодам.
+
+**Метод:** `GET`
+
+**Заголовки:** `X-Ozon-Client-Id`, `X-Ozon-Api-Key`
+
+**Query-параметры:**
+
+| Параметр | Тип | Обязательно | Описание |
+|----------|-----|-------------|----------|
+| `token` | `string` | Да | Токен API МойСклад |
+| `numbers` | `string` | Да | Коды возвратов через запятую |
+
+**События SSE:** `search-ms`, `result`, `error`, `done`
+
+---
+
+## Market Endpoints
+
+Монтируются на `/api/market`.
+
+### Поиск товаров
+
+#### `GET /api/market/product`
+
+Поиск товара на МойСклад, WB и Ozon по OEM-коду.
+
+**Заголовки:**
+
+| Заголовок | Обязательно | Описание |
+|-----------|-------------|----------|
+| `X-Api-Token` | Да | Токен МойСклад |
+| `X-Wb-Token` | Нет | Токен Wildberries |
+| `X-Ozon-Client-Id` | Нет | Client-ID Ozon |
+| `X-Ozon-Api-Key` | Нет | API-Key Ozon |
+
+**Query:** `code` — OEM-код товара
+
+**Ответ:**
 ```json
 {
-  "abortId": "abc123"
+  "oem": "ABC123",
+  "moysklad": { "id": "...", "name": "Товар", "code": "ABC123", "price": 1500, "stock": 10, "description": "...", "attributes": [] },
+  "wildberries": { "nmID": 123, "vendorCode": "ABC123", "price": 1600 },
+  "ozon": { "offer_id": "ABC123", "product_id": 456, "price": 1550 },
+  "sharedAttributes": { "price": { "ms": 1500, "wb": 1600, "ozon": 1550 } }
 }
 ```
 
-**Ответ:**
+#### `GET /api/market/product/full`
 
+Полные данные товара (аналогично `/product`).
+
+---
+
+### Обновление товаров
+
+#### `POST /api/market/push/ms`
+
+Обновление товара в МойСклад (цена, название, описание, атрибуты).
+
+**Заголовки:** `X-Api-Token: <токен МС>`
+
+**Параметры:**
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `productId` | `string` | ID товара в МС |
+| `price` | `number` | Новая цена в рублях |
+| `title` | `string` | Новое название |
+| `description` | `string` | Новое описание |
+| `attributes` | `object[]` | Массив атрибутов `[{id, value}]` |
+
+**Ответ:** `{ "success": true, "message": "Товар обновлён в МойСклад" }`
+
+#### `POST /api/market/push/wb`
+
+Обновление товара в Wildberries (описание, характеристики, изображения).
+
+**Заголовки:** `X-Wb-Token: <токен WB>`
+
+**Параметры:**
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `vendorCode` | `string` | Артикул товара |
+| `title` | `string` | Название |
+| `description` | `string` | Описание |
+| `characteristics` | `object[]` | Характеристики |
+| `images` | `string[]` | URL изображений |
+
+#### `POST /api/market/push/ozon`
+
+Обновление товара в Ozon.
+
+**Заголовки:** `X-Ozon-Client-Id`, `X-Ozon-Api-Key`
+
+**Параметры:**
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `offerId` | `string` | offerId товара |
+| `productId` | `string` | productId товара |
+| `title` | `string` | Название |
+| `description` | `string` | Описание |
+| `attributes` | `object[]` | Атрибуты |
+| `images` | `string[]` | URL изображений |
+| `typeId` | `number` | ID типа товара |
+
+---
+
+### Синхронизация изображений
+
+#### `POST /api/market/sync/image`
+
+Синхронизация изображения между WB и Ozon.
+
+**Параметры:**
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `sourcePlatform` | `string` | `wb` \| `ozon` |
+| `targetPlatform` | `string` | `wb` \| `ozon` |
+| `imageUrl` | `string` | URL изображения |
+| `nmId` | `string` | nmId WB (для ozon→wb) |
+| `offerId` | `string` | offerId Ozon (для wb→ozon) |
+
+#### `POST /api/market/image/upload`
+
+Загрузка изображения на сервер (multipart/form-data).
+
+**Поле:** `image` (файл)
+
+**Ограничения:** макс. 10MB, форматы: jpg, png, webp, gif.
+
+**Ответ:**
+```json
+{ "success": true, "filename": "upload_123.jpg", "originalName": "photo.jpg", "size": 51200, "url": "/temp/images/upload_123.jpg" }
+```
+
+---
+
+## Debug Endpoints
+
+#### `GET /api/debug-state`
+
+Просмотр содержимого файла состояния заказов (`orders_state.json`).
+
+**Ответ:**
 ```json
 {
-  "success": true
+  "file": "C:/.../logs/orders_state.json",
+  "exists": true,
+  "count": 42,
+  "keys": ["0128545550-0011-1", "4965524118"],
+  "state": { ... }
 }
 ```
 
@@ -491,193 +673,19 @@ PDF файл отправляется напрямую с `Content-Type: applica
 
 ## Коды ошибок
 
-| Код | Сообщение | Причина |
-|-----|-----------|--------|
-| 400 | Некорректные данные | Неверный формат запроса |
-| 401 | Требуется токен API | Отсутствует токен |
-| 404 | Заказ не найден | Заказ не существует |
-| 500 | Ошибка: ... | Внутренняя ошибка сервера |
+| HTTP | Тип | Причина |
+|------|-----|--------|
+| 400 | `Некорректные данные` | Неверный формат запроса, пустой массив |
+| 400 | `Некорректное действие` | Неверный `action` (не demand/payment/return/cancel) |
+| 400 | `Требуется код товара` | Отсутствует `code` для поиска товара |
+| 400 | `Требуется shipmentNum и action` | Не указан номер отправления |
+| 401 | `Требуется токен API` | Отсутствует `X-Api-Token` |
+| 401 | `Требуется WB токен` | Отсутствует `X-Wb-Token` |
+| 401 | `Требуются Client-Id и Api-Key Ozon` | Отсутствуют заголовки Ozon |
+| 404 | `Заказ не найден` | Заказ с указанным номером не существует |
+| 500 | `Ошибка: ...` | Внутренняя ошибка сервера |
 
----
-
-## Примеры использования
-
-### cURL
-
-```bash
-# Проверка номеров
-curl -X POST http://localhost:3000/api/process \
-  -H "Content-Type: application/json" \
-  -H "X-Api-Token: ваш_токен" \
-  -d '{"numbers": ["0128545550-0011-1"]}'
-
-# Создание платежа
-curl -X POST http://localhost:3000/api/create-payment \
-  -H "Content-Type: application/json" \
-  -H "X-Api-Token: ваш_токен" \
-  -d '{"shipmentNum": "0128545550-0011-1"}'
-```
-
-### JavaScript
- 
-```javascript
-const token = 'ваш_токен';
-const shipmentNum = '0128545550-0011-1';
- 
-// Создание платежа
-const response = await fetch('/api/create-payment', {
-   method: 'POST',
-   headers: {
-     'Content-Type': 'application/json',
-     'X-Api-Token': token
-   },
-   body: JSON.stringify({ shipmentNum })
-});
- 
-const result = await response.json();
-console.log(result);
-```
-```
- 
----
- 
-### WB Sales Cache (supplier/sales)
- 
-Эндпоинт для получения отчёта о продажах Wildberries, используется для
-сопоставления входящих платежей со стикерами заказов.
- 
-#### Источник данных
- 
-```http
-GET https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom=YYYY-MM-DD&flag=0
-```
- 
-**Параметры**:
-- `dateFrom` — дата начала (по `lastChangeDate`)
-- `flag=0` — все записи (не агрегированные)
- 
-**Назначение**: Отчёт о продажах, используется для сопоставления платежей
-по стикерам (поле `sticker`).
- 
-#### Кэширование
- 
-- **Тип**: In-memory (`wbSalesCache` в `server.js`)
-- **Персистентность**: Сохраняется на диск в `logs/wb_sales_cache.json`
-  (автоматически загружается при перезапуске сервера)
-- **TTL**: 2 часа (`WB_SALES_CACHE_TTL`)
-- **Обновление**: Инкрементальное — только записи с `lastChangeDate > lastDate`
-- **Очистка**: Записи старше 90 дней удаляются (лимит WB API)
- 
-#### Rate Limiting
- 
-- **Лимит**: ~1 запрос в минуту
-- **Обработка 429**: Читает заголовок `X-Ratelimit-Retry`, ожидает указанное
-   количество секунд. До 3 попыток. Если есть просроченный кэш — отдаёт его
-   без повторных попыток.
-- **Логика повтора** (в `getWBSalesMap()`):
-   - Есть кэш (даже просроченный) → отдаём сразу, не ждём
-   - Нет кэша → retry по заголовку, fallback 60s, до 3 попыток
- 
-#### Ключевые поля записи
- 
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `sticker` | string | Стикер заказа |
-| `srid` | string | ID заказа в системе WB |
-| `nmId` | number | ID товара в WB |
-| `barcode` | string | Штрих-код |
-| `supplierArticle` | string | Артикул поставщика |
-| `lastChangeDate` | string | Дата последнего изменения |
-| `date` | string | Дата продажи |
-| `totalPrice` | number | Цена с учётом скидки (коп.) |
- 
-#### Принудительное обновление
- 
-```http
-POST /api/wb-sales/refresh
-Headers:
-   x-wb-token: <WB API token>
- 
-Response:
-{
-   "success": true,
-   "records": 15000,
-   "bySticker": 14500,
-   "lastDate": "2026-05-20T10:30:00"
-}
-```
- 
-Сбрасывает TTL кэша (`fetchedAt = 0`) и принудительно загружает новые данные
-из WB API через `getWBSalesMap()`.
-
----
-
-### WB Returns Cache (supplier/returns)
-
-Эндпоинт для получения отчёта о возвратах Wildberries, используется для
-сопоставления входящих платежей со стикерами заказов при обработке возвратов.
-
-#### Источник данных
-
-```http
-GET https://statistics-api.wildberries.ru/api/v1/supplier/returns?dateFrom=YYYY-MM-DD&flag=0
-```
-
-**Параметры**:
-- `dateFrom` — дата начала (по `lastChangeDate`)
-- `flag=0` — все записи (не агрегированные)
-
-**Назначение**: Отчёт о возвратах, используется для сопоставления платежей
-по стикерам (поле `sticker`) при обработке возвратов покупателя.
-
-#### Кэширование
-
-- **Тип**: In-memory (`wbReturnsCache` в `server.js`)
-- **Персистентность**: Сохраняется на диск в `logs/wb_returns_cache.json`
-  (автоматически загружается при перезапуске сервера)
-- **TTL**: 2 часа (`WB_RETURNS_CACHE_TTL`)
-- **Обновление**: Инкрементальное — только записи с `lastChangeDate > lastDate`
-- **Очистка**: Записи старше 90 дней удаляются (лимит WB API)
-
-#### Rate Limiting
-
-- **Лимит**: ~1 запрос в минуту
-- **Обработка 429**: Читает заголовок `X-Ratelimit-Retry`, ожидает указанное
-  количество секунд. До 3 попыток. Если есть просроченный кэш — отдаёт его
-  без повторных попыток.
-- **Логика повтора** (в `getWBRReturnsMap()`):
-   - Есть кэш (даже просроченный) → отдаём сразу, не ждём
-   - Нет кэша → retry по заголовку, fallback 60s, до 3 попыток
-
-#### Ключевые поля записи
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| `sticker` | string | Стикер заказа |
-| `srid` | string | ID заказа в системе WB |
-| `nmId` | number | ID товара в WB |
-| `barcode` | string | Штрих-код |
-| `supplierArticle` | string | Артикул поставщика |
-| `lastChangeDate` | string | Дата последнего изменения |
-| `date` | string | Дата возврата |
-| `totalPrice` | number | Сумма возврата с учётом скидки (коп.) |
-
-#### Принудительное обновление
-
-```http
-POST /api/wb-returns/refresh
-Headers:
-  x-wb-token: <WB API token>
-
-Response:
-{
-   "success": true,
-   "records": 15000,
-   "bySticker": 14500,
-   "lastDate": "2026-05-20T10:30:00"
-}
-```
-
-Сбрасывает TTL кэша (`fetchedAt = 0`) и принудительно загружает новые данные
-из WB API через `getWBRReturnsMap()`.
+Все ошибки возвращаются в формате:
+```json
+{ "error": "Текст ошибки" }
 ```

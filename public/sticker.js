@@ -1,84 +1,38 @@
 /**
- * SiMOTO-Sklad — Генератор наклеек 58×40 мм
- * ============================================
+ * @file sticker.js — Генератор наклеек 58×40 мм
+ * ==============================================
  *
  * Автономный модуль для создания и печати наклеек со службой доставки и кодом заказа.
  * Не зависит от других модулей, использует чистые функции.
+ * Размер по умолчанию — 58×40 мм, поддерживается кастомизация.
  *
+ * @module StickerGenerator
  *
- * Функции
- * -------
- *
- *   buildStickerHtml({ carrier, code, size?, avito? })  →  string
- *     Генерирует HTML-страницу с CSS @page под размер наклейки.
- *     Длинный код автоматически переносится на вторую строку.
- *     Параметры:
- *       carrier (string) — название службы доставки (СДЭК, Почта, Яндекс, Авито…)
- *       code    (string) — код заказа (произвольная строка)
- *       size    (string) — размер в формате "ширинаxвысота" в мм, по умолч. "58x40"
- *       avito   (bool)   — добавить "Авито" вторым словом (игнорируется, если carrier = "Авито")
- *     Возвращает: полный HTML-документ.
- *     Пример:
- *       const html = buildStickerHtml({
- *         carrier: 'СДЭК',
- *         code: '10266080914',
- *         size: '58x40',
- *         avito: true
- *       })
- *       // → "<!DOCTYPE html><html>..."
- *       // Содержимое наклейки:
- *       //   ┌────────────────┐
- *       //   │   СДЭК Авито   │
- *       //   │  ────────────  │
- *       //   │ 10266080914    │
- *       //   └────────────────┘
- *
- *   openStickerPrint(carrier, code, size?, avito?)  →  void
- *     Генерирует наклейку и открывает её в новом окне браузера.
- *     Автоматическая печать НЕ запускается — пользователь нажимает Ctrl+P сам.
- *     Параметры — см. buildStickerHtml().
- *     Пример:
- *       openStickerPrint('Почта', '123456789', '58x40', false)
- *
- *   toggleStickerModal(show)  →  void
- *     Показывает/скрывает штатный попап параметров наклейки.
- *     Вызывается из onclick кнопки в шапке index.html.
- *
- *   generateSticker()  →  void
- *     Читает значения из DOM-полей попапа (stickerCarrier, stickerCode и т.д.),
- *     валидирует их и вызывает openStickerPrint().
- *     Используется как обработчик кнопки "Создать" внутри модального окна.
- *
- *
- * Пример вызова из других модулей
- * --------------------------------
- *   // Вариант 1 — открыть окно с наклейкой одной строкой
- *   openStickerPrint('СДЭК', '10266080914', '58x40', true)
- *
- *   // Вариант 2 — получить HTML и сделать с ним что-то своё
- *   const html = buildStickerHtml({
- *     carrier: 'Яндекс',
- *     code: 'ABC-123-456',
- *     size: '58x40',
- *     avito: false
- *   })
- *   // дальше можно отправить на print, сохранить в файл и т.д.
- *
- *   // Вариант 3 — открыть штатный попап (если нужно только UI)
- *   toggleStickerModal(true)
+ * Примеры использования:
+ *   const html = buildStickerHtml({ carrier: 'СДЭК', code: '10266080914' });
+ *   openStickerPrint('Почта', '123456789', '58x40', false);
+ *   toggleStickerModal(true);
  */
 
-// ─── buildStickerHtml ────────────────────────────────────────────────────────
-// Чистая функция: по параметрам возвращает строку HTML.
-// Ничего не читает из DOM, не вызывает alert/window.open.
-
+/**
+ * Создаёт HTML-страницу наклейки с CSS @page под заданный размер.
+ * Чистая функция: не читает DOM, не вызывает alert/window.open.
+ * Длинный код заказа автоматически переносится на вторую строку.
+ *
+ * @param {Object} params - Параметры наклейки
+ * @param {string} params.carrier - Название службы доставки (СДЭК, Почта, Яндекс, Авито…)
+ * @param {string} params.code - Код заказа (произвольная строка)
+ * @param {string} [params.size='58x40'] - Размер в формате "ширинаxвысота" в мм
+ * @param {boolean} [params.avito=false] - Добавить "Авито" вторым словом (если carrier !== 'Авито')
+ * @returns {string} Полный HTML-документ для печати наклейки
+ */
 function buildStickerHtml({ carrier, code, size, avito }) {
-  size = size || '58x40';
-  let line1 = carrier;
+  size = size || '58x40'
+  let line1 = carrier
   if (avito && carrier !== 'Авито') {
-    line1 += ' Авито';
+    line1 += ' Авито'
   }
-  const [w, h] = size.split('x');
+  const [w, h] = size.split('x')
 
   return [
     '<!DOCTYPE html>',
@@ -133,56 +87,72 @@ function buildStickerHtml({ carrier, code, size, avito }) {
     '  </div>',
     '</body>',
     '</html>'
-  ].join('\n');
+  ].join('\n')
 }
 
-// ─── openStickerPrint ────────────────────────────────────────────────────────
-// Генерирует наклейку и открывает в новом окне (без автопечати).
-
+/**
+ * Генерирует наклейку и открывает её в новом окне браузера.
+ * Автоматическая печать НЕ запускается — пользователь нажимает Ctrl+P самостоятельно.
+ *
+ * @param {string} carrier - Название службы доставки
+ * @param {string} code - Код заказа
+ * @param {string} [size] - Размер наклейки (по умолч. "58x40")
+ * @param {boolean} [avito] - Флаг "Авито"
+ * @returns {void}
+ */
 function openStickerPrint(carrier, code, size, avito) {
-  var html = buildStickerHtml({ carrier: carrier, code: code, size: size, avito: avito });
-  var w = window.open('', '_blank', 'width=600,height=450');
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+  var html = buildStickerHtml({ carrier: carrier, code: code, size: size, avito: avito })
+  var w = window.open('', '_blank', 'width=600,height=450')
+  w.document.open()
+  w.document.write(html)
+  w.document.close()
 }
 
-// ─── toggleStickerModal ──────────────────────────────────────────────────────
-// Показывает/скрывает попап параметров наклейки (по классу .hidden).
-
+/**
+ * Показывает или скрывает модальное окно параметров наклейки.
+ * При открытии сбрасывает поля ввода (carrier, code, avito).
+ * Вызывается из onclick кнопки "Печать стикеров" в шапке index.html.
+ *
+ * @param {boolean} show - true = показать, false = скрыть
+ * @returns {void}
+ */
 function toggleStickerModal(show) {
-  var modal = document.getElementById('stickerModal');
-  if (!modal) return;
-  modal.classList.toggle('hidden', !show);
+  var modal = document.getElementById('stickerModal')
+  if (!modal) return
+  modal.classList.toggle('hidden', !show)
   if (show) {
-    document.getElementById('stickerCarrier').value = '';
-    document.getElementById('stickerCode').value = '';
-    document.getElementById('stickerAvito').checked = false;
+    document.getElementById('stickerCarrier').value = ''
+    document.getElementById('stickerCode').value = ''
+    document.getElementById('stickerAvito').checked = false
   }
 }
 
-// ─── generateSticker ─────────────────────────────────────────────────────────
-// Читает поля из DOM-попапа, валидирует, вызывает openStickerPrint.
-
+/**
+ * Читает значения из DOM-полей модального окна наклейки (stickerCarrier,
+ * stickerCode, stickerSize, stickerAvito), валидирует их и вызывает openStickerPrint().
+ * Используется как обработчик кнопки "Создать" внутри модального окна.
+ *
+ * @returns {void}
+ */
 function generateSticker() {
-  var carrier = document.getElementById('stickerCarrier').value.trim();
-  var avitoChecked = document.getElementById('stickerAvito').checked;
-  var code = document.getElementById('stickerCode').value.trim();
-  var size = document.getElementById('stickerSize').value;
+  var carrier = document.getElementById('stickerCarrier').value.trim()
+  var avitoChecked = document.getElementById('stickerAvito').checked
+  var code = document.getElementById('stickerCode').value.trim()
+  var size = document.getElementById('stickerSize').value
 
   if (!carrier) {
     alert(
       '\u041F\u043E\u0436\u0430\u043B\u0443\u0439\u0441\u0442\u0430, \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0438\u043B\u0438 \u0432\u0432\u0435\u0434\u0438\u0442\u0435 \u0441\u043B\u0443\u0436\u0431\u0443 \u0434\u043E\u0441\u0442\u0430\u0432\u043A\u0438!'
-    );
-    return;
+    )
+    return
   }
   if (!code) {
     alert(
       '\u041F\u043E\u0436\u0430\u043B\u0443\u0439\u0441\u0442\u0430, \u0432\u0432\u0435\u0434\u0438\u0442\u0435 \u043A\u043E\u0434 \u0437\u0430\u043A\u0430\u0437\u0430!'
-    );
-    return;
+    )
+    return
   }
 
-  toggleStickerModal(false);
-  openStickerPrint(carrier, code, size, avitoChecked);
+  toggleStickerModal(false)
+  openStickerPrint(carrier, code, size, avitoChecked)
 }
