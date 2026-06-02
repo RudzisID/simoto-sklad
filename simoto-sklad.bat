@@ -101,9 +101,23 @@ exit /b 0
 del "%TEMP%\ver_check.txt" >nul 2>&1
 
 :start_server
+:: Generate HTTPS certificate if missing
+if not exist "cert\key.pem" (
+    %PSCMD% "Write-Host '[i] Generating HTTPS certificate for camera...' -ForegroundColor Cyan
+    powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\generate-cert.ps1" >nul 2>&1
+)
+:: Show HTTPS info
+for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /R /C:"IPv4"') do (
+    set "ip=%%a"
+    goto :got_ip
+)
+:got_ip
+set "ip=%ip: =%"
+%PSCMD% "Write-Host ('[i] HTTPS for camera: https://' + '%ip%' + ':3443') -ForegroundColor Cyan"
+
 :: Start server
 echo.
-%PSCMD% "Write-Host '[i] Starting server...' -ForegroundColor Cyan"
+%PSCMD% "Write-Host '[i] Starting server...' -ForegroundColor Cyan
 start http://localhost:3000
 node server.js
 

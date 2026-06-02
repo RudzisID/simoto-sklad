@@ -504,7 +504,7 @@ module.exports = function(deps) {
       const result = await cancelOrder(orderId)
       log(`Заказ отменён: ${shipmentNum}`, { result })
 
-      const orderFull = await getOrderFullForCreate(order.id)
+      const orderFull = await getOrderFullForCreate(orderId)
 
       updateOrderState(shipmentNum, 'order_cancelled', 'success', {
         orderName: orderFull.name,

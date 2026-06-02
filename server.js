@@ -7,7 +7,7 @@
 const express = require('express')
 const path = require('path')
 const fs = require('fs')
-const { spawn } = require('child_process')
+const { spawn, execSync } = require('child_process')
 
 require('dotenv').config()
 
@@ -255,6 +255,72 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
  */
 process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 
+// ─── API: server URL for QR code ───
+/**
+ * GET /api/server-url — возвращает локальный URL сервера для QR-кода
+ * Определяет не-loopback IPv4 адрес компьютера в локальной сети.
+ * Если доступен самоподписанный HTTPS-сертификат — возвращает https:// URL
+ * @returns {{ url: string, protocol: string }} { url: "https://192.168.0.50:3443", protocol: "https" }
+ */
+app.get('/api/server-url', (req, res) => {
+  const os = require('os')
+  const interfaces = os.networkInterfaces()
+  let ip = 'localhost'
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ip = iface.address
+        break
+      }
+    }
+    if (ip !== 'localhost') break
+  }
+
+  // Определяем протокол: HTTPS если есть сертификат
+  const certDir = path.join(moduleRoot, 'cert')
+  const hasHttps = fs.existsSync(path.join(certDir, 'key.pem')) && fs.existsSync(path.join(certDir, 'cert.pem'))
+
+  if (hasHttps) {
+    const httpsPort = parseInt(process.env.PORT_HTTPS) || PORT + 443
+    res.json({ url: `https://${ip}:${httpsPort}`, protocol: 'https' })
+  } else {
+    res.json({ url: `http://${ip}:${PORT}`, protocol: 'http' })
+  }
+})
+
+// ─── HTTPS (самоподписанный сертификат для камеры с телефона/планшета) ───
+/**
+ * Генерирует или загружает самоподписанный сертификат для HTTPS
+ * @param {string} certDir - Директория для хранения сертификатов
+ * @returns {{ key: string, cert: string }|null} Объект с ключом и сертификатом или null
+ */
+function getHttpsCredentials(certDir) {
+  const keyFile = path.join(certDir, 'key.pem')
+  const certFile = path.join(certDir, 'cert.pem')
+
+  // Если сертификаты уже есть — загружаем
+  if (fs.existsSync(keyFile) && fs.existsSync(certFile)) {
+    return { key: fs.readFileSync(keyFile, 'utf8'), cert: fs.readFileSync(certFile, 'utf8') }
+  }
+
+  // Пробуем сгенерировать через PowerShell (Windows)
+  try {
+    const psScript = path.join(moduleRoot, 'scripts', 'generate-cert.ps1')
+    if (fs.existsSync(psScript)) {
+      execSync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${psScript}"`, {
+        stdio: 'pipe', timeout: 30000
+      })
+      if (fs.existsSync(keyFile) && fs.existsSync(certFile)) {
+        return { key: fs.readFileSync(keyFile, 'utf8'), cert: fs.readFileSync(certFile, 'utf8') }
+      }
+    }
+  } catch (e) {
+    log(`[HTTPS] Не удалось сгенерировать сертификат: ${e.message}`)
+  }
+
+  return null
+}
+
 // ─── Server start ───
 const PORT = process.env.PORT || 3000
 let server
@@ -272,6 +338,35 @@ function startServer(retryCount = 0) {
     const { serverStarted } = require('./lib/logger')
     serverStarted(PORT)
   })
+
+  // Запускаем HTTPS сервер (для камеры с телефона/планшета)
+  try {
+    const https = require('https')
+    const creds = getHttpsCredentials(path.join(moduleRoot, 'cert'))
+    if (creds) {
+      const HTTPS_PORT = PORT + 443 // 3743 (настраивается через PORT_HTTPS в .env)
+      const httpsServer = https.createServer(creds, app)
+      httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
+        log(`=== HTTPS сервер запущен на https://0.0.0.0:${HTTPS_PORT} ===`)
+        const os = require('os')
+        const ifaces = os.networkInterfaces()
+        for (const name of Object.keys(ifaces)) {
+          for (const iface of ifaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+              log(`    → Откройте на телефоне: https://${iface.address}:${HTTPS_PORT}`)
+            }
+          }
+        }
+      })
+      httpsServer.on('error', (err) => {
+        log(`[HTTPS] Ошибка: ${err.message}`)
+      })
+    } else {
+      log('[HTTPS] Сертификат не найден. Камера будет доступна только на localhost.')
+    }
+  } catch (e) {
+    log(`[HTTPS] Не удалось запустить: ${e.message}`)
+  }
 
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {

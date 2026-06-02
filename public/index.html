@@ -6,6 +6,7 @@
     <title>SiMOTO</title>
     <link rel="icon" href="images/simoto/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
   </head>
   <body>
     <!-- Common Header -->
@@ -13,6 +14,17 @@
       <div class="header-left">
         <img src="images/simoto/logo-line.svg" alt="SiMOTO" class="header-logo" />
         <button class="btn btn-accent token-btn">Токены</button>
+        <button class="btn btn-qr" id="qrBtn" title="QR-код для телефона">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="3" height="3" rx="1"/>
+            <rect x="18" y="18" width="3" height="3" rx="1"/>
+            <rect x="14" y="18" width="3" height="3" rx="1"/>
+            <rect x="18" y="14" width="3" height="3" rx="1"/>
+          </svg>
+        </button>
       </div>
       <div class="header-center">
         <div class="tab-bar">
@@ -53,22 +65,20 @@
         <div class="left-column">
           <!-- Input block -->
            <div class="input-panel">
-             <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
-             <!-- Scan button — видна только на мобильных -->
-             <div class="scan-row" style="display:none">
-               <button class="btn btn-scan" id="scanBtn" onclick="startScan()" title="Сканировать штрихкод или QR-код">
-                 <svg class="scan-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                   <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
-                   <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
-                   <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
-                   <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
-                   <line x1="7" y1="12" x2="17" y2="12"/>
-                   <line x1="12" y1="7" x2="12" y2="17"/>
-                 </svg>
-                 <span class="scan-text">Сканировать</span>
-               </button>
-             </div>
+              <textarea id="numbersInput" placeholder="0129094618-0101-1"></textarea>
 <div class="button-grid">
+   <button class="btn-scan" id="scanBtn" onclick="startScan()" title="Сканировать штрихкод или QR-код">
+     <svg class="scan-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+       <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
+       <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+       <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
+       <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+       <line x1="7" y1="12" x2="17" y2="12"/>
+       <line x1="12" y1="7" x2="12" y2="17"/>
+     </svg>
+     <span class="scan-text">Сканировать</span>
+   </button>
+
    <button class="btn btn-ms" onclick="checkNumbers()"><img class="btn-icon" src="images/marketplace/ms-favicon.svg"> Поиск</button>
    <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display:none">✕</button>
 </div>
@@ -230,6 +240,25 @@
       </div>
     </div>
 
+    <!-- QR Modal -->
+    <div id="qrModal" class="modal-overlay hidden">
+      <div class="modal-dialog" style="max-width: 360px; text-align: center;">
+        <div class="modal-header">
+          <h3>Подключение с телефона</h3>
+        </div>
+        <div class="modal-body">
+          <p>Отсканируйте QR-код камерой телефона, чтобы открыть приложение:</p>
+          <div style="display: flex; justify-content: center; margin: 16px 0;">
+            <canvas id="qrCanvas"></canvas>
+          </div>
+          <p id="qrUrlText" style="font-size: 12px; color: #888; word-break: break-all; margin: 0;"></p>
+        </div>
+        <div class="modal-footer" style="justify-content: center;">
+          <button id="qrClose" class="btn btn-cancel">Закрыть</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Custom Confirm Modal -->
     <div id="confirmModal" class="modal-overlay hidden">
       <div class="modal-dialog">
@@ -294,10 +323,30 @@
       </div>
     </div>
 
+    <!-- Scanner Modal -->
+    <div id="scannerModal" class="modal-overlay hidden">
+      <div class="modal-dialog scanner-dialog">
+        <div class="modal-header scanner-header">
+          <h3>Сканировать код</h3>
+          <button id="scannerCloseBtn" class="btn-close" onclick="stopScanner()" title="Закрыть">✕</button>
+        </div>
+        <div class="modal-body scanner-body">
+          <div id="scanner-viewfinder"></div>
+          <p id="scannerStatus" class="scanner-hint">Наведите камеру на QR-код или штрихкод</p>
+          <p id="scannerError" class="scanner-error hidden">Не удалось запустить камеру</p>
+        </div>
+        <div class="modal-footer scanner-footer">
+          <button class="btn btn-cancel" onclick="stopScanner()">Закрыть</button>
+          <button class="btn btn-ms" id="scannerFlashBtn" onclick="toggleScannerFlash()" style="display:none">🔦 Фонарик</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Hidden elements for JS compatibility (status replaced by sticker button) -->
     <span id="statusText" style="display: none">Готов</span>
     <span id="statusDot" style="display: none"></span>
 
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="sticker.js"></script>
     <script src="app.js"></script>
     <!-- Inline Script: Tab Switching, Modal Handlers, Image Sync -->
@@ -353,10 +402,33 @@
           if (e.target === tokenModal) tokenModal.classList.add('hidden');
         });
 
+        // QR modal
+        const qrModal = document.getElementById('qrModal');
+        const qrCanvas = document.getElementById('qrCanvas');
+        document.getElementById('qrBtn').addEventListener('click', async () => {
+          qrModal.classList.remove('hidden');
+          // Fetch server URL and generate QR
+          try {
+            const resp = await fetch('/api/server-url');
+            const data = await resp.json();
+            new QRious({ element: qrCanvas, value: data.url, size: 200, backgroundAlpha: 0, foreground: '#e0e0e0' });
+            document.getElementById('qrUrlText').textContent = data.url;
+          } catch (e) {
+            document.getElementById('qrUrlText').textContent = 'Ошибка получения URL: ' + e.message;
+          }
+        });
+        document.getElementById('qrClose').addEventListener('click', () => {
+          qrModal.classList.add('hidden');
+        });
+        qrModal.addEventListener('click', (e) => {
+          if (e.target === qrModal) qrModal.classList.add('hidden');
+        });
+
         // Global Escape — закрывает любой открытый попап
         document.addEventListener('keydown', (e) => {
           if (e.key === 'Escape') {
             document.querySelectorAll('.modal-overlay').forEach((m) => m.classList.add('hidden'));
+            if (typeof stopScanner === 'function') stopScanner();
           }
         });
 

@@ -465,16 +465,58 @@ body {
   pointer-events: none;
 }
 
-/* ===== Button Grid (column) ===== */
+/* ===== Button Grid ===== */
 .button-grid {
    display: flex;
-   flex-direction: column;
+   flex-direction: row;
    gap: 6px;
    margin-top: 6px;
 }
 
 .button-grid > .btn {
-   width: 100%;
+   flex: 1;
+}
+
+/* ===== Scan Button ===== */
+.btn-scan {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: var(--radius-sm);
+  color: #a0a0a0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.btn-scan:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.20);
+  color: #d0d0d0;
+}
+
+.btn-scan:active {
+  background: rgba(255,255,255,0.16);
+  transform: scale(0.97);
+}
+
+.btn-scan .scan-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.btn-scan .scan-text {
+  opacity: 0.7;
 }
 
 .button-row {
@@ -2211,33 +2253,93 @@ button:disabled {
   height: 200px;
 }
 
+/* Desktop (>900px): scan button — только иконка */
+@media (min-width: 901px) {
+  .button-grid > .btn-scan .scan-text {
+    display: none;
+  }
+  .button-grid > .btn-scan {
+    padding: 8px;
+    flex: none;
+    width: 36px;
+    justify-content: center;
+  }
+}
+
 /* === Responsive === */
-/* Tablet (601-900px): left+bulk сверху, stats-final под bulk, сты справа, таблица */
+/* Tablet (601-900px): left и right заканчиваются на одном уровне */
 @media (max-width: 900px) and (min-width: 601px) {
   .app-container {
     grid-template-columns: 1fr 1fr;
     grid-template-rows: auto auto auto 1fr;
     gap: 6px;
     padding: 6px;
-    height: calc(100vh - 60px);
-    height: calc(100dvh - 60px);
+    height: calc(100vh - 42px);
+    height: calc(100dvh - 42px);
     overflow: hidden;
   }
+
+  /* Left-column — input + сканер: тянется на 2 ряда, чтобы
+     закончиться на одном уровне с bulk + stats-final */
   .left-column {
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+    overflow: hidden;
   }
+  #numbersInput {
+    min-height: 56px;
+    max-height: 80px;
+    font-size: 16px;
+    margin-bottom: 0;
+  }
+  .input-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 0;
+  }
+
+  .button-grid {
+    margin-top: 0;
+    gap: 4px;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .button-grid > .btn {
+    padding: 6px 10px;
+    font-size: 0.7rem;
+    flex: 1;
+  }
+  /* Scan button — на планшете 50/50 рядом с Поиск */
+  .button-grid > .btn-scan {
+    flex: 1;
+    font-size: 0.7rem;
+    padding: 6px 10px;
+  }
+  .button-grid > .btn-scan:active {
+    background: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.35);
+    transform: scale(0.98);
+  }
+
+  /* Bulk-actions — не растягивается по высоте ряда */
   .bulk-actions {
     grid-column: 2;
     grid-row: 1;
+    align-self: start;
     padding: 6px 10px;
     gap: 4px;
-    align-content: start;
   }
   .bulk-actions .btn {
     padding: 6px 8px;
     font-size: 0.7rem;
   }
+
   /* Stats-final — компактно под bulk-actions */
   .stats-final {
     grid-column: 2;
@@ -2252,6 +2354,7 @@ button:disabled {
   .stats-final .terminal-message {
     padding: 2px 0;
   }
+
   /* Right column: current + mismatch — в flex-row, во всю ширину */
   .right-column {
     grid-column: 1 / -1;
@@ -2300,8 +2403,8 @@ button:disabled {
     gap: 4px;
     padding: 6px;
     padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-    height: calc(100vh - 60px);
-    height: calc(100dvh - 60px);
+    height: calc(100vh - 42px);
+    height: calc(100dvh - 42px);
     overflow: hidden;
   }
   .app-container > * {
@@ -2309,10 +2412,10 @@ button:disabled {
     z-index: 1;
   }
 
-  /* Row 1, Col 1 — Input panel (glass card, вровень с bulk-actions) */
+  /* Row 1, Col 1 — Input panel (glass card, заканчивается на уровне bulk+final) */
   .left-column {
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / 3;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -2340,59 +2443,34 @@ button:disabled {
     padding: 0;
   }
 
-  /* Scan button — мобильный сканер штрихкодов */
-  .scan-row {
-    display: flex !important;
-  }
-  .btn-scan {
-    width: 100%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 8px 10px;
-    background: rgba(255,255,255,0.08);
-    border: 1px dashed rgba(255,255,255,0.2);
-    border-radius: var(--radius-md);
-    color: #c0c0c0;
-    font-size: 0.75rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    min-height: 40px;
-    -webkit-tap-highlight-color: transparent;
-    user-select: none;
-  }
-  .btn-scan:active {
-    background: rgba(255,255,255,0.15);
-    border-color: rgba(255,255,255,0.35);
-    transform: scale(0.98);
-  }
-  .scan-icon {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-    opacity: 0.7;
-  }
-  .scan-text {
-    opacity: 0.8;
-  }
-
   .button-grid {
     margin-top: 0;
     gap: 4px;
     flex-direction: row;
+    flex-wrap: wrap;
   }
-  .button-grid .btn {
+  .button-grid > .btn {
     padding: 8px 10px;
     font-size: 0.7rem;
     flex: 1;
+  }
+  /* Scan button — на телефоне 50/50 рядом с Поиск */
+  .button-grid > .btn-scan {
+    flex: 1;
+    font-size: 0.75rem;
+    padding: 8px 10px;
+  }
+  .button-grid > .btn-scan:active {
+    background: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.35);
+    transform: scale(0.98);
   }
 
   /* Row 1, Col 2 — Bulk actions */
   .bulk-actions {
     grid-column: 2;
     grid-row: 1;
+    align-self: start;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 4px;
@@ -2423,29 +2501,19 @@ button:disabled {
     padding: 2px 0;
   }
 
-  /* Row 3 — Stats (компактно, с внутренним скроллом) */
+  /* Row 3 — Stats (рядом, как в планшетной) */
   .right-column {
     grid-column: 1 / -1;
     grid-row: 3;
     display: flex;
-    flex-direction: column;
-    gap: 3px;
-    max-height: 200px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    border-radius: var(--radius-lg);
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
   }
-  .right-column::-webkit-scrollbar {
-    width: 3px;
-  }
-  .right-column::-webkit-scrollbar-thumb {
-    background: rgba(255,255,255,0.15);
-    border-radius: 2px;
-  }
-
-  .stats-panel {
-    flex: 0 0 auto;
-    padding: 5px 8px;
+  .right-column > .stats-panel {
+    flex: 1;
+    min-width: 180px;
+    padding: 6px 10px;
   }
   .stats-header {
     margin-bottom: 2px;
@@ -2589,12 +2657,109 @@ span[id$='Dot']:not(#statusDot),
   cursor: default;
 }
 
+/* === Scanner Modal === */
+.scanner-dialog {
+  max-width: 480px;
+  min-width: auto;
+  width: 90vw;
+}
+
+.scanner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.scanner-header h3 {
+  margin: 0 !important;
+}
+
+.btn-close {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  border-radius: 50%;
+  color: #b0b0b0;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+  line-height: 1;
+}
+
+.btn-close:hover {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+
+.scanner-body {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#scanner-viewfinder {
+  width: 100%;
+  aspect-ratio: 4/3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+
+#scanner-viewfinder video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scanner-hint {
+  color: #888;
+  font-size: 0.85rem;
+  text-align: center;
+  margin: 4px 0 0 !important;
+}
+
+.scanner-error {
+  color: #e74c3c;
+  font-size: 0.85rem;
+  text-align: center;
+  margin: 4px 0 0 !important;
+}
+
+.scanner-error.hidden {
+  display: none;
+}
+
+.scanner-footer {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+@media (max-width: 600px) {
+  .scanner-dialog {
+    width: 94vw;
+    padding: 12px;
+  }
+  .scanner-footer {
+    flex-direction: column;
+  }
+  .scanner-footer .btn {
+    width: 100%;
+  }
+}
 /* === App Header (Common) === */
 .app-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 5px 12px;
   background: var(--bg-card);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -2602,13 +2767,13 @@ span[id$='Dot']:not(#statusDot),
   position: sticky;
   top: 0;
   z-index: 100;
-  gap: 12px;
+  gap: 8px;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 
 .header-left h1 {
@@ -2622,7 +2787,7 @@ span[id$='Dot']:not(#statusDot),
 }
 
 .header-logo {
-  height: 32px;
+  height: 21px;
   width: auto;
   object-fit: contain;
 }
@@ -2635,16 +2800,16 @@ span[id$='Dot']:not(#statusDot),
 
 .tab-bar {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   background: rgba(10, 10, 10, 0.6);
-  padding: 4px;
+  padding: 3px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
 }
 
 .tab-btn {
-  padding: 6px 16px;
-  font-size: 0.85rem;
+  padding: 5px 14px;
+  font-size: 0.8rem;
   font-weight: 600;
   background: transparent;
   border: 1px solid transparent;
@@ -2669,7 +2834,7 @@ span[id$='Dot']:not(#statusDot),
 .header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 
 /* SVG icon inside sticker button */
@@ -2677,35 +2842,57 @@ span[id$='Dot']:not(#statusDot),
   flex-shrink: 0;
 }
 
+/* Small QR button in header */
+.btn-qr {
+  padding: 6px 8px;
+  border-color: var(--text-muted);
+  color: var(--text-muted);
+  background: transparent;
+  border-radius: var(--radius-sm);
+}
+.btn-qr:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text);
+  background: rgba(255,255,255,0.08);
+  box-shadow: none;
+  transform: scale(1.05);
+}
+.btn-qr svg {
+  display: block;
+}
+
 /* Mobile header — app-like компактный */
 @media (max-width: 600px) {
   .app-header {
-    padding: 8px 10px 4px;
-    padding-bottom: calc(4px + env(safe-area-inset-top, 0px));
-    gap: 6px;
+    padding: 5px 10px 3px;
+    padding-bottom: calc(3px + env(safe-area-inset-top, 0px));
+    gap: 5px;
     flex-wrap: nowrap;
     border-bottom-width: 0;
     box-shadow: 0 1px 0 var(--border);
   }
   .header-logo {
-    height: 22px;
+    height: 15px;
   }
   .header-left .btn {
-    padding: 4px 8px;
+    padding: 3px 6px;
     font-size: 0.65rem;
-    min-height: 32px;
+    min-height: 28px;
   }
   .header-center {
     flex: 0 1 auto;
   }
   .tab-btn {
-    padding: 4px 10px;
-    font-size: 0.75rem;
+    padding: 3px 8px;
+    font-size: 0.7rem;
+  }
+  .tab-btn[data-tab="market"] {
+    display: none;
   }
   .header-right .btn {
-    padding: 4px 6px;
+    padding: 3px 5px;
     font-size: 0.65rem;
-    min-height: 32px;
+    min-height: 28px;
   }
   .sticker-btn .btn-text {
     display: none;
@@ -2714,6 +2901,14 @@ span[id$='Dot']:not(#statusDot),
     margin: 0;
     width: 16px;
     height: 16px;
+  }
+  .btn-qr {
+    padding: 3px 5px;
+    min-height: 28px;
+  }
+  .btn-qr svg {
+    width: 14px;
+    height: 14px;
   }
   .progress-container {
     position: absolute;
@@ -2791,21 +2986,21 @@ span[id$='Dot']:not(#statusDot),
 
 /* Adjust app-container to not overlap header */
 .app-container {
-  height: calc(100vh - 60px);
-  height: calc(100dvh - 60px);
+  height: calc(100vh - 42px);
+  height: calc(100dvh - 42px);
 }
 
 /* === Market Tab === */
 #tab-market {
-  height: calc(100vh - 60px);
-  height: calc(100dvh - 60px);
+  height: calc(100vh - 42px);
+  height: calc(100dvh - 42px);
   overflow: hidden;
 }
 
 @media (max-width: 600px) {
   #tab-market {
     height: auto;
-    min-height: calc(100dvh - 60px);
+    min-height: calc(100dvh - 42px);
   }
   .market-container {
     padding: 10px;

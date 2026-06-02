@@ -691,8 +691,7 @@ async function checkNumbers() {
 
   const checkBtn = document.querySelector('.btn-ms')
   const abortBtn = document.getElementById('abortBtn')
-  if (checkBtn) checkBtn.disabled = true
-  if (checkBtn) checkBtn.textContent = ''
+  if (checkBtn) checkBtn.style.display = 'none'
   abortBtn.style.display = 'flex'
   isWorking = true
   showProgress(true)
@@ -871,8 +870,7 @@ async function checkNumbers() {
     realtimeMode = false
     renderTable()
 
-    checkBtn.disabled = false
-    checkBtn.textContent = 'Поиск МС'
+    if (checkBtn) checkBtn.style.display = 'inline-flex'
     abortBtn.style.display = 'none'
     isWorking = false
 
@@ -974,7 +972,7 @@ async function wbReturnSearch() {
 
   const wbBtn = document.querySelector('.btn-wb')
   const abortBtn = document.getElementById('abortBtn')
-  if (wbBtn) wbBtn.disabled = true
+  if (wbBtn) wbBtn.style.display = 'none'
   abortBtn.style.display = 'flex'
   isWorking = true
   showProgress(true)
@@ -1089,7 +1087,7 @@ async function wbReturnSearch() {
     realtimeMode = false
     renderTable()
 
-    if (wbBtn) wbBtn.disabled = false
+    if (wbBtn) wbBtn.style.display = 'inline-flex'
     abortBtn.style.display = 'none'
     isWorking = false
     window.__currentAbortId = null
@@ -1139,7 +1137,7 @@ async function ozonReturnSearch() {
 
   const ozonBtn = document.querySelector('.btn-ozon')
   const abortBtn = document.getElementById('abortBtn')
-  if (ozonBtn) ozonBtn.disabled = true
+  if (ozonBtn) ozonBtn.style.display = 'none'
   abortBtn.style.display = 'flex'
   isWorking = true
   showProgress(true)
@@ -1245,7 +1243,7 @@ async function ozonReturnSearch() {
     realtimeMode = false
     renderTable()
 
-    if (ozonBtn) ozonBtn.disabled = false
+    if (ozonBtn) ozonBtn.style.display = 'inline-flex'
     abortBtn.style.display = 'none'
     isWorking = false
     window.__currentAbortId = null
@@ -3379,6 +3377,191 @@ async function clearSavedData() {
     showStatus('Данные очищены')
   } catch (e) {
     showStatus('Ошибка: ' + e.message)
+  }
+}
+
+// ===== Scanner (QR/Barcode) =====
+/**
+ * @file Модуль сканера QR-кодов и штрихкодов
+ * Использует библиотеку html5-qrcode (CDN)
+ * @module Scanner
+ */
+
+/** @type {Html5Qrcode|null} */
+let html5QrCode = null
+/** @type {boolean} */
+let scannerFlashAvailable = false
+
+/**
+ * Запускает камеру и начинает сканирование QR/штрихкодов
+ * Вызывается по нажатию кнопки "Сканировать" на мобильных/планшетах
+ * @async
+ * @returns {Promise<void>}
+ */
+async function startScan() {
+  // Не запускать если уже идёт обработка
+  if (isWorking) {
+    showStatus('Дождитесь завершения текущей операции')
+    return
+  }
+
+  // Проверка доступности камеры (HTTPS/localhost)
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const statusEl = document.getElementById('scannerStatus')
+    const errorEl = document.getElementById('scannerError')
+    statusEl.classList.add('hidden')
+    errorEl.textContent = 'Камера недоступна. Запустите через HTTPS или localhost.'
+    errorEl.classList.remove('hidden')
+    setTimeout(stopScanner, 4000)
+    return
+  }
+
+  const modal = document.getElementById('scannerModal')
+  const statusEl = document.getElementById('scannerStatus')
+  const errorEl = document.getElementById('scannerError')
+  const flashBtn = document.getElementById('scannerFlashBtn')
+
+  statusEl.classList.remove('hidden')
+  errorEl.classList.add('hidden')
+  modal.classList.remove('hidden')
+
+  try {
+    const cameras = await Html5Qrcode.getCameras()
+    if (!cameras || cameras.length === 0) {
+      throw new Error('Камера не найдена на этом устройстве')
+    }
+
+    // Выбираем заднюю камеру (environment), иначе первую
+    const rearCamera = cameras.find(function(c) {
+      return c.label.toLowerCase().includes('back') ||
+             c.label.toLowerCase().includes('environment') ||
+             c.label.toLowerCase().includes('rear')
+    }) || cameras[0]
+
+    html5QrCode = new Html5Qrcode('scanner-viewfinder')
+
+    await html5QrCode.start(
+      rearCamera.id,
+      {
+        fps: 10,
+        qrbox: { width: 250, height: 150 },
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.DATA_MATRIX
+        ]
+      },
+      onScanSuccess,
+      onScanFailure
+    )
+
+    // Проверяем доступность фонарика
+    try {
+      scannerFlashAvailable = await html5QrCode.hasFlash()
+    } catch (_) {
+      scannerFlashAvailable = false
+    }
+    flashBtn.style.display = scannerFlashAvailable ? '' : 'none'
+
+  } catch (err) {
+    statusEl.classList.add('hidden')
+    errorEl.textContent = 'Ошибка: ' + (err && err.message ? err.message : String(err))
+    errorEl.classList.remove('hidden')
+    // Автоматически закрыть через 3 секунды
+    setTimeout(stopScanner, 4000)
+  }
+}
+
+/**
+ * Колбэк успешного распознавания QR/штрихкода
+ * Вставляет результат в поле ввода и запускает поиск
+ * @param {string} decodedText - Распознанный текст
+ * @param {Object} decodedResult - Детальная информация о результате
+ * @returns {void}
+ */
+function onScanSuccess(decodedText, decodedResult) {
+  // Звуковой сигнал
+  playScanBeep()
+
+  const text = decodedText.trim()
+  if (!text) return
+
+  // Остановить камеру и закрыть модалку
+  stopScanner()
+
+  // Вставить текст и запустить поиск
+  document.getElementById('numbersInput').value = text
+
+  // Небольшая задержка для закрытия модалки перед поиском
+  setTimeout(function() {
+    checkNumbers()
+  }, 100)
+}
+
+/**
+ * Колбэк ошибки сканирования кадра
+ * Вызывается для каждого нераспознанного кадра — игнорируется
+ * @param {string} error - Текст ошибки
+ * @returns {void}
+ */
+function onScanFailure(error) {
+  // Игнорируем — библиотека вызывает на каждый кадр
+}
+
+/**
+ * Останавливает камеру и закрывает модалку сканера
+ * @returns {void}
+ */
+function stopScanner() {
+  if (html5QrCode) {
+    try {
+      html5QrCode.stop().catch(function() {})
+      html5QrCode.clear().catch(function() {})
+    } catch (_) {}
+    html5QrCode = null
+  }
+  document.getElementById('scannerModal').classList.add('hidden')
+  scannerFlashAvailable = false
+}
+
+/**
+ * Включает/выключает фонарик (если доступен на устройстве)
+ * @async
+ * @returns {Promise<void>}
+ */
+async function toggleScannerFlash() {
+  if (!html5QrCode) return
+  try {
+    var isOn = await html5QrCode.toggleFlash()
+    var btn = document.getElementById('scannerFlashBtn')
+    btn.textContent = isOn ? '🔦 Выкл.' : '🔦 Фонарик'
+  } catch (_) {}
+}
+
+/**
+ * Генерирует короткий звуковой сигнал через Web Audio API
+ * @returns {void}
+ */
+function playScanBeep() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)()
+    var osc = ctx.createOscillator()
+    var gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = 880
+    osc.type = 'sine'
+    gain.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.15)
+  } catch (_) {
+    // Web Audio API может быть недоступен — тихий fallback
   }
 }
 
