@@ -353,6 +353,7 @@ module.exports = function(deps) {
     const ulog = (msg) => console.log(`[Unified-Search] ${msg}`)
 
     if (!msToken && !wbToken && (!ozonClientId || !ozonApiKey)) {
+      ulog('No tokens — returning 401')
       return res.status(401).json({ error: 'Требуется хотя бы один токен: МС (x-api-token), WB (x-wb-token) или Ozon (x-ozon-client-id + x-ozon-api-key)' })
     }
     if (!numbersParam) {
@@ -457,7 +458,7 @@ module.exports = function(deps) {
       }
 
       if (marketplace === 'wb' && marketplaceData) {
-        orderData.wbReturnInfo = marketplaceData.returnType ? `↳ Возврат: ${marketplaceData.reason || marketplaceData.returnType} (WB)` : ''
+        orderData.wbReturnInfo = marketplaceData.returnType ? `↳ ${marketplaceData.status || marketplaceData.reason || marketplaceData.returnType} (WB)` : ''
         orderData.srid = marketplaceData.srid || ''
         orderData.wbTotalPrice = marketplaceData.totalPrice || 0
         orderData.wbForPay = marketplaceData.forPay || 0

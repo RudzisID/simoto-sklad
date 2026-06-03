@@ -7,10 +7,7 @@ const fs = require('fs')
 const { getApi } = require('../lib/api-utils')
 const { getProductFullByCode } = require('../lib/product')
 const wbOzonSync = require('../integrations/wb_ozon_sync')
-const {
-  formatDescriptionForDisplay,
-  findSharedAttributes
-} = require('../lib/server-utils')
+const { formatDescriptionForDisplay, findSharedAttributes } = require('../lib/server-utils')
 
 /**
  * Market роутер
@@ -21,7 +18,7 @@ const {
  * @param {Object} deps.ozon - Ozon модуль
  * @returns {import('express').Router}
  */
-module.exports = function(deps) {
+module.exports = function (deps) {
   const router = express.Router()
   const { log, moduleRoot, wb, ozon } = deps
 
@@ -60,7 +57,9 @@ module.exports = function(deps) {
 
       let msPrice = 0
       if (msProduct) {
-        log(`[Market] MS Direct API: ${msProduct.name}, salePrices: ${JSON.stringify(msProduct.salePrices)}`)
+        log(
+          `[Market] MS Direct API: ${msProduct.name}, salePrices: ${JSON.stringify(msProduct.salePrices)}`
+        )
         if (msProduct.salePrices && msProduct.salePrices.length > 0) {
           const rawCents = msProduct.salePrices[0].value
           msPrice = rawCents / 100
@@ -105,52 +104,59 @@ module.exports = function(deps) {
       if (msProduct && msProduct.id) {
         try {
           const API = getApi()
-          const [stockResult, storesResult] = await Promise.all([
-            API.GET('entity/stock', { filter: { product: 'https://api.moysklad.ru/api/remap/1.2/entity/product/' + msProduct.id } }),
-            API.GET('entity/store', { limit: 100 })
-          ])
-          const storeMap = {}
-          if (storesResult && storesResult.rows) {
-            storesResult.rows.forEach(s => { if (s.id) storeMap[s.id] = s.name })
-          }
-          if (stockResult && stockResult.rows) {
-            stockByStore = stockResult.rows
-              .map(row => ({
-                storeName: row.storeName || (row.stock?.meta?.href ? storeMap[row.stock.meta.href.split('/').pop()] : null) || 'Неизвестный склад',
-                quantity: row.quantity || 0,
-                reserve: row.reserve || 0
+          // Используем report/stock/bystore (entity/stock не существует в API МойСклад)
+          const filterKey = msProduct.meta?.type === 'variant' ? 'variant' : 'product'
+          const productHref = msProduct.meta.href.split('?')[0]
+          const stockResult = await API.GET('report/stock/bystore', {
+            filter: { [filterKey]: productHref, stockMode: 'all' },
+            limit: 100
+          })
+          if (stockResult && stockResult.rows && stockResult.rows[0]) {
+            stockByStore = (stockResult.rows[0].stockByStore || [])
+              .map((entry) => ({
+                storeName: entry.name || 'Неизвестный склад',
+                quantity: entry.stock || 0,
+                reserve: entry.reserve || 0
               }))
-              .filter(s => s.quantity > 0 || s.reserve > 0)
+              .filter((s) => s.quantity > 0 || s.reserve > 0)
           }
         } catch (e) {
           log(`[Market] Stock fetch error: ${e.message}`)
         }
       }
 
-      const msData = msProduct ? {
-        id: msProduct.id,
-        name: msProduct.name,
-        code: msProduct.code,
-        article: msProduct.article || '',
-        price: msPrice,
-        stock: msProduct.quantity || 0,
-        _priceTypeMeta: msProduct._priceTypeMeta,
-        description: msProduct.description || '',
-        descriptionClean: formatDescriptionForDisplay(msProduct.description),
-        attributes: msProduct.attributes || [],
-        images: [],
-        stockByStore: stockByStore,
-      } : null
+      const msData = msProduct
+        ? {
+          id: msProduct.id,
+          name: msProduct.name,
+          code: msProduct.code,
+          article: msProduct.article || '',
+          price: msPrice,
+          stock: stockByStore.reduce((sum, s) => sum + s.quantity, 0),
+          _priceTypeMeta: msProduct._priceTypeMeta,
+          description: msProduct.description || '',
+          descriptionClean: formatDescriptionForDisplay(msProduct.description),
+          attributes: msProduct.attributes || [],
+          images: [],
+          stockByStore: stockByStore
+        }
+        : null
 
-      const wbData = (wbResults && wbResults.length > 0) ? {
-        ...wbResults[0],
-        descriptionClean: formatDescriptionForDisplay(wbResults[0].description)
-      } : null
+      const wbData =
+        wbResults && wbResults.length > 0
+          ? {
+            ...wbResults[0],
+            descriptionClean: formatDescriptionForDisplay(wbResults[0].description)
+          }
+          : null
 
-      const ozonData = (ozonResults && ozonResults.length > 0) ? {
-        ...ozonResults[0],
-        descriptionClean: formatDescriptionForDisplay(ozonResults[0].description)
-      } : null
+      const ozonData =
+        ozonResults && ozonResults.length > 0
+          ? {
+            ...ozonResults[0],
+            descriptionClean: formatDescriptionForDisplay(ozonResults[0].description)
+          }
+          : null
 
       const result = {
         oem: oemCode,
@@ -201,7 +207,9 @@ module.exports = function(deps) {
 
       let msPrice = 0
       if (msProduct) {
-        log(`[Market] MS Direct API: ${msProduct.name}, salePrices: ${JSON.stringify(msProduct.salePrices)}`)
+        log(
+          `[Market] MS Direct API: ${msProduct.name}, salePrices: ${JSON.stringify(msProduct.salePrices)}`
+        )
         if (msProduct.salePrices && msProduct.salePrices.length > 0) {
           const rawCents = msProduct.salePrices[0].value
           msPrice = rawCents / 100
@@ -246,52 +254,59 @@ module.exports = function(deps) {
       if (msProduct && msProduct.id) {
         try {
           const API = getApi()
-          const [stockResult, storesResult] = await Promise.all([
-            API.GET('entity/stock', { filter: { product: 'https://api.moysklad.ru/api/remap/1.2/entity/product/' + msProduct.id } }),
-            API.GET('entity/store', { limit: 100 })
-          ])
-          const storeMap = {}
-          if (storesResult && storesResult.rows) {
-            storesResult.rows.forEach(s => { if (s.id) storeMap[s.id] = s.name })
-          }
-          if (stockResult && stockResult.rows) {
-            stockByStore = stockResult.rows
-              .map(row => ({
-                storeName: row.storeName || (row.stock?.meta?.href ? storeMap[row.stock.meta.href.split('/').pop()] : null) || 'Неизвестный склад',
-                quantity: row.quantity || 0,
-                reserve: row.reserve || 0
+          // Используем report/stock/bystore (entity/stock не существует в API МойСклад)
+          const filterKey = msProduct.meta?.type === 'variant' ? 'variant' : 'product'
+          const productHref = msProduct.meta.href.split('?')[0]
+          const stockResult = await API.GET('report/stock/bystore', {
+            filter: { [filterKey]: productHref, stockMode: 'all' },
+            limit: 100
+          })
+          if (stockResult && stockResult.rows && stockResult.rows[0]) {
+            stockByStore = (stockResult.rows[0].stockByStore || [])
+              .map((entry) => ({
+                storeName: entry.name || 'Неизвестный склад',
+                quantity: entry.stock || 0,
+                reserve: entry.reserve || 0
               }))
-              .filter(s => s.quantity > 0 || s.reserve > 0)
+              .filter((s) => s.quantity > 0 || s.reserve > 0)
           }
         } catch (e) {
           log(`[Market] Stock fetch error: ${e.message}`)
         }
       }
 
-      const msData = msProduct ? {
-        id: msProduct.id,
-        name: msProduct.name,
-        code: msProduct.code,
-        article: msProduct.article || '',
-        price: msPrice,
-        stock: msProduct.quantity || 0,
-        _priceTypeMeta: msProduct._priceTypeMeta,
-        description: msProduct.description || '',
-        descriptionClean: formatDescriptionForDisplay(msProduct.description),
-        attributes: msProduct.attributes || [],
-        images: [],
-        stockByStore: stockByStore,
-      } : null
+      const msData = msProduct
+        ? {
+          id: msProduct.id,
+          name: msProduct.name,
+          code: msProduct.code,
+          article: msProduct.article || '',
+          price: msPrice,
+          stock: stockByStore.reduce((sum, s) => sum + s.quantity, 0),
+          _priceTypeMeta: msProduct._priceTypeMeta,
+          description: msProduct.description || '',
+          descriptionClean: formatDescriptionForDisplay(msProduct.description),
+          attributes: msProduct.attributes || [],
+          images: [],
+          stockByStore: stockByStore
+        }
+        : null
 
-      const wbData = (wbResults && wbResults.length > 0) ? {
-        ...wbResults[0],
-        descriptionClean: formatDescriptionForDisplay(wbResults[0].description)
-      } : null
+      const wbData =
+        wbResults && wbResults.length > 0
+          ? {
+            ...wbResults[0],
+            descriptionClean: formatDescriptionForDisplay(wbResults[0].description)
+          }
+          : null
 
-      const ozonData = (ozonResults && ozonResults.length > 0) ? {
-        ...ozonResults[0],
-        descriptionClean: formatDescriptionForDisplay(ozonResults[0].description)
-      } : null
+      const ozonData =
+        ozonResults && ozonResults.length > 0
+          ? {
+            ...ozonResults[0],
+            descriptionClean: formatDescriptionForDisplay(ozonResults[0].description)
+          }
+          : null
 
       const result = {
         oem: oemCode,
@@ -308,14 +323,6 @@ module.exports = function(deps) {
       res.status(500).json({ error: e.message })
     }
   })
-
-
-
-
-
-
-
-
 
   // ─── Market: Push archive (read-only) ───
   /**

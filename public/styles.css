@@ -20,9 +20,9 @@
   --border: rgba(255, 255, 255, 0.08);
   --border-light: rgba(255, 255, 255, 0.04);
   --border-glow: rgba(249, 115, 22, 0.2);
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
   --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 3px 12px rgba(0, 0, 0, 0.25);
   --shadow-lg: 0 6px 24px rgba(0, 0, 0, 0.3);
@@ -266,8 +266,8 @@ body {
 .status {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin-top: 6px;
+  gap: 8px;
+  margin-top: 8px;
   font-size: 0.7rem;
   color: var(--text-muted);
 }
@@ -469,8 +469,8 @@ body {
 .button-grid {
    display: flex;
    flex-direction: row;
-   gap: 6px;
-   margin-top: 6px;
+   gap: 8px;
+   margin-top: 8px;
 }
 
 .button-grid > .btn {
@@ -522,7 +522,7 @@ body {
 .button-row {
    display: grid;
    grid-template-columns: 1fr 1fr;
-   gap: 6px;
+   gap: 8px;
 }
 
 .button-row > .btn {
@@ -854,7 +854,7 @@ td.action-cell {
   z-index: 9999;
   background: var(--bg-card, #1e1e1e);
   border: 1px solid var(--border, #333);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 12px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   min-width: 240px;
@@ -1056,7 +1056,7 @@ td.action-cell {
   background: rgba(30, 30, 30, 0.95);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   z-index: -1;
   pointer-events: none;
   display: block;
@@ -1365,7 +1365,7 @@ input[type='checkbox']:checked::after {
 
 .total-item {
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 
 .total-item.highlight {
@@ -1433,7 +1433,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   padding: 8px 12px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -1638,7 +1638,7 @@ button:disabled {
 /* === Save Token Button === */
 .token-row {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 8px;
   align-items: stretch;
 }
@@ -2291,8 +2291,8 @@ button:disabled {
     overflow: hidden;
   }
   #numbersInput {
+    flex: 1;
     min-height: 56px;
-    max-height: 80px;
     font-size: 16px;
     margin-bottom: 0;
   }
@@ -2300,8 +2300,9 @@ button:disabled {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 8px;
     padding: 0;
+    overflow: visible;
   }
 
   .button-grid {
@@ -2427,20 +2428,21 @@ button:disabled {
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
   }
   #numbersInput {
+    flex: 1;
     min-height: 72px;
-    max-height: 90px;
     font-size: 16px;
     margin-bottom: 0;
   }
   .input-panel {
-    flex: 0 0 auto;
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 8px;
     padding: 0;
+    overflow: visible;
   }
 
   .button-grid {
@@ -2602,7 +2604,7 @@ span[id$='Dot']:not(#statusDot),
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid #333;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 24px;
   min-width: 400px;
   max-width: 500px;
@@ -2706,7 +2708,7 @@ span[id$='Dot']:not(#statusDot),
 #scanner-viewfinder {
   width: 100%;
   aspect-ratio: 4/3;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   background: #000;
 }
@@ -2773,7 +2775,7 @@ span[id$='Dot']:not(#statusDot),
 .header-left {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .header-left h1 {
@@ -2790,6 +2792,7 @@ span[id$='Dot']:not(#statusDot),
   height: 21px;
   width: auto;
   object-fit: contain;
+  margin-right: 32px;
 }
 
 .header-center {
@@ -2834,7 +2837,7 @@ span[id$='Dot']:not(#statusDot),
 .header-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 /* SVG icon inside sticker button */

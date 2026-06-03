@@ -716,6 +716,10 @@ async function checkNumbers() {
   // Включаем realtime режим
   realtimeMode = true
 
+  // Таймаут на случай зависания fetch (iOS + самоподписанный HTTPS)
+  let fetchTimeout = null
+  window.__fetchTimeout = false
+
   try {
     // Создаём AbortController и AbortId для сервера
     currentController = new AbortController()
@@ -730,6 +734,12 @@ async function checkNumbers() {
     const numbersParam = encodeURIComponent(numbers.join(','))
     const url = `/api/unified-search/stream?numbers=${numbersParam}&abortId=${abortId}`
 
+    // Таймаут 10с — если сервер не ответил, прерываем
+    fetchTimeout = setTimeout(() => {
+      window.__fetchTimeout = true
+      if (currentController) currentController.abort()
+    }, 10000)
+
     const response = await fetch(url, {
       signal: currentController.signal,
       headers: {
@@ -739,6 +749,8 @@ async function checkNumbers() {
         'x-ozon-api-key': ozonApiKey
       }
     })
+    clearTimeout(fetchTimeout)
+    fetchTimeout = null
 
     if (!response.ok) {
       const errData = await response.json()
@@ -858,14 +870,18 @@ async function checkNumbers() {
       }
     }
   } catch (e) {
+    clearTimeout(fetchTimeout)
     if (e.name === 'AbortError') {
-      hideProgress(false, 'Прервано')
+      hideProgress(false, window.__fetchTimeout ? 'Таймаут: сервер не отвечает (30с)' : 'Прервано')
       stopOperationTimer()
     } else {
       hideProgress(false, 'Ошибка: ' + e.message)
       stopOperationTimer()
     }
   } finally {
+    clearTimeout(fetchTimeout)
+    stopOperationTimer()
+
     // Отключаем realtime режим
     realtimeMode = false
     renderTable()
@@ -3470,10 +3486,21 @@ async function startScan() {
 
   } catch (err) {
     statusEl.classList.add('hidden')
-    errorEl.textContent = 'Ошибка: ' + (err && err.message ? err.message : String(err))
     errorEl.classList.remove('hidden')
-    // Автоматически закрыть через 3 секунды
-    setTimeout(stopScanner, 4000)
+
+    if (err && err.name === 'NotReadableError') {
+      // Камера занята другим приложением/вкладкой
+      errorEl.textContent = 'Камера занята другим приложением. Закройте другие программы, использующие камеру, и попробуйте снова.'
+      // Не закрываем автоматически — пользователь закроет сам кнопкой «Закрыть»
+    } else if (err && err.name === 'NotAllowedError') {
+      // Пользователь запретил доступ к камере
+      errorEl.textContent = 'Доступ к камере запрещён. Разрешите доступ в настройках браузера и попробуйте снова.'
+      // Не закрываем автоматически
+    } else {
+      // Все остальные ошибки — с авто-закрытием
+      errorEl.textContent = 'Ошибка: ' + (err && err.message ? err.message : String(err))
+      setTimeout(stopScanner, 4000)
+    }
   }
 }
 
