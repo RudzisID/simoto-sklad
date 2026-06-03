@@ -68,19 +68,15 @@ for /f "tokens=2 delims==" %%a in ('findstr /C:"TAG_NAME" "%TEMP%\ver_check.txt"
 echo.
 %PSCMD% "Write-Host '[i] Update recommended' -ForegroundColor Green"
 set "update_choice="
-%PSCMD% "Write-Host 'y' -ForegroundColor Green -NoNewline; Write-Host '/' -NoNewline; Write-Host ([char]0x0434 + [char]0x0430) -ForegroundColor Green -NoNewline; Write-Host ' / n' -ForegroundColor Red -NoNewline; Write-Host '/' -NoNewline; Write-Host ([char]0x043D + [char]0x0435 + [char]0x0442) -ForegroundColor Red -NoNewline; Write-Host ': ' -NoNewline"
+%PSCMD% "Write-Host 'Enter / n' -ForegroundColor Green -NoNewline; Write-Host '/' -NoNewline; Write-Host ([char]0x043D + [char]0x0435 + [char]0x0442) -ForegroundColor Red -NoNewline; Write-Host ': ' -NoNewline"
 set /p "update_choice="
 
-:: Normalize input: y/yes → y, n/no → n
-if /i "!update_choice!"=="y"   set "update_choice=y"
-if /i "!update_choice!"=="yes" set "update_choice=y"
+:: Normalize: n/no → skip, anything else (including Enter) → update
 if /i "!update_choice!"=="n"   set "update_choice=n"
 if /i "!update_choice!"=="no"  set "update_choice=n"
 
-if not defined update_choice goto update_prompt
-if "!update_choice!"=="y" goto do_update
 if "!update_choice!"=="n" goto skip_update
-goto update_prompt
+goto do_update
 
 :do_update
 del "%TEMP%\ver_check.txt" >nul 2>&1
