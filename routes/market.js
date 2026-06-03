@@ -106,7 +106,7 @@ module.exports = function(deps) {
         try {
           const API = getApi()
           const [stockResult, storesResult] = await Promise.all([
-            API.GET('entity/product/' + msProduct.id + '/stock'),
+            API.GET('entity/stock', { filter: { product: 'https://api.moysklad.ru/api/remap/1.2/entity/product/' + msProduct.id } }),
             API.GET('entity/store', { limit: 100 })
           ])
           const storeMap = {}
@@ -247,7 +247,7 @@ module.exports = function(deps) {
         try {
           const API = getApi()
           const [stockResult, storesResult] = await Promise.all([
-            API.GET('entity/product/' + msProduct.id + '/stock'),
+            API.GET('entity/stock', { filter: { product: 'https://api.moysklad.ru/api/remap/1.2/entity/product/' + msProduct.id } }),
             API.GET('entity/store', { limit: 100 })
           ])
           const storeMap = {}
