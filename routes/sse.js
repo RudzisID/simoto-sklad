@@ -28,6 +28,20 @@ module.exports = function(deps) {
   const router = express.Router()
   const { sseConnections, abortSignals, log, initApi, moduleRoot, wb, ozon } = deps
 
+  /**
+   * Маппинг статусов Ozon из API на русские названия для отображения пользователю.
+   * @type {Object<string, string>}
+   */
+  const OZON_STATUS_MAP = {
+    delivered: 'Доставлен',
+    cancelled: 'Отменён',
+    awaiting_packaging: 'Ожидает упаковки',
+    awaiting_deliver: 'Ожидает отгрузки',
+    delivering: 'Доставляется',
+    accepted: 'Принят',
+    returned: 'Возвращён'
+  }
+
   // ─── SSE: process check ───
   /**
    * GET /sse/process/stream — SSE-поток для проверки (check) заказов в реальном времени
@@ -153,12 +167,11 @@ module.exports = function(deps) {
       })
     }
 
-    try {
-      await wb.refreshIfStale(wbToken, log)
-      log('WB-Return: cache refresh completed')
-    } catch (e) {
-      log(`WB-Return: cache refresh error: ${e.message}`)
-    }
+    // Запускаем обновление кэша WB фоном — не блокируем обработку
+    sendSSE(res, { type: 'progress', msg: 'Загрузка кэша WB (фоном)...' })
+    const wbRefreshPromise = wb.refreshIfStale(wbToken, log)
+      .then(() => log('WB-Return: cache refresh completed'))
+      .catch(e => log(`WB-Return: cache refresh error: ${e.message}`))
 
     req.on('close', () => {
       log('WB-Return SSE: client disconnected')
@@ -167,7 +180,75 @@ module.exports = function(deps) {
 
     let processed = 0
     let orders = []
+    let missed = []
 
+    /**
+     * Обрабатывает найденный в кэше стикер: ищет заказ в МС и собирает результат
+     * @param {string} sticker - Стикер WB
+     * @param {Object} record - Данные из кэша WB
+     * @returns {Promise<Object>} orderDataForResult
+     */
+    async function processFoundSticker(sticker, record) {
+      const orderId = record.orderId
+
+      sendSSE(res, {
+        type: 'search-ms', code: sticker, msg: `Поиск в МС: ${orderId}...`
+      })
+
+      let orderResult
+      try {
+        orderResult = await checkOrder(orderId)
+      } catch (e) {
+        log(`WB-Return: checkOrder error for ${orderId}: ${e.message}`)
+        orderResult = null
+      }
+
+      let statusDerived = ''
+      if (orderResult) {
+        if (orderResult.isCancelled) statusDerived = 'cancelled'
+        else if (orderResult.hasReturn) statusDerived = 'return'
+        else if ((orderResult.statusName || '').includes('отсрочк')) statusDerived = 'delayed'
+        else if ((orderResult.statusName || '').includes('Отгруж') || (orderResult.statusName || '').includes('Оплач')) statusDerived = 'shipped'
+      }
+
+      const wbDate = record.completedDt || record.orderDt || record.salesDate || record.lastChangeDate || ''
+      return {
+        shipmentNum: orderId || sticker,
+        orderName: orderResult?.orderName || (record.nmId ? String(record.nmId) : `Заказ ${orderId || sticker}`),
+        sum: orderResult?.sum || record.totalPrice || 0,
+        statusName: orderResult?.statusName || (record.returnType ? 'Не найден в МС' : 'Только WB (продажа)'),
+        status: statusDerived || orderResult?.status || (record.returnType ? 'return' : 'shipped'),
+        hasReturn: orderResult?.hasReturn || false,
+        hasDemand: orderResult?.hasDemand || false,
+        hasPayment: orderResult?.hasPayment || false,
+        isCancelled: orderResult?.isCancelled || false,
+        demandName: orderResult?.demandName || null,
+        paid: orderResult?.paid || 0,
+        returnSum: orderResult?.returnSum || record.totalPrice || 0,
+        returnType: record.returnType || '',
+        reason: record.reason || '',
+        orderMoment: orderResult?.orderMoment || wbDate,
+        msFound: !!orderResult,
+        foundBy: orderResult?.foundBy || null,
+        extractedShipmentNum: orderResult?.extractedShipmentNum || null,
+        orderPositions: orderResult?.orderPositions || [],
+        wbReturnInfo: record.returnType ? `↳ Возврат: ${record.reason || record.returnType} (WB)` : '',
+        srid: record.srid || '',
+        wbTotalPrice: record.totalPrice || 0,
+        wbForPay: record.forPay || 0,
+        lastChangeDate: record.lastChangeDate || '',
+        wbArticle: record.nmId || '',
+        wbBarcode: record.barcode || '',
+        wbShkId: record.shkId || '',
+        wbStickerId: record.stickerId || '',
+        wbCompletedDt: record.completedDt || '',
+        wbOrderDt: record.orderDt || '',
+        wbSubjectName: record.subjectName || '',
+        wbStatus: record.status || ''
+      }
+    }
+
+    // Фаза 1: обрабатываем номера, которые уже есть в кэше (с диска)
     for (let index = 0; index < numbers.length; index++) {
       if (checkAbort(abortId, abortSignals)) {
         endSSE(res, 'aborted', { processed })
@@ -180,38 +261,14 @@ module.exports = function(deps) {
 
       try {
         const cached = wb.findInCache(sticker)
-        let record = null
-        if (cached) {
-          log(`WB-Return: found in WB cache: ${sticker} (source=${cached._source})`)
-          record = cached
-        }
 
-        if (!record) {
+        if (!cached) {
+          // Кэш ещё не загружен — откладываем на второй проход
+          missed.push(sticker)
           sendSSE(res, {
-            type: 'result', code: sticker,
-            order: {
-              shipmentNum: sticker,
-              orderName: '-',
-              sum: 0,
-              statusName: 'Не найден в WB (ни возврат, ни продажа)',
-              status: 'error',
-              hasReturn: false,
-              hasDemand: false,
-              hasPayment: false,
-              isCancelled: false,
-              orderPositions: [],
-              returnSum: 0,
-              returnType: '',
-              reason: '',
-              orderMoment: '',
-              msFound: false,
-              wbReturnInfo: '',
-              srid: '',
-              wbTotalPrice: 0,
-              wbForPay: 0,
-              lastChangeDate: ''
-            },
-            notFound: true,
+            type: 'cache-loading',
+            code: sticker,
+            msg: 'Ожидание загрузки кэша WB...',
             processed: processed + 1,
             total: numbers.length
           })
@@ -219,70 +276,14 @@ module.exports = function(deps) {
           continue
         }
 
-        let orderId = record.orderId
-
-        sendSSE(res, {
-          type: 'search-ms', code: sticker, msg: `Поиск в МС: ${orderId}...`
-        })
-
-        let orderResult
-        try {
-          orderResult = await checkOrder(orderId)
-        } catch (e) {
-          log(`WB-Return: checkOrder error for ${orderId}: ${e.message}`)
-          orderResult = null
-        }
-
-        let statusDerived = ''
-        if (orderResult) {
-          if (orderResult.isCancelled) statusDerived = 'cancelled'
-          else if (orderResult.hasReturn) statusDerived = 'return'
-          else if ((orderResult.statusName || '').includes('отсрочк')) statusDerived = 'delayed'
-          else if ((orderResult.statusName || '').includes('Отгруж') || (orderResult.statusName || '').includes('Оплач')) statusDerived = 'shipped'
-        }
-
-        const wbDate = record.completedDt || record.orderDt || record.salesDate || record.lastChangeDate || ''
-        const orderDataForResult = {
-          shipmentNum: orderId || sticker,
-          orderName: orderResult?.orderName || (record.nmId ? String(record.nmId) : `Заказ ${orderId || sticker}`),
-          sum: orderResult?.sum || record.totalPrice || 0,
-          statusName: orderResult?.statusName || (record.returnType ? 'Не найден в МС' : 'Только WB (продажа)'),
-          status: statusDerived || orderResult?.status || (record.returnType ? 'return' : 'shipped'),
-          hasReturn: orderResult?.hasReturn || false,
-          hasDemand: orderResult?.hasDemand || false,
-          hasPayment: orderResult?.hasPayment || false,
-          isCancelled: orderResult?.isCancelled || false,
-          demandName: orderResult?.demandName || null,
-          paid: orderResult?.paid || 0,
-          returnSum: orderResult?.returnSum || record.totalPrice || 0,
-          returnType: record.returnType || '',
-          reason: record.reason || '',
-          orderMoment: orderResult?.orderMoment || wbDate,
-          msFound: !!orderResult,
-          foundBy: orderResult?.foundBy || null,
-          extractedShipmentNum: orderResult?.extractedShipmentNum || null,
-          orderPositions: orderResult?.orderPositions || [],
-          wbReturnInfo: record.returnType ? `↳ Возврат: ${record.reason || record.returnType} (WB)` : '',
-          srid: record.srid || '',
-          wbTotalPrice: record.totalPrice || 0,
-          wbForPay: record.forPay || 0,
-          lastChangeDate: record.lastChangeDate || '',
-          wbArticle: record.nmId || '',
-          wbBarcode: record.barcode || '',
-          wbShkId: record.shkId || '',
-          wbStickerId: record.stickerId || '',
-          wbCompletedDt: record.completedDt || '',
-          wbOrderDt: record.orderDt || '',
-          wbSubjectName: record.subjectName || '',
-          wbStatus: record.status || ''
-        }
-
-        orders.push(orderDataForResult)
+        log(`WB-Return: found in WB cache: ${sticker} (source=${cached._source})`)
+        const orderData = await processFoundSticker(sticker, cached)
+        orders.push(orderData)
         sendSSE(res, {
           type: 'result',
           code: sticker,
-          order: orderDataForResult,
-          notFound: !orderResult,
+          order: orderData,
+          notFound: !orderData.msFound,
           processed: processed + 1,
           total: numbers.length
         })
@@ -319,6 +320,50 @@ module.exports = function(deps) {
       }
 
       processed++
+    }
+
+    // Фаза 2: дожидаемся загрузки кэша и обрабатываем пропущенные стикеры
+    if (missed.length > 0) {
+      log(`WB-Return: processing ${missed.length} missed after cache refresh`)
+      await wbRefreshPromise
+
+      for (const sticker of missed) {
+        if (checkAbort(abortId, abortSignals)) break
+
+        try {
+          const cached = wb.findInCache(sticker)
+          if (!cached) {
+            sendSSE(res, {
+              type: 'result', code: sticker,
+              order: {
+                shipmentNum: sticker, orderName: '-', sum: 0,
+                statusName: 'Не найден в WB (ни возврат, ни продажа)',
+                status: 'error',
+                hasReturn: false, hasDemand: false, hasPayment: false, isCancelled: false,
+                orderPositions: [], returnSum: 0, returnType: '', reason: '', orderMoment: '',
+                msFound: false, wbReturnInfo: '', srid: '', wbTotalPrice: 0, wbForPay: 0, lastChangeDate: ''
+              },
+              notFound: true,
+              processed: orders.length + (numbers.length - missed.length) + 1,
+              total: numbers.length
+            })
+            continue
+          }
+
+          const orderData = await processFoundSticker(sticker, cached)
+          orders.push(orderData)
+          sendSSE(res, {
+            type: 'result',
+            code: sticker,
+            order: orderData,
+            notFound: !orderData.msFound,
+            processed: orders.length,
+            total: numbers.length
+          })
+        } catch (e) {
+          log(`WB-Return: error processing missed ${sticker}: ${e.message}`)
+        }
+      }
     }
 
     endSSE(res, 'done', { orders })
@@ -380,6 +425,14 @@ module.exports = function(deps) {
       return
     }
 
+    // Запускаем обновление кэша WB/Ozon фоном — не блокирует sequential search
+    const wbRefreshPromise = wbToken
+      ? wb.refreshIfStale(wbToken, ulog).catch(e => ulog(`WB cache refresh error: ${e.message}`))
+      : Promise.resolve()
+    const ozonRefreshPromise = ozonClientId && ozonApiKey
+      ? ozon.refreshIfStale(ozonClientId, ozonApiKey, ulog).catch(e => ulog(`Ozon cache refresh error: ${e.message}`))
+      : Promise.resolve()
+
     req.on('close', () => {
       ulog('Unified-Search SSE: client disconnected')
       if (abortId) abortSignals.set(abortId, true)
@@ -433,6 +486,7 @@ module.exports = function(deps) {
         extractedShipmentNum: orderResult?.extractedShipmentNum || null,
         orderPositions: orderResult?.orderPositions || [],
         ozonReturnInfo: '',
+        ozonStatus: '',
         barcode: '',
         offerId: '',
         wbReturnInfo: '',
@@ -451,9 +505,30 @@ module.exports = function(deps) {
       }
 
       if (marketplace === 'ozon' && marketplaceData) {
-        orderData.ozonReturnInfo = `↳ Возврат: ${marketplaceData.return_reason_name || ''} (Ozon)`
+        // Информация о возврате — сначала из marketplaceData (если findInCache вернул возврат),
+        // затем из отдельного кэша возвратов по order_id (постинг и возврат имеют одинаковый order_id)
+        let ozonReturn = null
+        if (marketplaceData.return_reason_name) {
+          orderData.ozonReturnInfo = `↳ Возврат: ${marketplaceData.return_reason_name} (Ozon)`
+          ozonReturn = marketplaceData
+        } else {
+          const returns = ozon.ozonReturnsCache?.byOrderId?.get(marketplaceData.order_id)
+          if (returns?.length) {
+            ozonReturn = returns[0]
+            orderData.ozonReturnInfo = `↳ Возврат: ${ozonReturn.return_reason_name} (Ozon)`
+          }
+        }
+        if (marketplaceData.status) {
+          // Если постинг доставлен, но есть возврат — комбинированный статус
+          if (marketplaceData.status === 'delivered' && (ozonReturn?.return_reason_name || marketplaceData.is_return)) {
+            orderData.ozonStatus = 'Доставлен → Возврат'
+          } else {
+            orderData.ozonStatus = OZON_STATUS_MAP[marketplaceData.status] || marketplaceData.status
+          }
+        }
         orderData.barcode = marketplaceData.barcode || ''
-        orderData.offerId = marketplaceData.offer_id || ''
+        orderData.offerId = marketplaceData.offer_id ||
+          (marketplaceData.products?.[0]?.offer_id) || ''
         orderData.marketplaceReturnPrice = marketplaceData.product_price || 0
       }
 
@@ -602,15 +677,6 @@ module.exports = function(deps) {
       }
 
       sendSSE(res, { type: 'done', processed, orders: [], errors })
-
-      Promise.allSettled([
-        wbToken ? wb.refreshIfStale(wbToken, ulog) : Promise.resolve(),
-        ozonClientId && ozonApiKey ? ozon.refreshIfStale(ozonClientId, ozonApiKey, ulog) : Promise.resolve()
-      ]).then(() => {
-        ulog('Cache refresh completed (fire-and-forget)')
-      }).catch(e => {
-        ulog(`Cache refresh error: ${e.message}`)
-      })
 
       ulog(`=== Unified-Search SSE: completed ${total} numbers ===`)
     } catch (e) {
@@ -854,43 +920,36 @@ module.exports = function(deps) {
     initApi(msToken)
 
     try {
-      await ozon.refreshIfStale(ozonClientId, ozonApiKey, ozonLog)
+      // Запускаем обновление кэша Ozon фоном — не блокируем обработку
+      sendSSE(res, { type: 'progress', msg: 'Загрузка кэша Ozon (фоном)...' })
+      const ozonRefreshPromise = ozon.refreshIfStale(ozonClientId, ozonApiKey, ozonLog)
+        .then(() => ozonLog('Ozon-Return: cache refresh completed'))
+        .catch(e => ozonLog(`Ozon-Return: cache refresh error: ${e.message}`))
 
       let processed = 0
       const total = returnCodes.length
+      let missed = []
 
-      for (const code of returnCodes) {
-        if (req.destroyed) break
-        processed++
-
-        const found = ozon.findInCache(code)
-        if (found) {
-          ozonLog(`[Ozon-Return] found in cache: ${code} (posting=${found.posting_number || '?'})`)
-        }
-
-        if (!found) {
-          sendSSE(res, {
-            type: 'error', code,
-            error: 'Возврат не найден в кэше Ozon',
-            processed, total
-          })
-          continue
-        }
-
+      /**
+       * Обрабатывает найденный в кэше код Ozon: ищет заказ в МС и собирает результат
+       * @param {string} code - Код возврата Ozon
+       * @param {Object} found - Данные из кэша Ozon
+       * @returns {Promise<Object>} orderDataForResult
+       */
+      async function processFoundCode(code, found) {
         const postingNumber = found.posting_number
+
         if (!postingNumber) {
           sendSSE(res, {
             type: 'error', code,
             error: 'Возврат не содержит posting_number',
             processed, total
           })
-          continue
+          return null
         }
 
         sendSSE(res, {
-          type: 'search-ms',
-          code,
-          postingNumber,
+          type: 'search-ms', code, postingNumber,
           msg: `Поиск в МС: ${postingNumber}...`,
           processed, total
         })
@@ -901,7 +960,6 @@ module.exports = function(deps) {
           order = await findOrderByShipmentNum(postingNumber, ozonLog)
           if (order) {
             fullOrder = await getOrderFull(order.id)
-            if (fullOrder) ozonLog(`[Ozon-Return] fullOrder: demands=${fullOrder.demands?.length || 0}, payments=${fullOrder.payments?.length || 0}, returns=${fullOrder.returns?.length || fullOrder.returns?.rows?.length || 0}, positions=${fullOrder.positions?.rows?.length || 0}`)
           }
         } catch (e) {
           ozonLog(`[Ozon-Return] MS search error for ${postingNumber}: ${e.message}`)
@@ -928,46 +986,111 @@ module.exports = function(deps) {
         else if (msStateName.includes('Отмен')) status = 'cancelled'
         else if (msStateName.includes('Отгруж') || msStateName.includes('Оплач')) status = 'shipped'
 
-        const ozonReturnInfo = `↳ Возврат: ${found.return_reason_name || ''} (Ozon)`
+        const ozonReturnRecord = found.return_reason_name
+          ? found
+          : (found.order_id != null
+            ? ozon.ozonReturnsCache?.byOrderId?.get(found.order_id)?.[0]
+            : null)
+        const ozonReturnInfo = ozonReturnRecord?.return_reason_name
+          ? `↳ Возврат: ${ozonReturnRecord.return_reason_name} (Ozon)`
+          : ''
+        const ozonStatus = (found.status === 'delivered' && (ozonReturnRecord?.return_reason_name || found.is_return))
+          ? 'Доставлен → Возврат'
+          : (found.status ? OZON_STATUS_MAP[found.status] || found.status : '')
 
         const msSum = order?.sum ? Math.round(order.sum / 100) : 0
-        const orderDataForResult = {
+        return {
           id: order?.id || '',
           name: order?.name || '',
           description: order?.description || '',
           shipmentNum: postingNumber,
           orderName: order?.name || found.product_name || found.offer_id || '',
           sum: msSum || found.product_price || 0,
-          statusName: msStateName || `Возврат: ${found.return_reason_name || ''}`,
-          status,
-          hasReturn,
-          hasDemand,
-          hasPayment,
-          isCancelled,
-          demandName,
-          paid,
+          statusName: msStateName || (found.return_reason_name
+            ? `Возврат: ${found.return_reason_name}`
+            : found.status
+              ? `${OZON_STATUS_MAP[found.status] || found.status} (Ozon)`
+              : ''),
+          status, hasReturn, hasDemand, hasPayment, isCancelled,
+          demandName, paid,
           returnSum: found.product_price || 0,
           returnType: found.type || '',
           reason: found.return_reason_name || '',
           barcode: found.barcode || '',
-          offerId: found.offer_id || '',
+          offerId: found.offer_id || (found.products?.[0]?.offer_id) || '',
           orderMoment: order?.moment || found.return_date || '',
           msFound: !!order,
           orderPositions,
-          ozonReturnInfo
+          ozonReturnInfo,
+          ozonStatus
+        }
+      }
+
+      // Фаза 1: обрабатываем коды, которые уже есть в кэше (с диска)
+      for (const code of returnCodes) {
+        if (req.destroyed) break
+        processed++
+
+        const found = ozon.findInCache(code)
+
+        if (!found) {
+          // Кэш ещё не загружен — откладываем на второй проход
+          missed.push(code)
+          sendSSE(res, {
+            type: 'cache-loading',
+            code,
+            msg: 'Ожидание загрузки кэша Ozon...',
+            processed, total
+          })
+          continue
         }
 
-        ozonLog(`[Ozon-Return] SENDING result: code=${code}, posting=${postingNumber}, msFound=${!!order}, orderName=${orderDataForResult.orderName}, sum=${orderDataForResult.sum}, statusName=${orderDataForResult.statusName}`)
+        ozonLog(`[Ozon-Return] found in cache: ${code} (posting=${found.posting_number || '?'})`)
+        const orderData = await processFoundCode(code, found)
+        if (!orderData) continue
 
+        ozonLog(`[Ozon-Return] SENDING result: code=${code}, posting=${orderData.shipmentNum}, msFound=${orderData.msFound}, orderName=${orderData.orderName}, sum=${orderData.sum}, statusName=${orderData.statusName}`)
         sendSSE(res, {
-          type: 'result',
-          code,
-          postingNumber,
+          type: 'result', code,
+          postingNumber: orderData.shipmentNum,
           returnReason: found.return_reason_name || '',
-          order: orderDataForResult,
-          notFound: !order,
+          order: orderData,
+          notFound: !orderData.msFound,
           processed, total
         })
+      }
+
+      // Фаза 2: дожидаемся загрузки кэша и обрабатываем пропущенные коды
+      if (missed.length > 0) {
+        ozonLog(`Ozon-Return: processing ${missed.length} missed after cache refresh`)
+        await ozonRefreshPromise
+
+        for (const code of missed) {
+          if (req.destroyed) break
+
+          const found = ozon.findInCache(code)
+          if (!found) {
+            sendSSE(res, {
+              type: 'error', code,
+              error: 'Возврат не найден в кэше Ozon',
+              processed, total
+            })
+            continue
+          }
+
+          const orderData = await processFoundCode(code, found)
+          if (!orderData) continue
+
+          ozonLog(`[Ozon-Return] SENDING result (2nd pass): code=${code}, posting=${orderData.shipmentNum}, msFound=${orderData.msFound}`)
+          sendSSE(res, {
+            type: 'result', code,
+            postingNumber: orderData.shipmentNum,
+            returnReason: found.return_reason_name || '',
+            order: orderData,
+            notFound: !orderData.msFound,
+            processed, total
+          })
+        }
       }
 
       sendSSE(res, { type: 'done', processed, orders: [], errors })

@@ -1458,7 +1458,7 @@ async function fetchOzonReturnsList(clientId, apiKey, daysBack = 120) {
         throw new Error(`Ozon Returns List API: HTTP ${response.status} — ${snippet}`)
       }
 
-      const items = response.body?.returns || []
+      const items = response.body?.result?.returns || response.body?.returns || []
       for (const ret of items) {
         returns.push({
           id: ret.id,
@@ -1478,7 +1478,7 @@ async function fetchOzonReturnsList(clientId, apiKey, daysBack = 120) {
         })
       }
 
-      hasNext = response.body && response.body.has_next === true && items.length > 0
+      hasNext = response.body?.result?.has_next === true && items.length > 0
       if (hasNext && items.length > 0) {
         lastId = items[items.length - 1].id
         await new Promise(r => setTimeout(r, 1000))
@@ -1582,7 +1582,9 @@ async function fetchOzonPostingsList(clientId, apiKey, daysBack = 120) {
           })),
           shipment_date: post.shipment_date || '',
           delivering_date: post.delivering_date || '',
-          price: firstProduct ? parseFloat(firstProduct.price) || 0 : 0
+          price: firstProduct ? parseFloat(firstProduct.price) || 0 : 0,
+          is_return: post.analytics_data?.is_return ?? false,
+          is_cancel: post.analytics_data?.is_cancel ?? false
         })
       }
 

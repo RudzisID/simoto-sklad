@@ -1664,7 +1664,7 @@ function renderTable() {
     let cssClass = 'status-no'
     if (status === 'return' || statusName.includes('Возврат')) cssClass = 'status-return'
     else if (status === 'cancelled' || statusName.includes('Отмен')) cssClass = 'status-error'
-    else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж'))
+    else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж') || statusName.includes('Доставлен'))
       cssClass = 'status-shipped'
     else if (status === 'delayed' || statusName.includes('отсрочк')) cssClass = 'status-delayed'
 
@@ -1681,8 +1681,11 @@ function renderTable() {
 
     const displayText = statusName || 'Новый'
     statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>'
-    const ozonLine = order.ozonReturnInfo
+    const ozonReturnLine = order.ozonReturnInfo
       ? `<br><span class="status-return" style="font-size:0.85em">${order.ozonReturnInfo}</span>`
+      : ''
+    const ozonStatusLine = order.ozonStatus
+      ? `<br><span style="font-size:0.85em;${order.ozonStatus === 'Доставлен' ? 'color:var(--success)' : order.ozonStatus === 'Доставлен → Возврат' ? 'color:var(--warning)' : 'color:var(--text-muted)'}">${order.ozonStatus} (Ozon)</span>`
       : ''
     const wbLine = order.wbReturnInfo
       ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
@@ -1720,7 +1723,7 @@ function renderTable() {
 
     // Sub-elements for № column
     let numSub = ''
-    if (order.ozonReturnInfo && order.barcode) {
+    if (order.barcode) {
       numSub = `<br><span style="font-size:0.85em">Ozon: ${esc(order.barcode)}</span>`
     } else if (order.wbStickerId) {
       numSub = `<br><span style="font-size:0.85em">Стикер: ${esc(order.wbStickerId)}</span>`
@@ -1734,7 +1737,7 @@ function renderTable() {
             <td>${demandDisplay}</td>
             <td>${paymentDisplay}</td>
             <td>${returnDisplay}</td>
-            <td>${statusDisplay}${ozonLine}${wbLine}</td>
+            <td>${statusDisplay}${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
 <td>${reasonDisplay}</td>
             <td class="date-cell">${formatDate(order.orderMoment)}</td>
             <td class="action-cell">${getRowActions(order, actualIndex)}</td>
@@ -1813,7 +1816,7 @@ function appendOrderRow(order) {
   let cssClass = 'status-no'
   if (status === 'return' || statusName.includes('Возврат')) cssClass = 'status-return'
   else if (status === 'cancelled' || statusName.includes('Отмен')) cssClass = 'status-error'
-  else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж'))
+  else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж') || statusName.includes('Доставлен'))
     cssClass = 'status-shipped'
   else if (status === 'delayed' || statusName.includes('отсрочк')) cssClass = 'status-delayed'
 
@@ -1838,8 +1841,11 @@ function appendOrderRow(order) {
   }
   const displayText = statusName || 'Новый'
   const statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>'
-  const ozonLine = order.ozonReturnInfo
+  const ozonReturnLine = order.ozonReturnInfo
     ? `<br><span class="status-return" style="font-size:0.85em">${order.ozonReturnInfo}</span>`
+    : ''
+  const ozonStatusLine = order.ozonStatus
+    ? `<br><span style="font-size:0.85em;${order.ozonStatus === 'Доставлен' ? 'color:var(--success)' : order.ozonStatus === 'Доставлен → Возврат' ? 'color:var(--warning)' : 'color:var(--text-muted)'}">${order.ozonStatus} (Ozon)</span>`
     : ''
   const wbLine = order.wbReturnInfo
     ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
@@ -1865,7 +1871,7 @@ function appendOrderRow(order) {
 
   // Sub-elements for № column
   let numSub = ''
-  if (order.ozonReturnInfo && order.barcode) {
+  if (order.barcode) {
     numSub = `<br><span style="font-size:0.85em">Ozon: ${esc(order.barcode)}</span>`
   } else if (order.wbStickerId) {
     numSub = `<br><span style="font-size:0.85em">Стикер: ${esc(order.wbStickerId)}</span>`
@@ -1879,7 +1885,7 @@ function appendOrderRow(order) {
         <td>${demandDisplay}</td>
         <td>${paymentDisplay}</td>
         <td>${returnDisplay}</td>
-        <td>${statusDisplay}${ozonLine}${wbLine}</td>
+        <td>${statusDisplay}${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
         <td>${reasonDisplay}</td>
         <td class="date-cell">${formatDate(displayDate)}</td>
         <td class="action-cell">${getRowActions(order, actualIndex)}</td>
@@ -2151,7 +2157,7 @@ function calculateMismatches(orderList) {
     const hasMarketplaceReturn = !!(o.wbReturnInfo || o.ozonReturnInfo)
     
     if (o.wbArticle || o.srid || o.wbStickerId) result.wbCount++
-    if (o.offerId || o.ozonReturnInfo) result.ozonCount++
+    if (o.offerId || o.ozonStatus) result.ozonCount++
     
     if (hasMarketplaceReturn && !o.hasReturn) {
       result.marketplaceReturnNoMs++
