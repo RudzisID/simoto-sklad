@@ -11,6 +11,7 @@ const {
   getOrderFullForCreate,
   getDemand
 } = require('../lib/order')
+const supplies = require('../lib/supplies')
 
 /**
  * SSE роутер
@@ -481,6 +482,8 @@ module.exports = function(deps) {
         returnType: marketplaceData?.returnType || marketplaceData?.type || '',
         reason: marketplaceData?.reason || marketplaceData?.return_reason_name || '',
         orderMoment: orderResult?.orderMoment || '',
+        storeName: orderResult?.storeName || '',
+        storeId: orderResult?.storeId || '',
         msFound: !!orderResult,
         foundBy: orderResult?.foundBy || null,
         extractedShipmentNum: orderResult?.extractedShipmentNum || null,
@@ -1100,6 +1103,52 @@ module.exports = function(deps) {
     } finally {
       res.end()
       ozonLog('=== Ozon-Return SSE: completed ===')
+    }
+  })
+
+  // ─── SSE: Supplies scan ───
+  /**
+   * GET /sse/supplies/stream — SSE-поток для сканирования поставок
+   *
+   * @header {string} x-api-token - Токен API МойСклад
+   * @header {string} x-wb-token - Токен API Wildberries
+   * @header {string} x-ozon-client-id - Client-ID Ozon
+   * @header {string} x-ozon-api-key - API-Key Ozon
+   * @query {string} [abortId] - ID для отмены
+   *
+   * События: progress, order, done, error, aborted
+   */
+  router.get('/supplies/stream', async (req, res) => {
+    const msToken = req.headers['x-api-token']
+    const wbToken = req.headers['x-wb-token']
+    const ozonClientId = req.headers['x-ozon-client-id']
+    const ozonApiKey = req.headers['x-ozon-api-key']
+    const abortId = req.query.abortId
+    const storeId = req.query.storeId || '_all'
+    const marketplaces = req.query.marketplaces || 'wb,ozon'
+    const dateFrom = req.query.dateFrom || ''
+    const dateTo = req.query.dateTo || ''
+
+    if (!msToken) return res.status(401).json({ error: 'Требуется токен МС' })
+    if (!wbToken) return res.status(401).json({ error: 'Требуется WB токен' })
+    if (!ozonClientId || !ozonApiKey) return res.status(401).json({ error: 'Требуются Client-Id и Api-Key Ozon' })
+
+    setupSSE(res, sseConnections)
+
+    req.on('close', () => {
+      if (abortId) abortSignals.set(abortId, true)
+    })
+
+    sendSSE(res, { type: 'progress', msg: 'Получение заказов из МС...' })
+
+    try {
+      const result = await supplies.scanNewOrders(msToken, wbToken, ozonClientId, ozonApiKey, log, (order, index, total) => {
+        sendSSE(res, { type: 'order', order, index, total })
+      }, storeId, marketplaces, dateFrom, dateTo)
+      endSSE(res, 'done', { orders: result.orders, stats: result.stats })
+    } catch (e) {
+      log(`Supplies error: ${e.message}`)
+      endSSE(res, 'error', { error: e.message })
     }
   })
 

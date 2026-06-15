@@ -1281,10 +1281,23 @@ function abortCheck() {
     return
   }
 
+  // Supplies scan abort
+  if (suppliesController) {
+    suppliesController.abort()
+    const abortId = window.__currentAbortId
+    if (abortId) {
+      fetch('/api/abort', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ abortId })
+      }).catch(() => {})
+    }
+    return
+  }
+
   // Legacy abort for currentController-based searches
   if (currentController) {
     currentController.abort()
-    // Also notify server for fast termination
     const abortId = window.__currentAbortId
     if (abortId) {
       fetch('/api/abort', {
@@ -1691,8 +1704,8 @@ function renderTable() {
       ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
       : ''
 
-    const reasonDisplay = order.reason
-      ? `<span class="reason-text" title="${order.reason.replace(/"/g, '&quot;')}">${order.reason.length > 30 ? order.reason.slice(0, 30) + '…' : order.reason}</span>`
+    const storeDisplay = order.storeName
+      ? `<span>${esc(order.storeName)}</span>`
       : '<span class="status-no">—</span>'
 
     // Статус заказа
@@ -1738,7 +1751,7 @@ function renderTable() {
             <td>${paymentDisplay}</td>
             <td>${returnDisplay}</td>
             <td>${statusDisplay}${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
-<td>${reasonDisplay}</td>
+<td>${storeDisplay}</td>
             <td class="date-cell">${formatDate(order.orderMoment)}</td>
             <td class="action-cell">${getRowActions(order, actualIndex)}</td>
         `
@@ -1851,8 +1864,8 @@ function appendOrderRow(order) {
     ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
     : ''
 
-  const reasonDisplay = order.reason
-    ? `<span class="reason-text" title="${order.reason.replace(/"/g, '&quot;')}">${order.reason.length > 30 ? order.reason.slice(0, 30) + '…' : order.reason}</span>`
+  const storeDisplay = order.storeName
+    ? `<span>${esc(order.storeName)}</span>`
     : '<span class="status-no">—</span>'
 
   // WB article display (если есть — показываем рядом с orderName)
@@ -1886,7 +1899,7 @@ function appendOrderRow(order) {
         <td>${paymentDisplay}</td>
         <td>${returnDisplay}</td>
         <td>${statusDisplay}${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
-        <td>${reasonDisplay}</td>
+        <td>${storeDisplay}</td>
         <td class="date-cell">${formatDate(displayDate)}</td>
         <td class="action-cell">${getRowActions(order, actualIndex)}</td>
     `
@@ -3341,6 +3354,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Загружаем сохранённые заказы при старте
   await loadSavedOrdersAndRender()
 
+  // Загружаем сохранённые поставки при старте
+  loadSavedSuppliesAndRender()
+
   // Инициализируем обработчик кликов для блока расхождений
   initMismatchClickHandler()
 
@@ -3371,15 +3387,28 @@ document.addEventListener('click', function (e) {
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return
   const popup = document.getElementById('dateFilterPopup')
-  if (!popup || popup.style.display !== 'block') return
-  closeDateFilter()
+  if (popup && popup.style.display === 'block') closeDateFilter()
+  const popupSupplies = document.getElementById('dateFilterPopupSupplies')
+  if (popupSupplies && popupSupplies.style.display === 'block') closeSuppliesDateFilter()
 })
 
 // Скрывать попап даты при прокрутке
 window.addEventListener('scroll', function () {
   const popup = document.getElementById('dateFilterPopup')
   if (popup && popup.style.display === 'block') closeDateFilter()
+  const popupSupplies = document.getElementById('dateFilterPopupSupplies')
+  if (popupSupplies && popupSupplies.style.display === 'block') closeSuppliesDateFilter()
 }, true)
+
+// Глобальный обработчик закрытия supplies date filter
+document.addEventListener('click', function(e) {
+  const popup = document.getElementById('dateFilterPopupSupplies')
+  if (!popup || popup.style.display !== 'block') return
+  const th = document.querySelector('th.date-header')
+  if (th && th.contains(e.target)) return
+  if (popup.contains(e.target)) return
+  closeSuppliesDateFilter()
+})
 
 /**
  * Очищает все сохранённые данные заказов (через DELETE /api/orders-state).
@@ -3595,6 +3624,1151 @@ function playScanBeep() {
     osc.stop(ctx.currentTime + 0.15)
   } catch (_) {
     // Web Audio API может быть недоступен — тихий fallback
+  }
+}
+
+// ===== Supplies Tab =====
+/**
+ * @file Модуль вкладки "Поставки" — сканирование поставок, массовые и одиночные действия.
+ * @module SuppliesTab
+ */
+
+/** @type {Array<Object>} Массив данных поставок */
+let suppliesData = []
+/** @type {boolean} Флаг выполнения операции поставок */
+let suppliesIsWorking = false
+/** @type {{ column: string, asc: boolean }} Текущая сортировка таблицы поставок */
+let suppliesSortCol = 'orderMoment'
+let suppliesSortAsc = false
+/** @type {{ from: string, to: string }} Фильтр дат для поставок (отдельный от склада) */
+let dateFilterSupplies = { from: '', to: '' }
+/** @type {{ month: number, year: number }} Состояние календаря date range picker для поставок */
+let drpStateSupplies = { month: new Date().getMonth(), year: new Date().getFullYear() }
+/** @type {Object|null} Последняя статистика фильтрации сканирования поставок */
+let suppliesFilterStats = null
+
+/** Константа для ключа localStorage */
+const SUPPLIES_STORAGE_KEY = 'sklad_supplies_data'
+
+/**
+ * Сохраняет текущие данные поставок в localStorage.
+ * Убирает тяжёлые поля перед сохранением.
+ * @returns {void}
+ */
+function saveSuppliesState() {
+  try {
+    if (!suppliesData || suppliesData.length === 0) return
+    var light = suppliesData.map(function(o) {
+      return {
+        orderId: o.orderId,
+        orderName: o.orderName,
+        description: o.description,
+        orderMoment: o.orderMoment,
+        sum: o.sum,
+        shipmentNum: o.shipmentNum,
+        marketplace: o.marketplace,
+        storeId: o.storeId,
+        storeName: o.storeName,
+        hasDemand: o.hasDemand,
+        hasCancel: o.hasCancel,
+        canDemand: o.canDemand,
+        canCancel: o.canCancel,
+        enabled: o.enabled,
+        recommendation: o.recommendation,
+        recommendationType: o.recommendationType,
+        marketplaceStatus: o.marketplaceStatus,
+        marketplaceFound: o.marketplaceFound
+      }
+    })
+    localStorage.setItem(SUPPLIES_STORAGE_KEY, JSON.stringify(light))
+  } catch (e) {
+    console.error('Supplies: save state error:', e)
+  }
+}
+
+/**
+ * Загружает сохранённые данные поставок из localStorage и восстанавливает таблицу.
+ * @returns {void}
+ */
+function loadSavedSuppliesAndRender() {
+  try {
+    var saved = localStorage.getItem(SUPPLIES_STORAGE_KEY)
+    if (!saved) return
+    var parsed = JSON.parse(saved)
+    if (!Array.isArray(parsed) || parsed.length === 0) return
+    suppliesData = parsed
+    renderSuppliesTable()
+    renderSuppliesStats()
+    renderSuppliesMismatchStats()
+    buildStoreFilterDropdown()
+    // Показываем статус
+    var statusEl = document.getElementById('statusText')
+    if (statusEl) statusEl.textContent = 'Сканирование от ' + new Date().toLocaleDateString() + ': ' + parsed.length + ' поставок'
+  } catch (e) {
+    console.error('Supplies: load state error:', e)
+  }
+}
+
+/**
+ * Инициализирует настройки сканирования: устанавливает даты по умолчанию (последние 2 дня)
+ * и загружает список складов из API.
+ * @returns {void}
+ */
+function initSuppliesScanSettings() {
+  // Инициализация только при первом открытии
+  var fromDisplayEl = document.getElementById('scanDateFromDisplay')
+  if (fromDisplayEl && fromDisplayEl.value) return
+
+  // Даты: последние 2 дня
+  var today = new Date()
+  var twoDaysAgo = new Date(today)
+  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2)
+  var fmtDate = function(d) {
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+  }
+  var fromEl = document.getElementById('scanDateFrom')
+  var toEl = document.getElementById('scanDateTo')
+  if (fromEl) fromEl.value = fmtDate(twoDaysAgo)
+  if (toEl) toEl.value = fmtDate(today)
+  
+  // Загружаем склады через API (используем токен)
+  var token = loadToken()
+  if (!token) return
+  fetch('/api/supplies/stores?token=' + encodeURIComponent(token))
+    .then(function(r) { return r.json() })
+    .then(function(data) {
+      var select = document.getElementById('scanStoreSelect')
+      if (!select) return
+      // Очищаем кроме "Все склады"
+      while (select.options.length > 1) select.remove(1)
+      ;(data.stores || []).forEach(function(s) {
+        var opt = document.createElement('option')
+        opt.value = s.id
+        opt.textContent = s.name
+        select.appendChild(opt)
+      })
+    })
+    .catch(function(e) { console.error('Supplies: load stores error:', e) })
+}
+
+/** @type {AbortController|null} Контроллер для прерывания SSE-потока поставок */
+let suppliesController = null
+/** @type {boolean} Режим realtime для таблицы поставок */
+let suppliesRealtimeMode = false
+
+/**
+ * Сортирует таблицу поставок по указанной колонке.
+ * Для даты — стандартная asc/desc сортировка.
+ * @param {string} column - Название колонки для сортировки
+ * @returns {void}
+ */
+function sortSuppliesTable(col) {
+  if (suppliesSortCol === col) {
+    suppliesSortAsc = !suppliesSortAsc
+  } else {
+    suppliesSortCol = col
+    suppliesSortAsc = true
+  }
+  renderSuppliesTable()
+  renderSuppliesStats()
+}
+
+/**
+ * Полностью перерисовывает таблицу поставок с учётом сортировки и разделителей дней.
+ * @returns {void}
+ */
+function renderSuppliesTable() {
+  const tbody = document.getElementById('suppliesTableBody')
+  if (!tbody) return
+  tbody.innerHTML = ''
+
+  if (suppliesData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">Нажмите "Сканировать поставки" для поиска новых заказов</td></tr>'
+    return
+  }
+
+  // Получаем отфильтрованные данные
+  const filtered = getFilteredSuppliesData()
+
+  // Копия и сортировка
+  const col = suppliesSortCol
+  const asc = suppliesSortAsc
+  const sorted = [...filtered].sort((a, b) => {
+    let va = a[col] || ''
+    let vb = b[col] || ''
+    if (col === 'orderMoment') {
+      // ISO 8601 — лексикографически
+      if (va < vb) return asc ? -1 : 1
+      if (va > vb) return asc ? 1 : -1
+      return 0
+    }
+    if (typeof va === 'number' || col === 'sum') {
+      va = Number(a[col]) || 0
+      vb = Number(b[col]) || 0
+      if (va < vb) return asc ? -1 : 1
+      if (va > vb) return asc ? 1 : -1
+      return 0
+    }
+    va = String(va).toLowerCase()
+    vb = String(vb).toLowerCase()
+    if (va < vb) return asc ? -1 : 1
+    if (va > vb) return asc ? 1 : -1
+    return 0
+  })
+
+  // Рендер с разделителями дней
+  let lastDate = ''
+  sorted.forEach(function(order) {
+    // Разделитель дней
+    var orderDate = order.orderMoment ? order.orderMoment.substring(0, 10) : ''
+    if (orderDate && orderDate !== lastDate) {
+      lastDate = orderDate
+      var parts = orderDate.split('-')
+      var dateLabel = parts[2] + '.' + parts[1] + '.' + parts[0]
+      var sepTr = document.createElement('tr')
+      sepTr.className = 'day-separator'
+      sepTr.innerHTML = '<td colspan="10"><span>' + dateLabel + '</span></td>'
+      tbody.appendChild(sepTr)
+    }
+    // Сама строка
+    var tr = createSuppliesRow(order)
+    if (tr) tbody.appendChild(tr)
+  })
+
+  // Обновить индикаторы сортировки на заголовках
+  document.querySelectorAll('#tableContainerSupplies th.sortable').forEach(function(th) {
+    th.classList.remove('sort-asc', 'sort-desc')
+  })
+  var activeTh = document.querySelector('#tableContainerSupplies th.sortable[data-col="' + col + '"]')
+  if (activeTh) activeTh.classList.add(asc ? 'sort-asc' : 'sort-desc')
+}
+
+/**
+ * Сканирует поставки через SSE-поток /api/supplies/stream.
+ * Читает токены из localStorage, открывает SSE, обрабатывает события
+ * progress/order/done/error/aborted, отображает строки в таблице поставок.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
+async function scanSupplies() {
+  const msToken = loadToken()
+  if (!msToken) {
+    showStatus('Ошибка: Токен МС не найден.')
+    return
+  }
+
+  const wbToken = localStorage.getItem('wb_token') || ''
+  const ozonClientId = localStorage.getItem('ozon_client_id') || ''
+  const ozonApiKey = localStorage.getItem('ozon_api_key') || ''
+
+  const scanBtn = document.getElementById('scanSuppliesBtn')
+  const abortBtn = document.getElementById('abortSuppliesBtn')
+  if (scanBtn) scanBtn.style.display = 'none'
+  if (abortBtn) abortBtn.style.display = 'flex'
+  suppliesIsWorking = true
+
+  showProgress(true)
+  hideFinalStatsSupplies(true)
+  startOperationTimer()
+
+  // Сохраняем существующие данные для мержа (не очищаем, чтобы не терять при повторном скане)
+  const prevSuppliesData = suppliesData.slice()
+  suppliesData = []
+  const prevShipmentNums = new Set(prevSuppliesData.map(function(o) { return o.shipmentNum }))
+
+  const tbody = document.getElementById('suppliesTableBody')
+  if (tbody) tbody.innerHTML = ''
+
+  let fetchTimeout = null
+  window.__fetchTimeout = false
+
+  try {
+    suppliesController = new AbortController()
+    const abortId = Math.random().toString(36).substring(2, 15)
+    window.__currentAbortId = abortId
+
+    // Параметры сканирования из настроек
+    var params = new URLSearchParams()
+    params.set('abortId', abortId)
+    var storeId = document.getElementById('scanStoreSelect')?.value || '_all'
+    if (storeId !== '_all') params.set('storeId', storeId)
+    var marketplaces = []
+    if (document.getElementById('scanFilterWb')?.checked) marketplaces.push('wb')
+    if (document.getElementById('scanFilterOzon')?.checked) marketplaces.push('ozon')
+    if (marketplaces.length > 0 && marketplaces.length < 2) params.set('marketplaces', marketplaces.join(','))
+    var dateFrom = document.getElementById('scanDateFrom')?.value || ''
+    var dateTo = document.getElementById('scanDateTo')?.value || ''
+    if (dateFrom) params.set('dateFrom', dateFrom)
+    if (dateTo) params.set('dateTo', dateTo)
+    const url = `/api/supplies/stream?${params.toString()}`
+
+    // Таймаут 10с
+    fetchTimeout = setTimeout(() => {
+      window.__fetchTimeout = true
+      if (suppliesController) suppliesController.abort()
+    }, 10000)
+
+    const response = await fetch(url, {
+      signal: suppliesController.signal,
+      headers: {
+        'x-api-token': msToken,
+        'x-wb-token': wbToken,
+        'x-ozon-client-id': ozonClientId,
+        'x-ozon-api-key': ozonApiKey
+      }
+    })
+    clearTimeout(fetchTimeout)
+    fetchTimeout = null
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}))
+      hideProgress(false, errData.error || 'Ошибка')
+      return
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6))
+
+            if (data.type === 'progress') {
+              document.getElementById('statusText').textContent =
+                `Обработано ${data.index}/${data.total}: ${data.msg || ''}`
+            } else if (data.type === 'order') {
+              const orderData = { ...data.order, enabled: true }
+              suppliesData.push(orderData)
+
+              document.getElementById('statusText').textContent =
+                `Загружено ${data.index}/${data.total}`
+
+              appendSuppliesRow(orderData)
+              applySuppliesMarketplaceFilter()
+            } else if (data.type === 'done') {
+              const elapsed = stopOperationTimer()
+              suppliesRealtimeMode = false
+
+              // Сохраняем статистику фильтрации с сервера
+              if (data.stats && data.stats.filterStats) {
+                suppliesFilterStats = data.stats.filterStats
+              }
+
+              // Мержим новые данные с предыдущими (чтобы при повторном скане не терять старые заказы)
+              var newShipmentNums = new Set(suppliesData.map(function(o) { return o.shipmentNum }))
+              prevSuppliesData.forEach(function(o) {
+                if (!newShipmentNums.has(o.shipmentNum)) {
+                  // Добавляем старые заказы, которых нет в новом скане
+                  suppliesData.push(o)
+                }
+              })
+
+              // Сохраняем результат сканирования (чтобы не пропадал при обновлении страницы)
+              saveSuppliesState()
+
+              hideProgress(true, 'Готово: ' + suppliesData.length)
+              showFinalStatsSupplies({ total: suppliesData.length, filterStats: data.stats ? data.stats.filterStats : null }, elapsed)
+
+              renderSuppliesStats()
+              renderSuppliesTable()
+              renderSuppliesMismatchStats()
+              buildStoreFilterDropdown()
+
+              showStatus('Сканирование поставок завершено')
+            } else if (data.type === 'aborted') {
+              const elapsed = stopOperationTimer()
+              suppliesRealtimeMode = false
+
+              hideProgress(false, 'Прервано. Обработано: ' + (data.processed || 0))
+              showFinalStatsSupplies({ total: data.processed || 0 }, elapsed)
+            } else if (data.type === 'error') {
+              hideProgress(false, data.error || 'Ошибка')
+              return
+            }
+          } catch (e) {
+            console.error('Supplies SSE parse error:', e)
+          }
+        }
+      }
+    }
+  } catch (e) {
+    clearTimeout(fetchTimeout)
+    if (e.name === 'AbortError') {
+      hideProgress(false, window.__fetchTimeout ? 'Таймаут: сервер не отвечает' : 'Прервано')
+      stopOperationTimer()
+    } else {
+      hideProgress(false, 'Ошибка: ' + e.message)
+      stopOperationTimer()
+    }
+  } finally {
+    clearTimeout(fetchTimeout)
+    stopOperationTimer()
+    suppliesRealtimeMode = false
+
+    if (scanBtn) scanBtn.style.display = 'inline-flex'
+    if (abortBtn) abortBtn.style.display = 'none'
+    suppliesIsWorking = false
+    window.__currentAbortId = null
+  }
+}
+
+/**
+ * Создаёт DOM-элемент строки таблицы поставок.
+ * @param {Object} order - Данные поставки
+ * @returns {HTMLTableRowElement|null} Созданный элемент tr
+ */
+function createSuppliesRow(order) {
+  const tr = document.createElement('tr')
+  tr.className = order.recommendationType ? 'row-' + order.recommendationType : ''
+  tr.dataset.storeId = order.storeId || '_'
+
+  const marketplaceIcon = order.marketplace === 'wb'
+    ? '<span class="marketplace-tag wb-tag">WB</span>'
+    : '<span class="marketplace-tag ozon-tag">Ozon</span>'
+
+  let actionsHtml = '<div class="action-grid">'
+  if (order.canDemand) actionsHtml += '<button class="btn btn-demand action-btn" onclick="supplySingleAction(\'' + order.shipmentNum + '\',\'demand\')" title="Создать отгрузку">📦</button>'
+  if (order.canCancel) actionsHtml += '<button class="btn btn-cancel action-btn" onclick="supplySingleAction(\'' + order.shipmentNum + '\',\'cancel\')" title="Отменить">✗</button>'
+  // Если кнопок нет — показываем индикатор статуса
+  if (!order.canDemand && !order.canCancel) {
+    var recType = order.recommendationType || ''
+    if (recType === 'ok' || recType === 'action_cancel_demand') {
+      actionsHtml += '<span class="status-ok-icon" title="' + esc(order.recommendation || '') + '">✅</span>'
+    } else if (recType === 'waiting') {
+      actionsHtml += '<span class="status-wait-icon" title="' + esc(order.recommendation || '') + '">⏳</span>'
+    } else {
+      actionsHtml += '<span class="status-no">—</span>'
+    }
+  }
+  actionsHtml += '</div>'
+
+  // Перевод статуса маркетплейса
+  function translateStatus(status) {
+    if (!status) return '—'
+    var map = {
+      'cancel': 'Отменён', 'cancelled': 'Отменён',
+      'sale': 'Продан', 'delivered': 'Доставлен',
+      'return': 'Возврат', 'returning': 'Возвращается',
+      'awaiting_delivery': 'Ожидает доставки',
+      'delivering': 'Доставляется'
+    }
+    return map[status.toLowerCase()] || status
+  }
+
+  // Отображаем только номер заказа МС и номер маркета второй строкой
+  var orderName = order.orderName || '-'
+  var marketplaceNum = order.shipmentNum || ''
+  var descSub = marketplaceNum ? '<br><span style="font-size:0.85em;opacity:0.7">' + esc(marketplaceNum) + '</span>' : ''
+  var displayDesc = esc(orderName)
+
+  // Индекс для обработчика чекбокса
+  var supplyIdx = suppliesData.indexOf(order)
+  tr.innerHTML = `
+    <td><input type="checkbox" class="supply-checkbox" data-shipment="${esc(order.shipmentNum)}" data-index="${supplyIdx}" ${order.enabled !== false ? 'checked' : ''} onchange="toggleSupplyEnabled(${supplyIdx}, this)"></td>
+    <td>${esc(displayDesc)}${descSub}</td>
+    <td>${marketplaceIcon}</td>
+    <td>${esc(order.storeName || '—')}</td>
+    <td>${fmtSum(order.sum)}</td>
+    <td class="date-cell">${formatDate(order.orderMoment)}</td>
+    <td>${order.hasDemand ? esc(order.demandName || 'Есть') : '<span class="status-no">—</span>'}</td>
+    <td>${order.marketplaceFound ? esc(translateStatus(order.marketplaceStatus)) : '<span class="status-no">Не найден</span>'}</td>
+    <td class="rec-cell" title="${esc(order.recommendation)}">${esc(order.recommendation)}</td>
+    <td class="action-cell">${actionsHtml}</td>
+  `
+  return tr
+}
+
+/**
+ * Добавляет строку с поставкой в таблицу (append mode для SSE).
+ * @param {Object} order - Данные поставки
+ * @returns {void}
+ */
+function appendSuppliesRow(order) {
+  const tbody = document.getElementById('suppliesTableBody')
+  if (!tbody) return
+  var tr = createSuppliesRow(order)
+  if (tr) tbody.appendChild(tr)
+}
+
+/**
+ * Рассчитывает статистику поставок по отфильтрованным данным (с учётом фильтров).
+ * Включает суммы отгрузок, возвратов, отмен и калькулятор.
+ * @returns {{ total: number, wb: number, ozon: number, withDemand: number, withoutDemand: number,
+ *            demandSum: number, returnSum: number, cancelSum: number, errorSum: number,
+ *            paymentSum: number }}
+ */
+function calculateSuppliesStats() {
+  var data = getFilteredSuppliesData()
+  var stats = {
+    total: data.length, wb: 0, ozon: 0,
+    withDemand: 0, withoutDemand: 0,
+    demandSum: 0, returnSum: 0, cancelSum: 0,
+    errorSum: 0, paymentSum: 0
+  }
+  data.forEach(function(o) {
+    if (o.marketplace === 'wb') stats.wb++
+    else if (o.marketplace === 'ozon') stats.ozon++
+    var sum = Number(o.sum) || 0
+    if (o.hasDemand) {
+      stats.withDemand++
+      stats.demandSum += sum
+    } else {
+      stats.withoutDemand++
+    }
+    // Для поставок считаем потенциальные суммы:
+    // Если рекомендуется отмена — cancelSum
+    if (o.recommendationType === 'action_cancel') {
+      stats.cancelSum += sum
+    }
+    // Если рекомендуется возврат — returnSum
+    if (o.recommendationType === 'action_return') {
+      stats.returnSum += sum
+    }
+    // Если рекомендуется отгрузка — demandSum уже учтена выше
+  })
+  return stats
+}
+
+/**
+ * Рассчитывает расхождения для поставок.
+ * @returns {{ wbCount: number, ozonCount: number, cancelledOnMarketplace: number, deliveredOnMarketplace: number, totalMismatches: number }}
+ */
+function calculateSuppliesMismatches() {
+  var data = getFilteredSuppliesData()
+  var result = { wbCount: 0, ozonCount: 0, cancelledOnMarketplace: 0, deliveredOnMarketplace: 0, totalMismatches: 0 }
+  data.forEach(function(o) {
+    if (o.marketplace === 'wb') result.wbCount++
+    else if (o.marketplace === 'ozon') result.ozonCount++
+    // Отменённые на маркете, но ещё не отменённые в МС
+    if (o.marketplaceIsCancelled && !o.hasDemand && !o.isCancelled) {
+      result.cancelledOnMarketplace++
+      result.totalMismatches++
+    }
+    // Доставленные на маркете, но без отгрузки в МС
+    if (o.marketplaceIsDelivered && !o.hasDemand) {
+      result.deliveredOnMarketplace++
+      result.totalMismatches++
+    }
+  })
+  return result
+}
+
+/**
+ * Отображает блок контроля статусов для поставок.
+ * @returns {void}
+ */
+function renderSuppliesMismatchStats() {
+  const el = document.getElementById('suppliesMismatchOutput')
+  if (!el) return
+  var s = calculateSuppliesMismatches()
+
+  var html = '<div class="mismatch-body">'
+  html += '<div class="stat-row"><span class="stat-label">Заказы WB:</span><span class="stat-value">' + s.wbCount + '</span></div>'
+  html += '<div class="stat-row"><span class="stat-label">Заказы Ozon:</span><span class="stat-value">' + s.ozonCount + '</span></div>'
+  html += '<div class="mismatch-separator"></div>'
+
+  if (s.totalMismatches > 0) {
+    html += '<div class="stat-row mismatch-error"><span class="stat-label">↳ Отменён на маркете, ждёт в МС:</span><span class="stat-value">' + s.cancelledOnMarketplace + '</span></div>'
+    html += '<div class="stat-row mismatch-warn"><span class="stat-label">↳ Доставлен на маркете, нет отгрузки:</span><span class="stat-value">' + s.deliveredOnMarketplace + '</span></div>'
+  } else {
+    html += '<div class="stat-row"><span class="stat-value mismatch-ok-text">✓ Нет расхождений</span></div>'
+  }
+  html += '</div>'
+  el.innerHTML = html
+}
+
+/**
+ * Отображает статистику поставок в элементе suppliesStatsOutput с калькулятором сумм.
+ * Рассчитывает данные из calculateSuppliesStats().
+ * @returns {void}
+ */
+function renderSuppliesStats() {
+  const el = document.getElementById('suppliesStatsOutput')
+  if (!el) return
+  var stats = calculateSuppliesStats()
+
+  var fmt = function(n) { return (n || 0).toLocaleString() }
+  var fmtSum = function(n) { return n ? fmt(n) + ' ₽' : '-' }
+
+  var html = ''
+  html += '<div class="stat-row"><span class="stat-label">Всего:</span><span class="stat-value">' + stats.total + '</span></div>'
+  html += '<div class="stat-row"><span class="stat-label">WB:</span><span class="stat-value">' + stats.wb + '</span></div>'
+  html += '<div class="stat-row"><span class="stat-label">Ozon:</span><span class="stat-value">' + stats.ozon + '</span></div>'
+  html += '<div class="stat-row"><span class="stat-label">С отгрузкой:</span><span class="stat-value">' + stats.withDemand + '</span><span class="stat-sum">' + fmtSum(stats.demandSum) + '</span></div>'
+  html += '<div class="stat-row"><span class="stat-label">Без отгрузки:</span><span class="stat-value">' + stats.withoutDemand + '</span></div>'
+
+  // Калькулятор
+  var totalAccounted = stats.demandSum + stats.returnSum + stats.cancelSum + stats.errorSum
+  var isMatch = totalAccounted > 0
+  html += '<div class="calculator">'
+  html += '<div class="calc-divider"></div>'
+  html += '<div class="calc-formula">'
+  html += '<span class="calc-sum">' + fmtSum(stats.demandSum) + '</span>'
+  if (stats.returnSum > 0) html += '<span class="calc-op"> + </span><span class="calc-sum">' + fmtSum(stats.returnSum) + '</span>'
+  if (stats.cancelSum > 0) html += '<span class="calc-op"> + </span><span class="calc-sum">' + fmtSum(stats.cancelSum) + '</span>'
+  html += '</div>'
+
+  el.innerHTML = html
+
+  renderSuppliesMismatchStats()
+}
+
+// ─── Supplies Date Filter ───
+
+/**
+ * Переключает отображение попапа фильтра по дате для поставок.
+ * @returns {void}
+ */
+function toggleSuppliesDateFilter() {
+  const popup = document.getElementById('dateFilterPopupSupplies')
+  if (!popup) return
+  if (popup.style.display === 'block') { closeSuppliesDateFilter(); return }
+  // Позиционирование как на складе (fixed, центрирован)
+  popup.style.position = 'fixed'
+  popup.style.top = ''
+  popup.style.left = ''
+  var th = document.querySelector('#tab-supplies .date-header')
+  if (th) {
+    var rect = th.getBoundingClientRect()
+    popup.style.top = rect.bottom + 'px'
+  }
+  drpStateSupplies.month = dateFilterSupplies.from
+    ? parseInt(dateFilterSupplies.from.split('-')[1]) - 1
+    : new Date().getMonth()
+  drpStateSupplies.year = dateFilterSupplies.from
+    ? parseInt(dateFilterSupplies.from.split('-')[0])
+    : new Date().getFullYear()
+  drpUpdateDisplaySupplies()
+  drpRenderSupplies()
+  var overlay = document.getElementById('dateFilterOverlaySupplies')
+  if (overlay) overlay.style.display = 'block'
+  popup.style.display = 'block'
+}
+
+/**
+ * Закрывает попап фильтра дат для поставок.
+ * @returns {void}
+ */
+function closeSuppliesDateFilter() {
+  const popup = document.getElementById('dateFilterPopupSupplies')
+  const overlay = document.getElementById('dateFilterOverlaySupplies')
+  if (popup) popup.style.display = 'none'
+  if (overlay) overlay.style.display = 'none'
+}
+
+/**
+ * Рендерит календарь date range picker для поставок.
+ * @returns {void}
+ */
+function drpRenderSupplies() {
+  const daysEl = document.getElementById('drpDaysSupplies')
+  if (!daysEl) return
+  var month = drpStateSupplies.month
+  var year = drpStateSupplies.year
+  var months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
+  var titleEl = document.getElementById('drpTitleSupplies')
+  if (titleEl) titleEl.textContent = months[month] + ' ' + year
+  
+  var firstDay = new Date(year, month, 1).getDay()
+  var startOffset = firstDay === 0 ? 6 : firstDay - 1
+  var daysInMonth = new Date(year, month + 1, 0).getDate()
+  var today = new Date()
+  var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0')
+  
+  // Даты из suppliesData
+  var availSet = new Set()
+  suppliesData.forEach(function(o) {
+    if (o.orderMoment) availSet.add(o.orderMoment.substring(0, 10))
+  })
+  
+  var from = dateFilterSupplies.from
+  var to = dateFilterSupplies.to
+  
+  var html = ''
+  for (var i = 0; i < startOffset; i++) html += '<span class="drp-day drp-empty"></span>'
+  for (var d = 1; d <= daysInMonth; d++) {
+    var ds = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0')
+    var cls = 'drp-day'
+    if (ds === todayStr) cls += ' drp-today'
+    if (availSet.has(ds)) cls += ' drp-has'
+    if (ds === from) cls += ' drp-from'
+    if (ds === to) cls += ' drp-to'
+    if (from && to && ds > from && ds < to) cls += ' drp-range'
+    html += '<span class="' + cls + '" data-date="' + ds + '">' + d + '</span>'
+  }
+  daysEl.innerHTML = html
+}
+
+function drpPrevMonthSupplies() {
+  drpStateSupplies.month--
+  if (drpStateSupplies.month < 0) { drpStateSupplies.month = 11; drpStateSupplies.year-- }
+  drpRenderSupplies()
+}
+
+function drpNextMonthSupplies() {
+  drpStateSupplies.month++
+  if (drpStateSupplies.month > 11) { drpStateSupplies.month = 0; drpStateSupplies.year++ }
+  drpRenderSupplies()
+}
+
+function drpSelectSupplies(dateStr) {
+  if (!dateFilterSupplies.from || (dateFilterSupplies.from && dateFilterSupplies.to)) {
+    dateFilterSupplies.from = dateStr
+    dateFilterSupplies.to = ''
+  } else {
+    dateFilterSupplies.to = dateStr
+    if (dateFilterSupplies.to < dateFilterSupplies.from) {
+      var tmp = dateFilterSupplies.from
+      dateFilterSupplies.from = dateFilterSupplies.to
+      dateFilterSupplies.to = tmp
+    }
+  }
+  drpUpdateDisplaySupplies()
+  drpRenderSupplies()
+}
+
+function drpUpdateDisplaySupplies() {
+  var fmt = function(iso) {
+    if (!iso) return ''
+    var parts = iso.split('-')
+    return parts[2] + '.' + parts[1] + '.' + parts[0]
+  }
+  var fromEl = document.getElementById('dfFromDisplaySupplies')
+  var toEl = document.getElementById('dfToDisplaySupplies')
+  if (fromEl) fromEl.value = fmt(dateFilterSupplies.from)
+  if (toEl) toEl.value = fmt(dateFilterSupplies.to)
+}
+
+function applySuppliesDateFilter() {
+  closeSuppliesDateFilter()
+  renderSuppliesTable()
+  renderSuppliesStats()
+  var badge = document.getElementById('dateFilterBadgeSupplies')
+  if (badge) badge.style.display = dateFilterSupplies.from || dateFilterSupplies.to ? 'inline-block' : 'none'
+}
+
+function resetSuppliesDateFilter() {
+  dateFilterSupplies.from = ''
+  dateFilterSupplies.to = ''
+  drpUpdateDisplaySupplies()
+  closeSuppliesDateFilter()
+  renderSuppliesTable()
+  renderSuppliesStats()
+  var badge = document.getElementById('dateFilterBadgeSupplies')
+  if (badge) badge.style.display = 'none'
+}
+
+/**
+ * Обновляет блок "После сканирования" на вкладке Поставки (statsFinalOutputSupplies).
+ * Показывает выполнение с таймером.
+ * @param {boolean} [showTimer=true] - Показывать таймер выполнения
+ * @returns {void}
+ */
+function hideFinalStatsSupplies(showTimer = true) {
+  const container = document.getElementById('statsFinalOutputSupplies')
+  if (!container) return
+  if (showTimer) {
+    container.classList.remove('idle')
+    container.innerHTML = `
+      <div class="terminal-line info">Сканирование поставок...</div>
+      <div class="terminal-line time-line">Время: <span id="operationTimer">0:00</span></div>
+      <div class="terminal-status">
+        <div class="terminal-status-dot pulse"></div>
+        <span>Обработка</span>
+      </div>
+    `
+  } else {
+    container.classList.add('idle')
+    container.innerHTML = '<div class="terminal-message">Ожидание сканирования</div>'
+  }
+}
+
+/**
+ * Показывает результаты сканирования поставок в блоке statsFinalOutputSupplies.
+ * @param {{ total?: number, created?: number, errors?: number }} stats - Статистика
+ * @param {number} [elapsedTime=0] - Затраченное время в секундах
+ * @returns {void}
+ */
+function showFinalStatsSupplies(stats = {}, elapsedTime = 0) {
+  const container = document.getElementById('statsFinalOutputSupplies')
+  if (!container) return
+  const total = stats.total || 0
+  const errors = stats.errors || 0
+  const timeStr = getFormattedTime(elapsedTime)
+  container.classList.remove('idle')
+
+  var filterHtml = ''
+  if (stats.filterStats) {
+    filterHtml = `
+    <div class="terminal-line" style="font-size:0.85em;opacity:0.7;border-top:1px solid rgba(255,255,255,0.1);padding-top:4px;margin-top:4px">
+      Всего из API: ${stats.filterStats.totalFromAPI}
+      | Не прошли статус: ${stats.filterStats.skippedStatus}
+      | Не прошли описание: ${stats.filterStats.skippedDesc}
+    </div>`
+  }
+
+  container.innerHTML = `
+    <div class="terminal-line info">Сканирование завершено</div>
+    <div class="terminal-line success">Найдено: ${total}</div>
+    ${errors > 0 ? `<div class="terminal-line error">Ошибок: ${errors}</div>` : ''}
+    <div class="terminal-line time-line">Затрачено: ${timeStr}</div>
+    ${filterHtml}
+    <div class="terminal-status">
+      <div class="terminal-status-dot"></div>
+      <span>Готово</span>
+    </div>
+  `
+}
+
+/**
+ * Переключает индивидуальный чекбокс поставки по индексу в suppliesData.
+ * @param {number} index - Индекс в suppliesData
+ * @param {HTMLElement} el - DOM-элемент чекбокса
+ * @returns {void}
+ */
+function toggleSupplyEnabled(index, el) {
+  if (index >= 0 && index < suppliesData.length) {
+    suppliesData[index].enabled = el.checked
+  }
+  renderSuppliesStats()
+}
+
+/**
+ * Устанавливает состояние чекбоксов только для отфильтрованных (видимых) строк поставок.
+ * Как toggleAll на вкладке Склад.
+ * @param {boolean} checked - Новое состояние чекбокса
+ * @returns {void}
+ */
+function toggleAllSupplies(checked) {
+  const filtered = getFilteredSuppliesData()
+  const filteredSet = new Set(filtered.map(function(o) { return o.shipmentNum }))
+  suppliesData.forEach(function(o) {
+    if (filteredSet.has(o.shipmentNum)) o.enabled = checked
+  })
+  renderSuppliesTable()
+  renderSuppliesStats()
+}
+
+// ─── Фильтры таблицы поставок ───
+
+/** @type {Object<string, boolean>} Состояние фильтра складов: storeId → true/false */
+let suppliesStoreFilterActive = false
+let suppliesStoreFilterState = {}
+
+/**
+ * Применяет фильтр маркетплейсов (WB/Ozon) к таблице поставок.
+ * Скрывает строки, у которых маркетплейс отключён в чекбоксах.
+ * @returns {void}
+ */
+function applySuppliesMarketplaceFilter() {
+  renderSuppliesTable()
+  renderSuppliesStats()
+}
+
+/**
+ * Строит список чекбоксов складов в выпадающем фильтре.
+ * Собирает уникальные storeId из suppliesData и обновляет #storeFilterDropdown.
+ * @returns {void}
+ */
+function buildStoreFilterDropdown() {
+  const el = document.getElementById('storeFilterDropdown')
+  if (!el) return
+
+  // Текущий фильтр маркетплейсов
+  const showWb = document.getElementById('filterWb').checked
+  const showOzon = document.getElementById('filterOzon').checked
+
+  // Собираем уникальные склады только с учётом фильтра маркетплейсов
+  /** @type {Object<string, {name: string, count: number}>} */
+  const stores = {}
+  suppliesData.forEach(function(o) {
+    // Пропускаем заказы скрытые фильтром маркетплейса
+    if ((o.marketplace === 'wb' && !showWb) || (o.marketplace === 'ozon' && !showOzon)) return
+    const id = o.storeId || '_'
+    if (!stores[id]) stores[id] = { name: o.storeName || '—', count: 0 }
+    stores[id].count++
+  })
+
+  // Если фильтр ещё не инициализирован — включить все
+  if (!suppliesStoreFilterActive) {
+    suppliesStoreFilterState = {}
+    Object.keys(stores).forEach(function(id) { suppliesStoreFilterState[id] = true })
+    suppliesStoreFilterActive = true
+  }
+
+  // Сортируем: сначала WB/Ozon (по названию), потом остальные
+  const sorted = Object.entries(stores).sort(function(a, b) { return a[1].name.localeCompare(b[1].name) })
+
+  let html = '<div class="store-filter-header">Фильтр по складам</div>'
+  sorted.forEach(function(entry) {
+    const id = entry[0]
+    const info = entry[1]
+    const checked = suppliesStoreFilterState[id] !== false
+    html += '<label class="store-filter-item"><input type="checkbox" data-store-id="' + id + '" ' +
+      (checked ? 'checked' : '') + ' onchange="applySuppliesStoreFilter()"> ' +
+      esc(info.name) + ' (' + info.count + ')</label>'
+  })
+
+  el.innerHTML = html
+}
+
+/**
+ * Переключает видимость выпадающего фильтра складов.
+ * @returns {void}
+ */
+function toggleStoreFilter() {
+  const el = document.getElementById('storeFilterDropdown')
+  if (!el) return
+  const visible = el.style.display !== 'none'
+  if (!visible) buildStoreFilterDropdown()
+  el.style.display = visible ? 'none' : 'block'
+}
+
+/**
+ * Возвращает отфильтрованные данные поставок (по маркетплейсу, складу, дате).
+ * @returns {Array<Object>} Отфильтрованный массив
+ */
+function getFilteredSuppliesData() {
+  var data = [...suppliesData]
+  
+  // Фильтр маркетплейсов
+  var showWb = document.getElementById('filterWb').checked
+  var showOzon = document.getElementById('filterOzon').checked
+  data = data.filter(function(o) {
+    if (o.marketplace === 'wb' && !showWb) return false
+    if (o.marketplace === 'ozon' && !showOzon) return false
+    return true
+  })
+  
+  // Фильтр складов
+  data = data.filter(function(o) {
+    var storeId = o.storeId || '_'
+    return suppliesStoreFilterState[storeId] !== false
+  })
+  
+  // Фильтр даты (отдельный от склада — dateFilterSupplies)
+  if (dateFilterSupplies.from || dateFilterSupplies.to) {
+    data = data.filter(function(order) {
+      if (!order.orderMoment) return false
+      var orderDate = order.orderMoment.substring(0, 10)
+      if (dateFilterSupplies.from && orderDate < dateFilterSupplies.from) return false
+      if (dateFilterSupplies.to && orderDate > dateFilterSupplies.to) return false
+      return true
+    })
+  }
+  
+  return data
+}
+
+/**
+ * Применяет фильтр складов к таблице поставок.
+ * Скрывает строки с отключёнными складами.
+ * @returns {void}
+ */
+function applySuppliesStoreFilter() {
+  // Собираем текущее состояние чекбоксов
+  document.querySelectorAll('#storeFilterDropdown input[data-store-id]').forEach(function(cb) {
+    suppliesStoreFilterState[cb.dataset.storeId] = cb.checked
+  })
+  renderSuppliesTable()
+  renderSuppliesStats()
+}
+
+// Клик вне дропдауна складов — закрыть
+document.addEventListener('click', function(e) {
+  const dd = document.getElementById('storeFilterDropdown')
+  if (dd && dd.style.display !== 'none') {
+    const trigger = document.querySelector('.store-filter-trigger')
+    if (!e.target.closest('.store-header')) {
+      dd.style.display = 'none'
+    }
+  }
+})
+
+/**
+ * Выполняет массовую операцию над выбранными поставками.
+ * Собирает отмеченные shipment-ы и отправляет POST /api/batch/stream.
+ *
+ * @async
+ * @param {string} action - Тип действия ('demand' | 'cancel' | 'return')
+ * @returns {Promise<void>}
+ */
+async function supplyBatchAction(action) {
+  const token = loadToken()
+  if (!token) {
+    showStatus('Ошибка: Токен МС не найден.')
+    return
+  }
+
+  // Берём только отфильтрованные + отмеченные чекбоксами (как в Складе)
+  const filtered = getFilteredSuppliesData().filter(function(o) { return o.enabled !== false })
+  const numbers = filtered.map(function(o) { return o.shipmentNum })
+
+  if (numbers.length === 0) {
+    showStatus('Нет отмеченных поставок')
+    return
+  }
+
+  showProgress(true)
+  startOperationTimer()
+
+  const abortId = Math.random().toString(36).substring(2, 15)
+
+  try {
+    const response = await fetch('/api/batch/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: token,
+        numbers: numbers,
+        action: action,
+        abortId: abortId
+      })
+    })
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}))
+      hideProgress(false, errData.error || 'Ошибка')
+      return
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6))
+
+            if (data.type === 'progress') {
+              document.getElementById('statusText').textContent =
+                `Обработано ${data.index}/${data.total}`
+            } else if (data.type === 'done') {
+              const elapsed = stopOperationTimer()
+              const stats = data.stats || { created: 0, skipped: 0, errors: 0 }
+              hideProgress(true, 'Готово: ' + stats.created)
+              showBatchResults(stats, elapsed)
+              // Обновить статистику поставок после массовой операции
+              renderSuppliesStats()
+            } else if (data.type === 'aborted') {
+              const elapsed = stopOperationTimer()
+              hideProgress(false, 'Прервано')
+            } else if (data.type === 'error') {
+              hideProgress(false, data.error || 'Ошибка')
+              return
+            }
+          } catch (e) {
+            console.error('Supply batch SSE parse error:', e)
+          }
+        }
+      }
+    }
+  } catch (e) {
+    hideProgress(false, 'Ошибка: ' + e.message)
+    stopOperationTimer()
+  }
+}
+
+/**
+ * Выполняет одиночное действие над поставкой (отгрузка/отмена/возврат).
+ * Отправляет POST /api/batch/stream с одним номером или вызывает
+ * соответствующий эндпоинт.
+ *
+ * @async
+ * @param {string} shipmentNum - Номер отгрузки
+ * @param {string} action - Тип действия ('demand' | 'cancel' | 'return')
+ * @returns {Promise<void>}
+ */
+async function supplySingleAction(shipmentNum, action) {
+  const token = loadToken()
+  if (!token) {
+    showStatus('Ошибка: Токен МС не найден.')
+    return
+  }
+
+  showProgress(true)
+  startOperationTimer()
+
+  try {
+    const response = await fetch('/api/batch/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: token,
+        numbers: [shipmentNum],
+        action: action
+      })
+    })
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}))
+      hideProgress(false, errData.error || 'Ошибка')
+      return
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6))
+
+            if (data.type === 'progress') {
+              document.getElementById('statusText').textContent =
+                `Обработка: ${shipmentNum} — ${data.result?.status || ''}`
+            } else if (data.type === 'done') {
+              const elapsed = stopOperationTimer()
+              const stats = data.stats || { created: 0, skipped: 0, errors: 0 }
+              hideProgress(true, 'Готово')
+              showBatchResults(stats, elapsed)
+            } else if (data.type === 'aborted') {
+              stopOperationTimer()
+              hideProgress(false, 'Прервано')
+            } else if (data.type === 'error') {
+              hideProgress(false, data.error || 'Ошибка')
+              stopOperationTimer()
+              return
+            }
+          } catch (e) {
+            console.error('Supply single SSE parse error:', e)
+          }
+        }
+      }
+    }
+  } catch (e) {
+    hideProgress(false, 'Ошибка: ' + e.message)
+    stopOperationTimer()
   }
 }
 

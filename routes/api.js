@@ -24,6 +24,8 @@ const {
   saveOrdersState,
   updateOrderState
 } = require('../lib/server-utils')
+const supplies = require('../lib/supplies')
+const { getApi } = require('../lib/api-utils')
 
 /**
  * REST API роутер
@@ -733,6 +735,58 @@ module.exports = function(deps) {
   router.delete('/orders-state', (req, res) => {
     saveOrdersState({}, STATE_FILE, log)
     res.json({ success: true })
+  })
+
+  // ─── Supplies scan ───
+  /**
+   * POST /api/supplies/scan — Сканирование новых поставок (REST-версия)
+   *
+   * @header {string} x-api-token - Токен API МойСклад
+   * @header {string} x-wb-token - Токен API Wildberries
+   * @header {string} x-ozon-client-id - Client-ID Ozon
+   * @header {string} x-ozon-api-key - API-Key Ozon
+   * @returns {{ orders: Array, stats: Object }}
+   * @throws {{ error: string }}
+   */
+  router.post('/supplies/scan', async (req, res) => {
+    const msToken = req.headers['x-api-token']
+    const wbToken = req.headers['x-wb-token']
+    const ozonClientId = req.headers['x-ozon-client-id']
+    const ozonApiKey = req.headers['x-ozon-api-key']
+
+    if (!msToken) return res.json({ error: 'Требуется токен МС' })
+    if (!wbToken) return res.json({ error: 'Требуется WB токен' })
+    if (!ozonClientId || !ozonApiKey) return res.json({ error: 'Требуются Ozon credentials' })
+
+    try {
+      const result = await supplies.scanNewOrders(msToken, wbToken, ozonClientId, ozonApiKey, log)
+      res.json(result)
+    } catch (e) {
+      res.json({ error: e.message })
+    }
+  })
+
+  /**
+   * GET /api/supplies/stores — возвращает список складов (для настройки сканирования).
+   * @param {string} req.query.token - Токен API МойСклад
+   * @returns {Array<{id: string, name: string}>}
+   */
+  router.get('/supplies/stores', async (req, res) => {
+    try {
+      const token = req.query.token
+      if (!token) return res.json({ stores: [] })
+      process.env.MOYSKLAD_TOKEN = token
+      initApi(token)
+      const API = getApi()
+      const storesRes = await API.GET('entity/store?limit=100').catch(() => ({ rows: [] }))
+      const stores = (storesRes.rows || []).map(function(s) {
+        return { id: s.id, name: s.name || '—' }
+      })
+      res.json({ stores })
+    } catch (e) {
+      log('Supplies stores error: ' + e.message)
+      res.json({ stores: [] })
+    }
   })
 
   return router

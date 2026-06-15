@@ -28,6 +28,7 @@
       </div>
       <div class="header-center">
         <div class="tab-bar">
+          <button class="tab-btn" data-tab="supplies">Поставки</button>
           <button class="tab-btn active" data-tab="sklad">Склад</button>
           <button class="tab-btn" data-tab="market">Маркет</button>
         </div>
@@ -107,7 +108,7 @@
                     <th class="sortable" onclick="sortTable('paid')">Платёж</th>
                     <th class="sortable" onclick="sortTable('returnSum')">Возврат</th>
                     <th class="sortable" onclick="sortTable('statusName')">Статус</th>
-                    <th class="sortable" onclick="sortTable('reason')">Причина</th>
+                    <th class="sortable" onclick="sortTable('storeName')">Склад</th>
                     <th class="sortable date-header" onclick="toggleDateFilter()">
                       Дата
                       <span id="dateFilterBadge" class="filter-badge" style="display:none"></span>
@@ -204,6 +205,137 @@
             <button onclick="searchProductByOEM()" class="btn btn-accent">Поиск</button>
           </div>
           <div id="marketResults"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab Content: Поставки -->
+    <div class="tab-content" id="tab-supplies" style="display:none">
+      <div class="app-container">
+        <div class="left-column">
+          <div class="input-panel">
+            <div class="button-grid">
+              <button class="btn btn-ms" id="scanSuppliesBtn" onclick="scanSupplies()">
+                <img class="btn-icon" src="images/marketplace/ms-favicon.svg"> Сканировать поставки
+              </button>
+              <button onclick="abortCheck()" id="abortSuppliesBtn" class="abort-btn" style="display:none">✕</button>
+            </div>
+            <!-- Настройки сканирования -->
+            <div class="supplies-scan-settings">
+              <div class="settings-row">
+                <label class="settings-label">Даты сканирования:</label>
+                <div class="settings-dates">
+                  <div class="drp-field" style="flex:1">
+                    <label class="df-label">С:</label>
+                    <input type="text" id="scanDateFromDisplay" class="df-input" readonly placeholder="дд.мм.гггг">
+                  </div>
+                  <div class="drp-field" style="flex:1">
+                    <label class="df-label">По:</label>
+                    <input type="text" id="scanDateToDisplay" class="df-input" readonly placeholder="дд.мм.гггг">
+                  </div>
+                </div>
+              </div>
+              <div class="settings-row">
+                <label class="settings-label">Склад:</label>
+                <select id="scanStoreSelect" class="settings-select">
+                  <option value="_all">Все склады</option>
+                </select>
+              </div>
+              <div class="settings-row settings-market-row">
+                <label class="settings-label">Маркеты:</label>
+                <div class="settings-markets">
+                  <label class="market-filter wb-filter"><input type="checkbox" id="scanFilterWb" checked> WB</label>
+                  <label class="market-filter ozon-filter"><input type="checkbox" id="scanFilterOzon" checked> Ozon</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="center-column">
+          <div class="table-panel">
+            <div id="tableContainerSupplies">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:30px"><input type="checkbox" id="selectAllSupplies" onchange="toggleAllSupplies(this.checked)" checked></th>
+                    <th class="sortable" onclick="sortSuppliesTable('orderName')" data-col="orderName">Заказ</th>
+                    <th>
+                      <label class="market-filter wb-filter"><input type="checkbox" id="filterWb" checked onchange="applySuppliesMarketplaceFilter()"> WB</label>
+                      <label class="market-filter ozon-filter"><input type="checkbox" id="filterOzon" checked onchange="applySuppliesMarketplaceFilter()"> Ozon</label>
+                    </th>
+                    <th class="store-header">
+                      Склад
+                      <span class="store-filter-trigger" onclick="toggleStoreFilter()" title="Фильтр по складам">⚙️</span>
+                      <div id="storeFilterDropdown" class="store-filter-dropdown" style="display:none"></div>
+                    </th>
+                    <th class="sortable" onclick="sortSuppliesTable('sum')" data-col="sum">Сумма</th>
+                    <th class="sortable date-header" onclick="sortSuppliesTable('orderMoment')" data-col="orderMoment">Дата<span id="dateFilterBadgeSupplies" class="filter-badge" style="display:none" onclick="event.stopPropagation();toggleSuppliesDateFilter()"></span></th>
+                    <th class="sortable" onclick="sortSuppliesTable('hasDemand')" data-col="hasDemand">Отгрузка</th>
+                    <th class="sortable" onclick="sortSuppliesTable('marketplaceStatus')" data-col="marketplaceStatus">Статус маркета</th>
+                    <th class="sortable rec-header" onclick="sortSuppliesTable('recommendationType')" data-col="recommendationType">
+                      Рекомендация
+                      <span class="rec-legend-toggle" onclick="toggleRecLegend(event)" title="Пояснение статусов">?</span>
+                    </th>
+                    <th>Кнопки</th>
+                  </tr>
+                </thead>
+                <tbody id="suppliesTableBody">
+                  <tr><td colspan="10" class="empty">Нажмите "Сканировать поставки" для поиска новых заказов</td></tr>
+                </tbody>
+              </table>
+<!-- Date Filter Overlay Supplies -->
+<div id="dateFilterOverlaySupplies" class="date-filter-overlay" style="display:none"></div>
+<!-- Date Filter Popup Supplies -->
+<div id="dateFilterPopupSupplies" class="date-filter-popup" style="display:none">
+  <div class="df-range">
+    <div class="drp-row">
+      <div class="drp-field">
+        <label class="df-label">С:</label>
+        <input type="text" id="dfFromDisplaySupplies" class="df-input" readonly placeholder="дд.мм.гггг">
+      </div>
+      <div class="drp-field">
+        <label class="df-label">По:</label>
+        <input type="text" id="dfToDisplaySupplies" class="df-input" readonly placeholder="дд.мм.гггг">
+      </div>
+    </div>
+    <div id="drpCalendarSupplies" class="drp-calendar">
+      <div class="drp-header">
+        <button class="drp-nav" onclick="drpPrevMonthSupplies()">‹</button>
+        <span class="drp-title" id="drpTitleSupplies">Май 2026</span>
+        <button class="drp-nav" onclick="drpNextMonthSupplies()">›</button>
+      </div>
+      <div class="drp-weekdays">
+        <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+      </div>
+      <div class="drp-days" id="drpDaysSupplies"></div>
+    </div>
+  </div>
+  <div class="df-actions">
+    <button class="btn btn-cancel" onclick="resetSuppliesDateFilter()">Сбросить</button>
+    <button class="btn btn-accent" onclick="applySuppliesDateFilter()">Применить</button>
+  </div>
+</div>
+            </div>
+          </div>
+        </div>
+        <div class="bulk-actions">
+          <button onclick="supplyBatchAction('demand')" class="btn btn-demand">Отгрузка</button>
+          <button onclick="supplyBatchAction('cancel')" class="btn btn-cancel">Отмена</button>
+        </div>
+        <div class="stats-panel stats-final">
+          <div id="statsFinalOutputSupplies" class="stats-output idle">
+            <div class="terminal-message">Ожидание сканирования</div>
+          </div>
+        </div>
+        <div class="right-column">
+          <div class="stats-panel stats-current">
+            <div class="stats-header">Статистика поставок</div>
+            <div id="suppliesStatsOutput" class="stats-output"></div>
+          </div>
+          <div class="stats-panel stats-mismatch">
+            <div class="stats-header">Контроль статусов</div>
+            <div id="suppliesMismatchOutput" class="stats-output"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -376,6 +508,10 @@
         const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
         if (activeBtn) activeBtn.classList.add('active');
         localStorage.setItem('simoto_active_tab', tabName);
+        // Инициализация настроек сканирования при открытии вкладки поставок
+        if (tabName === 'supplies' && typeof initSuppliesScanSettings === 'function') {
+          initSuppliesScanSettings();
+        }
       }
       // Initialize
       document.addEventListener('DOMContentLoaded', () => {
@@ -480,6 +616,18 @@
         stickerModal.addEventListener('click', function (e) {
           if (e.target === stickerModal) stickerModal.classList.add('hidden');
         });
+
+        // Supplies date picker
+        var drpDaysSupplies = document.getElementById('drpDaysSupplies')
+        if (drpDaysSupplies) {
+          drpDaysSupplies.addEventListener('click', function(e) {
+            var dayEl = e.target.closest('.drp-day:not(.drp-empty)')
+            if (!dayEl) return
+            var ds = dayEl.dataset.date
+            if (!ds) return
+            drpSelectSupplies(ds)
+          })
+        }
 
         // Push archive modal close handlers
         document.getElementById('pushArchiveCloseBtn').addEventListener('click', function() {
@@ -1151,6 +1299,48 @@
           });
       }
 
+      // ── Recommendation legend toggle ──
+      function toggleRecLegend(e) {
+        e.stopPropagation();
+        var popup = document.getElementById('recLegendPopup');
+        var overlay = document.getElementById('recLegendOverlay');
+        if (!popup) return;
+        var isVisible = popup.classList.contains('show');
+        // Закрыть все остальные
+        document.querySelectorAll('.rec-legend-popup').forEach(function(el) { el.classList.remove('show'); });
+        document.querySelectorAll('.rec-legend-overlay').forEach(function(el) { el.classList.remove('show'); });
+        if (!isVisible) {
+          popup.classList.add('show');
+          if (overlay) overlay.classList.add('show');
+        }
+      }
+      // Закрыть по клику вне попапа (в т.ч. на оверлей)
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.rec-legend-popup') && !e.target.closest('.rec-legend-toggle')) {
+          document.querySelectorAll('.rec-legend-popup').forEach(function(el) { el.classList.remove('show'); });
+          document.querySelectorAll('.rec-legend-overlay').forEach(function(el) { el.classList.remove('show'); });
+        }
+      });
+
+      // Закрыть по Escape
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+          document.querySelectorAll('.rec-legend-popup').forEach(function(el) { el.classList.remove('show'); });
+          document.querySelectorAll('.rec-legend-overlay').forEach(function(el) { el.classList.remove('show'); });
+        }
+      });
+
     </script>
+    <!-- Recommendation legend popup + overlay (на уровне body) -->
+    <div id="recLegendPopup" class="rec-legend-popup">
+      <div class="rec-legend-item"><span class="rec-icon">⏳</span> Ожидание данных маркета — заказ ещё не найден на площадке</div>
+      <div class="rec-legend-item"><span class="rec-icon">📦</span> Ожидает на маркете — заказ принят, ждёт доставки</div>
+      <div class="rec-legend-item"><span class="rec-icon">✅</span> Оформить отгрузку — товар доставлен, можно отгружать</div>
+      <div class="rec-legend-item"><span class="rec-icon">❌</span> Отменить в МС — на площадке отменён</div>
+      <div class="rec-legend-item"><span class="rec-icon">↩️</span> Оформить возврат — покупатель вернул товар</div>
+      <div class="rec-legend-item"><span class="rec-icon">⚠️</span> Проверить отгрузку — отгрузка есть, но на площадке проблема</div>
+      <div class="rec-legend-item"><span class="rec-icon">✅</span> Всё ок — всё хорошо</div>
+    </div>
+    <div id="recLegendOverlay" class="rec-legend-overlay"></div>
   </body>
 </html>

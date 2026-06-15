@@ -5,6 +5,8 @@
   --bg-dark: #0a0a0a;
   --bg-card: rgba(20, 20, 20, 0.8);
   --bg-card-hover: rgba(30, 30, 30, 0.9);
+  --bg-primary: rgba(15, 15, 15, 0.8);
+  --bg-secondary: rgba(25, 25, 25, 0.8);
   --accent: #f97316;
   --accent-hover: #fb923c;
   --accent-glow: rgba(249, 115, 22, 0.25);
@@ -648,6 +650,29 @@ th.asc::after {
 th.desc::after {
   content: ' ↓';
 }
+
+/* Supplies table sort indicators */
+#tableContainerSupplies th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+#tableContainerSupplies th.sortable:hover {
+  opacity: 0.8;
+}
+#tableContainerSupplies th.sort-asc::after,
+#tableContainerSupplies th.sort-desc::after {
+  content: '';
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.7em;
+}
+#tableContainerSupplies th.sort-asc::after {
+  content: ' ↑';
+}
+#tableContainerSupplies th.sort-desc::after {
+  content: ' ↓';
+}
+
 th.cycle::after {
   content: ' [' attr(data-cycle-status) ']';
   font-size: 0.7rem;
@@ -3851,4 +3876,306 @@ span[id$='Dot']:not(#statusDot),
     padding: 8px 12px;
     font-size: 0.8rem;
   }
+}
+
+/* === Supplies Tab: Row Recommendations === */
+.row-demand { border-left: 4px solid #22c55e; }
+.row-cancel { border-left: 4px solid #ef4444; }
+.row-return { border-left: 4px solid #f59e0b; }
+.row-ok { border-left: 4px solid #3b82f6; }
+.row-waiting { border-left: 4px solid #64748b; }
+.row-check { border-left: 4px solid #a855f7; }
+
+/* Marketplace tags */
+.marketplace-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.wb-tag {
+  background: rgba(111, 1, 251, 0.15);
+  color: #b388ff;
+  border: 1px solid rgba(111, 1, 251, 0.3);
+}
+.ozon-tag {
+  background: rgba(0, 91, 255, 0.15);
+  color: #64b5f6;
+  border: 1px solid rgba(0, 91, 255, 0.3);
+}
+
+/* Marketplace filter checkboxes in header */
+.market-filter {
+  cursor: pointer;
+  font-size: 11px;
+  user-select: none;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+.market-filter input {
+  vertical-align: middle;
+  margin-right: 2px;
+}
+.wb-filter { color: #b388ff; }
+.ozon-filter { color: #64b5f6; }
+
+/* Store column header + dropdown filter */
+.store-header {
+  position: relative;
+  white-space: nowrap;
+}
+.store-filter-trigger {
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.store-filter-trigger:hover { opacity: 1; }
+.store-filter-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  background: #1a1a1a;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  padding: 8px;
+  min-width: 200px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.store-filter-header {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.store-filter-item {
+  display: block;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 4px;
+  user-select: none;
+  white-space: nowrap;
+}
+.store-filter-item:hover { color: #fff; }
+.store-filter-item input { vertical-align: middle; margin-right: 4px; }
+
+/* Recommendation cell */
+.rec-cell {
+  font-size: 0.8rem;
+  font-weight: 600;
+  word-break: break-word;
+  hyphens: auto;
+}
+#tableContainerSupplies th.rec-header {
+  min-width: 140px;
+}
+
+/* Supplies stats rows */
+#suppliesStatsOutput .stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border-light);
+}
+#suppliesStatsOutput .stat-row:last-child {
+  border-bottom: none;
+}
+#suppliesStatsOutput .stat-label {
+  color: var(--text-muted);
+}
+#suppliesStatsOutput .stat-value {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Supplies final stats panel */
+#statsFinalOutputSupplies {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.7rem;
+}
+#statsFinalOutputSupplies.idle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  color: var(--text-muted);
+}
+
+/* Supplies table container — прокрутка */
+#tableContainerSupplies {
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  min-height: 80px;
+}
+
+/* Supplies bulk actions in context of supplies tab */
+#tab-supplies .bulk-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* Supplies header styling to match existing */
+#tab-supplies .stats-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#tab-supplies .stats-header::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ─── Supplies: Recommendation Legend ─── */
+.rec-legend-toggle {
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-left: 4px;
+  vertical-align: middle;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 50%;
+  border: 1px solid var(--text-muted);
+  transition: all 0.2s;
+}
+.rec-legend-toggle:hover {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}
+/* Recommendation legend overlay (как у date-filter-overlay) */
+.rec-legend-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 9998;
+}
+.rec-legend-overlay.show { display: block; }
+
+.rec-legend-popup {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  background: #141414;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 360px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.rec-legend-popup.show { display: block; }
+.rec-legend-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  word-break: break-word;
+}
+.rec-legend-item .rec-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.rec-header {
+  position: relative;
+  display: inline-block;
+}
+
+/* ─── Supplies: Day Separator ─── */
+tr.day-separator td {
+  padding: 4px 8px !important;
+  background: var(--bg-secondary) !important;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+tr.day-separator td span {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--bg-card);
+  border-radius: 4px;
+}
+
+/* ─── Supplies: Scan Settings ─── */
+.supplies-scan-settings {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+}
+.settings-row {
+  margin-bottom: 8px;
+}
+.settings-row:last-child { margin-bottom: 0; }
+.settings-label {
+  display: block;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.settings-dates {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+}
+.settings-select {
+  width: 100%;
+  padding: 4px 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-family: inherit;
+}
+.settings-market-row .settings-markets {
+  display: flex;
+  gap: 8px;
+}
+.settings-markets .market-filter {
+  font-size: 0.75rem;
 }

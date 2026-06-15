@@ -34,6 +34,7 @@ const { exportStickerPdf } = require('./lib/print')
 const wbOzonSync = require('./integrations/wb_ozon_sync')
 const wb = require('./lib/wb')
 const ozon = require('./lib/ozon')
+const supplies = require('./lib/supplies')
 const {
   wbUrlToDataUri,
   formatDescriptionForDisplay,
@@ -172,12 +173,12 @@ app.get('/', (req, res) => {
 const apiDeps = {
   abortSignals, sseConnections, log, initApi, moduleRoot, STATE_FILE,
   isShuttingDown: () => isShuttingDown,
-  wb, ozon, wbOzonSync, startBatPath,
+  wb, ozon, wbOzonSync, startBatPath, supplies,
   gracefulShutdown
 }
 
 app.use('/api', require('./routes/api')(apiDeps))
-app.use('/api', require('./routes/sse')({ sseConnections, abortSignals, log, initApi, moduleRoot, wb, ozon }))
+app.use('/api', require('./routes/sse')({ sseConnections, abortSignals, log, initApi, moduleRoot, wb, ozon, supplies }))
 app.use('/api/market', require('./routes/market')({ log, moduleRoot, wb, ozon }))
 app.use('/api', require('./routes/debug')({ STATE_FILE, log }))
 
