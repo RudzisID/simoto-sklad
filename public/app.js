@@ -4270,8 +4270,12 @@ function createSuppliesRow(order) {
       'cancel': 'Отменён', 'cancelled': 'Отменён',
       'sale': 'Продан', 'delivered': 'Доставлен',
       'return': 'Возврат', 'returning': 'Возвращается',
+      'returned': 'Возвращён',
       'awaiting_delivery': 'Ожидает доставки',
-      'delivering': 'Доставляется'
+      'awaiting_packaging': 'Ожидает упаковки',
+      'awaiting_deliver': 'Ожидает отгрузки',
+      'delivering': 'Доставляется',
+      'accepted': 'Принят'
     }
     return map[status.toLowerCase()] || status
   }
