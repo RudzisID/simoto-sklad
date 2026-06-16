@@ -3702,7 +3702,10 @@ function saveSuppliesState() {
         recommendation: o.recommendation,
         recommendationType: o.recommendationType,
         marketplaceStatus: o.marketplaceStatus,
-        marketplaceFound: o.marketplaceFound
+        marketplaceFound: o.marketplaceFound,
+        marketplaceIsCancelled: o.marketplaceIsCancelled,
+        marketplaceIsDelivered: o.marketplaceIsDelivered,
+        marketplaceIsReturn: o.marketplaceIsReturn
       }
     })
     localStorage.setItem(SUPPLIES_STORAGE_KEY, JSON.stringify(light))
@@ -4280,6 +4283,47 @@ function createSuppliesRow(order) {
     return map[status.toLowerCase()] || status
   }
 
+  /**
+   * Возвращает читаемый статус заказа поставки для отображения в таблице.
+   *
+   * Согласован с decision matrix в lib/supplies.js:
+   *   - Отменён → всегда "Отменён", рекомендация укажет действие
+   *   - Доставлен + demand = "Принят" (поставка уже создана в МС)
+   *   - Доставлен + нет demand = "Доставлен" (ждёт оформления отгрузки)
+   *   - Возврат → "Возврат"
+   *   - Есть demand + не отменён/не возврат → "Принят"
+   *   - Найден, но без статуса → "В обработке"
+   *   - Не найден → "Не найден"
+   *
+   * @param {Object} order - Объект поставки
+   * @returns {string} Текст статуса
+   */
+  function getSuppliesStatusText(order) {
+    // Отменён на маркете
+    if (order.marketplaceIsCancelled) return 'Отменён'
+
+    // Возврат (выше приоритет, чем "Доставлен")
+    if (order.marketplaceIsReturn) return 'Возврат'
+
+    // Доставлен/реализован на маркете
+    if (order.marketplaceIsDelivered) {
+      if (order.hasDemand) return 'Принят'
+      return 'Доставлен'
+    }
+
+    // Найден в кэше маркета — если уже есть demand, считаем принятым
+    if (order.marketplaceFound) {
+      if (order.hasDemand) return 'Принят'
+      return 'В обработке'
+    }
+
+    // Заказ не найден в кэшах маркета, но demand есть
+    if (order.hasDemand) return 'Принят'
+
+    // Не найден в кэшах маркета
+    return 'Не найден'
+  }
+
   // Отображаем только номер заказа МС и номер маркета второй строкой
   var orderName = order.orderName || '-'
   var marketplaceNum = order.shipmentNum || ''
@@ -4296,7 +4340,7 @@ function createSuppliesRow(order) {
     <td>${fmtSum(order.sum)}</td>
     <td class="date-cell">${formatDate(order.orderMoment)}</td>
     <td>${order.hasDemand ? esc(order.demandName || 'Есть') : '<span class="status-no">—</span>'}</td>
-    <td>${order.marketplaceFound ? esc(translateStatus(order.marketplaceStatus)) : '<span class="status-no">Не найден</span>'}</td>
+    <td>${esc(getSuppliesStatusText(order))}</td>
     <td class="rec-cell" title="${esc(order.recommendation)}">${esc(order.recommendation)}</td>
     <td class="action-cell">${actionsHtml}</td>
   `
@@ -4826,7 +4870,15 @@ async function supplyBatchAction(action) {
   }
 
   // Берём только отфильтрованные + отмеченные чекбоксами (как в Складе)
-  const filtered = getFilteredSuppliesData().filter(function(o) { return o.enabled !== false })
+  let filtered = getFilteredSuppliesData().filter(function(o) { return o.enabled !== false })
+
+  // Для массовой отгрузки Озон — пропускаем заказы со статусом "Ожидает упаковки"
+  if (action === 'demand') {
+    filtered = filtered.filter(function(o) {
+      return !(o.marketplace === 'ozon' && o.marketplaceStatus === 'awaiting_packaging')
+    })
+  }
+
   const numbers = filtered.map(function(o) { return o.shipmentNum })
 
   if (numbers.length === 0) {
