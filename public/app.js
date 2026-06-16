@@ -3753,8 +3753,8 @@ function initSuppliesScanSettings() {
   }
 
   var today = new Date()
-  var twoDaysAgo = new Date(today)
-  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2)
+  var threeDaysAgo = new Date(today)
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
 
   var fmtISO = function(d) {
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
@@ -3764,11 +3764,11 @@ function initSuppliesScanSettings() {
   }
 
   // Сохраняем в JS-состояние
-  suppliesScanDates.from = fmtISO(twoDaysAgo)
+  suppliesScanDates.from = fmtISO(threeDaysAgo)
   suppliesScanDates.to = fmtISO(today)
 
   // Отображаем в полях
-  if (fromDisplayEl) fromDisplayEl.value = fmtDisplay(twoDaysAgo)
+  if (fromDisplayEl) fromDisplayEl.value = fmtDisplay(threeDaysAgo)
   var toDisplayEl = document.getElementById('scanDateToDisplay')
   if (toDisplayEl) toDisplayEl.value = fmtDisplay(today)
 
@@ -4245,6 +4245,7 @@ function createSuppliesRow(order) {
   const tr = document.createElement('tr')
   tr.className = order.recommendationType ? 'row-' + order.recommendationType : ''
   tr.dataset.storeId = order.storeId || '_'
+  tr.dataset.shipment = order.shipmentNum || ''
 
   const marketplaceIcon = order.marketplace === 'wb'
     ? '<span class="marketplace-tag wb-tag">WB</span>'
@@ -4936,8 +4937,76 @@ async function supplyBatchAction(action) {
             const data = JSON.parse(line.slice(6))
 
             if (data.type === 'progress') {
+              var result = data.result
+              var stats = data.stats || { created: 0, skipped: 0, errors: 0 }
+
+              if (result && result.shipmentNum) {
+                // --- Найти заказ в suppliesData по номеру отправления ---
+                var idx = suppliesData.findIndex(function(o) {
+                  return o.shipmentNum === result.shipmentNum
+                })
+
+                if (idx !== -1) {
+                  // --- Обновить поля suppliesData по статусу результата ---
+                  if (result.status === 'created') {
+                    if (action === 'demand') {
+                      suppliesData[idx].hasDemand = true
+                      suppliesData[idx].demandName = result.demandName || null
+                      suppliesData[idx].canDemand = false
+                      suppliesData[idx].recommendation = '✅ Отгрузка создана'
+                      suppliesData[idx].recommendationType = 'ok'
+                    } else if (action === 'cancel') {
+                      suppliesData[idx].canCancel = false
+                      suppliesData[idx].recommendation = '✗ Заказ отменён'
+                      suppliesData[idx].recommendationType = 'ok'
+                    }
+                  } else if (result.status === 'error') {
+                    suppliesData[idx].lastAction = 'error'
+                    suppliesData[idx].recommendation = '❌ ' + (result.error || 'Ошибка')
+                    suppliesData[idx].recommendationType = 'error'
+                  }
+                  // result.status === 'skipped' — данные не меняем, только логируем
+
+                  // --- Добавить строку в statsFinalOutputSupplies ---
+                  var suppliesFinalEl = document.getElementById('statsFinalOutputSupplies')
+                  if (suppliesFinalEl) {
+                    suppliesFinalEl.classList.remove('idle')
+                    var lineClass = 'terminal-line'
+                    var icon = ''
+                    if (result.status === 'created') {
+                      lineClass += ' success'
+                      icon = '📦'
+                    } else if (result.status === 'error') {
+                      lineClass += ' error'
+                      icon = '❌'
+                    } else {
+                      lineClass += ' warning'
+                      icon = '⏭'
+                    }
+                    var detail = ''
+                    if (result.status === 'created' && action === 'demand' && result.demandName) {
+                      detail = ' — ' + result.demandName
+                    } else if (result.status === 'error' && result.error) {
+                      detail = ' — ' + result.error
+                    }
+                    suppliesFinalEl.innerHTML += '<div class="' + lineClass + '">' + icon + ' ' + result.shipmentNum + detail + '</div>'
+                  }
+
+                  // --- Перерисовать строку таблицы ---
+                  var oldTr = document.querySelector('#suppliesTableBody tr[data-shipment="' + result.shipmentNum + '"]')
+                  if (oldTr) {
+                    var newTr = createSuppliesRow(suppliesData[idx])
+                    if (newTr) oldTr.replaceWith(newTr)
+                  }
+                }
+              }
+
+              // --- Обновить счётчик ---
               document.getElementById('statusText').textContent =
-                `Обработано ${data.index}/${data.total}`
+                'Обработано ' + data.index + '/' + data.total + ' (✅ ' + stats.created + ' ⏭ ' + stats.skipped + ' ❌ ' + stats.errors + ')'
+
+              // --- Обновить статистику поставок инкрементально ---
+              renderSuppliesStats()
             } else if (data.type === 'done') {
               const elapsed = stopOperationTimer()
               const stats = data.stats || { created: 0, skipped: 0, errors: 0 }
@@ -5068,5 +5137,34 @@ async function supplySingleAction(shipmentNum, action) {
     hideProgress(false, 'Ошибка: ' + e.message)
     stopOperationTimer()
   }
+}
+
+/**
+ * Переносит отмеченные (чекбоксы) и отображаемые (после фильтров) номера
+ * поставок на вкладку «Склад», заполняя поле ввода.
+ * Сортировка таблицы не влияет на порядок номеров — они передаются как есть.
+ *
+ * @returns {void}
+ */
+function transferToSklad() {
+  // Собрать отмеченные номера из отфильтрованных данных поставок
+  var filtered = getFilteredSuppliesData().filter(function(o) {
+    return o.enabled !== false
+  })
+  var numbers = filtered.map(function(o) { return o.shipmentNum })
+
+  if (numbers.length === 0) {
+    showStatus('Нет отмеченных поставок')
+    return
+  }
+
+  // Заполнить textarea на вкладке Склад
+  var input = document.getElementById('numbersInput')
+  if (input) {
+    input.value = numbers.join('\n')
+  }
+
+  // Переключиться на вкладку Склад
+  switchTab('sklad')
 }
 
