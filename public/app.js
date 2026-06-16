@@ -4879,6 +4879,15 @@ async function supplyBatchAction(action) {
     })
   }
 
+  // Отправляем только те заказы, которые реально можно обработать (уже проверено decision matrix supplies.js).
+  // Сервер всё равно перепроверяет через checkOrder, но это избегает лишних API-запросов
+  // и путаницы, когда на сервере заказ не находится по номеру отправления.
+  if (action === 'cancel') {
+    filtered = filtered.filter(function(o) { return o.canCancel === true })
+  } else if (action === 'demand') {
+    filtered = filtered.filter(function(o) { return o.canDemand === true })
+  }
+
   const numbers = filtered.map(function(o) { return o.shipmentNum })
 
   if (numbers.length === 0) {
@@ -4933,7 +4942,17 @@ async function supplyBatchAction(action) {
               const elapsed = stopOperationTimer()
               const stats = data.stats || { created: 0, skipped: 0, errors: 0 }
               hideProgress(true, 'Готово: ' + stats.created)
-              showBatchResults(stats, elapsed)
+              // Показываем результат в панели поставок (не в statsFinalOutput Склада)
+              var suppliesFinalEl = document.getElementById('statsFinalOutputSupplies')
+              if (suppliesFinalEl) {
+                suppliesFinalEl.classList.remove('idle')
+                suppliesFinalEl.innerHTML =
+                  '<div class="terminal-line info">Массовая операция: ' + (stats.created > 0 ? 'выполнена' : 'завершена') + '</div>' +
+                  '<div class="terminal-line success">Создано: ' + stats.created + '</div>' +
+                  '<div class="terminal-line warning">Пропущено: ' + stats.skipped + '</div>' +
+                  (stats.errors > 0 ? '<div class="terminal-line error">Ошибок: ' + stats.errors + '</div>' : '') +
+                  '<div class="terminal-line time-line">Затрачено: ' + getFormattedTime(elapsed) + '</div>'
+              }
               // Обновить статистику поставок после массовой операции
               renderSuppliesStats()
             } else if (data.type === 'aborted') {
