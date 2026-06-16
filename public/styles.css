@@ -4076,8 +4076,6 @@ span[id$='Dot']:not(#statusDot),
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   z-index: 9998;
 }
 .rec-legend-overlay.show { display: block; }
@@ -4161,6 +4159,16 @@ tr.day-separator td span {
   display: flex;
   gap: 8px;
   flex: 1;
+  flex-wrap: wrap;
+  position: relative;
+}
+
+#drpCalendarScan {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 200;
+  width: 240px;
 }
 .settings-select {
   width: 100%;
@@ -4172,10 +4180,4 @@ tr.day-separator td span {
   font-size: 0.75rem;
   font-family: inherit;
 }
-.settings-market-row .settings-markets {
-  display: flex;
-  gap: 8px;
-}
-.settings-markets .market-filter {
-  font-size: 0.75rem;
-}
+

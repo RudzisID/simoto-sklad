@@ -338,6 +338,14 @@ function startServer(retryCount = 0) {
     })
     const { serverStarted } = require('./lib/logger')
     serverStarted(PORT)
+
+    // Фоновая предзагрузка кэшей маркетплейсов, чтобы первый скан поставок не ждал
+    if (process.env.WB_TOKEN) {
+      wb.refreshIfStale(process.env.WB_TOKEN, log).catch(e => log(`[Startup] WB cache preload error: ${e.message}`))
+    }
+    if (process.env.OZON_CLIENT_ID && process.env.OZON_API_KEY) {
+      ozon.refreshIfStale(process.env.OZON_CLIENT_ID, process.env.OZON_API_KEY, log).catch(e => log(`[Startup] Ozon cache preload error: ${e.message}`))
+    }
   })
 
   // Запускаем HTTPS сервер (для камеры с телефона/планшета)

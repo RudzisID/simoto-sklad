@@ -3372,6 +3372,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.stopPropagation()
     })
   }
+
+  // Делегированный клик по дням календаря сканирования
+  const drpDaysScan = document.getElementById('drpDaysScan')
+  if (drpDaysScan) {
+    drpDaysScan.addEventListener('click', function (e) {
+      const dayEl = e.target.closest('.drp-day:not(.drp-empty)')
+      if (!dayEl) return
+      const ds = dayEl.dataset.date
+      if (!ds) return
+      drpSelectScan(ds)
+      e.stopPropagation()
+    })
+  }
 })
 
 // Глобальный обработчик закрытия попапа фильтра по дате
@@ -3390,6 +3403,7 @@ document.addEventListener('keydown', function (e) {
   if (popup && popup.style.display === 'block') closeDateFilter()
   const popupSupplies = document.getElementById('dateFilterPopupSupplies')
   if (popupSupplies && popupSupplies.style.display === 'block') closeSuppliesDateFilter()
+  if (scanCalendarOpen) closeScanCalendar()
 })
 
 // Скрывать попап даты при прокрутке
@@ -3398,6 +3412,7 @@ window.addEventListener('scroll', function () {
   if (popup && popup.style.display === 'block') closeDateFilter()
   const popupSupplies = document.getElementById('dateFilterPopupSupplies')
   if (popupSupplies && popupSupplies.style.display === 'block') closeSuppliesDateFilter()
+  if (scanCalendarOpen) closeScanCalendar()
 }, true)
 
 // Глобальный обработчик закрытия supplies date filter
@@ -3408,6 +3423,16 @@ document.addEventListener('click', function(e) {
   if (th && th.contains(e.target)) return
   if (popup.contains(e.target)) return
   closeSuppliesDateFilter()
+})
+
+// Глобальный обработчик закрытия календаря сканирования
+document.addEventListener('click', function(e) {
+  if (!scanCalendarOpen) return
+  var cal = document.getElementById('drpCalendarScan')
+  if (!cal || cal.style.display !== 'block') return
+  var settings = document.querySelector('.supplies-scan-settings')
+  if (settings && settings.contains(e.target)) return
+  closeScanCalendar()
 })
 
 /**
@@ -3711,27 +3736,54 @@ function loadSavedSuppliesAndRender() {
 
 /**
  * Инициализирует настройки сканирования: устанавливает даты по умолчанию (последние 2 дня)
- * и загружает список складов из API.
+ * в display-поля и suppliesScanDates, загружает список складов из API.
+ * Вызывается один раз (lazy-init) при первом открытии вкладки.
  * @returns {void}
  */
 function initSuppliesScanSettings() {
-  // Инициализация только при первом открытии
+  // ─── Даты: lazy-init ───
   var fromDisplayEl = document.getElementById('scanDateFromDisplay')
-  if (fromDisplayEl && fromDisplayEl.value) return
+  if (fromDisplayEl && fromDisplayEl.value) {
+    // Уже было инициализировано — только загружаем склады
+    loadScanStores()
+    return
+  }
 
-  // Даты: последние 2 дня
   var today = new Date()
   var twoDaysAgo = new Date(today)
   twoDaysAgo.setDate(twoDaysAgo.getDate() - 2)
-  var fmtDate = function(d) {
+
+  var fmtISO = function(d) {
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
   }
-  var fromEl = document.getElementById('scanDateFrom')
-  var toEl = document.getElementById('scanDateTo')
-  if (fromEl) fromEl.value = fmtDate(twoDaysAgo)
-  if (toEl) toEl.value = fmtDate(today)
-  
-  // Загружаем склады через API (используем токен)
+  var fmtDisplay = function(d) {
+    return String(d.getDate()).padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + d.getFullYear()
+  }
+
+  // Сохраняем в JS-состояние
+  suppliesScanDates.from = fmtISO(twoDaysAgo)
+  suppliesScanDates.to = fmtISO(today)
+
+  // Отображаем в полях
+  if (fromDisplayEl) fromDisplayEl.value = fmtDisplay(twoDaysAgo)
+  var toDisplayEl = document.getElementById('scanDateToDisplay')
+  if (toDisplayEl) toDisplayEl.value = fmtDisplay(today)
+
+  // Скрытые поля (на случай если JS-состояние недоступно)
+  var fromHidden = document.getElementById('scanDateFrom')
+  var toHidden = document.getElementById('scanDateTo')
+  if (fromHidden) fromHidden.value = suppliesScanDates.from
+  if (toHidden) toHidden.value = suppliesScanDates.to
+
+  // Загружаем склады
+  loadScanStores()
+}
+
+/**
+ * Загружает список складов из API в select#scanStoreSelect.
+ * @returns {void}
+ */
+function loadScanStores() {
   var token = loadToken()
   if (!token) return
   fetch('/api/supplies/stores?token=' + encodeURIComponent(token))
@@ -3739,7 +3791,6 @@ function initSuppliesScanSettings() {
     .then(function(data) {
       var select = document.getElementById('scanStoreSelect')
       if (!select) return
-      // Очищаем кроме "Все склады"
       while (select.options.length > 1) select.remove(1)
       ;(data.stores || []).forEach(function(s) {
         var opt = document.createElement('option')
@@ -3755,6 +3806,178 @@ function initSuppliesScanSettings() {
 let suppliesController = null
 /** @type {boolean} Режим realtime для таблицы поставок */
 let suppliesRealtimeMode = false
+
+/** @type {{ from: string, to: string }} Даты сканирования поставок (ISO: YYYY-MM-DD) */
+let suppliesScanDates = { from: '', to: '' }
+/** @type {{ month: number, year: number }} Состояние календаря сканирования */
+let drpStateScan = { month: new Date().getMonth(), year: new Date().getFullYear() }
+/** @type {boolean} Флаг открытия календаря сканирования */
+let scanCalendarOpen = false
+
+// ─── Supplies Scan Date Calendar ───
+
+/**
+ * Переключает отображение календаря для выбора дат сканирования.
+ * @returns {void}
+ */
+function toggleScanCalendar() {
+  var cal = document.getElementById('drpCalendarScan')
+  if (!cal) return
+  if (cal.style.display === 'block') { closeScanCalendar(); return }
+  // Синхронизируем месяц/год с выбранной датой from или с сегодня
+  drpStateScan.month = suppliesScanDates.from
+    ? parseInt(suppliesScanDates.from.split('-')[1]) - 1
+    : new Date().getMonth()
+  drpStateScan.year = suppliesScanDates.from
+    ? parseInt(suppliesScanDates.from.split('-')[0])
+    : new Date().getFullYear()
+  drpRenderScan()
+  cal.style.display = 'block'
+  scanCalendarOpen = true
+}
+
+/**
+ * Закрывает календарь выбора дат сканирования.
+ * @returns {void}
+ */
+function closeScanCalendar() {
+  var cal = document.getElementById('drpCalendarScan')
+  if (cal) cal.style.display = 'none'
+  scanCalendarOpen = false
+}
+
+/**
+ * Отрисовывает календарь выбора дат сканирования в #drpDaysScan.
+ * Аналогичен drpRender() на вкладке Склад и drpRenderSupplies() для табличного фильтра.
+ * @returns {void}
+ */
+function drpRenderScan() {
+  var daysEl = document.getElementById('drpDaysScan')
+  if (!daysEl) return
+  var month = drpStateScan.month
+  var year = drpStateScan.year
+  var months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
+  var titleEl = document.getElementById('drpTitleScan')
+  if (titleEl) titleEl.textContent = months[month] + ' ' + year
+
+  var firstDay = new Date(year, month, 1).getDay()
+  var startOffset = firstDay === 0 ? 6 : firstDay - 1
+  var daysInMonth = new Date(year, month + 1, 0).getDate()
+  var today = new Date()
+  var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0')
+
+  var from = suppliesScanDates.from
+  var to = suppliesScanDates.to
+
+  var html = ''
+  for (var i = 0; i < startOffset; i++) html += '<span class="drp-day drp-empty"></span>'
+  for (var d = 1; d <= daysInMonth; d++) {
+    var ds = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0')
+    var cls = 'drp-day'
+    if (ds === todayStr) cls += ' drp-today'
+    if (ds === from) cls += ' drp-from'
+    if (ds === to) cls += ' drp-to'
+    if (from && to && ds > from && ds < to) cls += ' drp-range'
+    html += '<span class="' + cls + '" data-date="' + ds + '">' + d + '</span>'
+  }
+  daysEl.innerHTML = html
+}
+
+/**
+ * Обрабатывает выбор даты в календаре сканирования.
+ * Первый клик — from, второй — to (авто-свап если to < from).
+ * @param {string} dateStr - Дата в формате YYYY-MM-DD
+ * @returns {void}
+ */
+function drpSelectScan(dateStr) {
+  if (!suppliesScanDates.from || (suppliesScanDates.from && suppliesScanDates.to)) {
+    suppliesScanDates.from = dateStr
+    suppliesScanDates.to = ''
+  } else {
+    suppliesScanDates.to = dateStr
+    if (suppliesScanDates.to < suppliesScanDates.from) {
+      var tmp = suppliesScanDates.from
+      suppliesScanDates.from = suppliesScanDates.to
+      suppliesScanDates.to = tmp
+    }
+  }
+  drpUpdateDisplayScan()
+  drpRenderScan()
+}
+
+/**
+ * Обновляет display-поля для дат сканирования из suppliesScanDates.
+ * @returns {void}
+ */
+function drpUpdateDisplayScan() {
+  var fmt = function(iso) {
+    if (!iso) return ''
+    var p = iso.split('-')
+    return p[2] + '.' + p[1] + '.' + p[0]
+  }
+  var fromEl = document.getElementById('scanDateFromDisplay')
+  var toEl = document.getElementById('scanDateToDisplay')
+  if (fromEl) fromEl.value = fmt(suppliesScanDates.from)
+  if (toEl) toEl.value = fmt(suppliesScanDates.to)
+  // Скрытые поля (резерв)
+  var fromHidden = document.getElementById('scanDateFrom')
+  var toHidden = document.getElementById('scanDateTo')
+  if (fromHidden) fromHidden.value = suppliesScanDates.from
+  if (toHidden) toHidden.value = suppliesScanDates.to
+}
+
+/**
+ * Переключает календарь на предыдущий месяц.
+ * @returns {void}
+ */
+function drpPrevMonthScan() {
+  drpStateScan.month--
+  if (drpStateScan.month < 0) { drpStateScan.month = 11; drpStateScan.year-- }
+  drpRenderScan()
+}
+
+/**
+ * Переключает календарь на следующий месяц.
+ * @returns {void}
+ */
+function drpNextMonthScan() {
+  drpStateScan.month++
+  if (drpStateScan.month > 11) { drpStateScan.month = 0; drpStateScan.year++ }
+  drpRenderScan()
+}
+
+/**
+ * Применяет выбранные даты сканирования: обновляет display-поля и скрывает календарь.
+ * @returns {void}
+ */
+function applyScanDates() {
+  drpUpdateDisplayScan()
+  closeScanCalendar()
+}
+
+/**
+ * Сбрасывает даты сканирования на значения по умолчанию:
+ * from = 2 дня назад, to = сегодня.
+ * @returns {void}
+ */
+function resetScanDates() {
+  var today = new Date()
+  var twoDaysAgo = new Date(today)
+  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2)
+
+  var fmt = function(d) {
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+  }
+
+  suppliesScanDates.from = fmt(twoDaysAgo)
+  suppliesScanDates.to = fmt(today)
+
+  drpUpdateDisplayScan()
+  drpRenderScan()
+  closeScanCalendar()
+}
+
+// ─── End Supplies Scan Calendar ───
 
 /**
  * Сортирует таблицу поставок по указанной колонке.
@@ -3872,10 +4095,7 @@ async function scanSupplies() {
   hideFinalStatsSupplies(true)
   startOperationTimer()
 
-  // Сохраняем существующие данные для мержа (не очищаем, чтобы не терять при повторном скане)
-  const prevSuppliesData = suppliesData.slice()
   suppliesData = []
-  const prevShipmentNums = new Set(prevSuppliesData.map(function(o) { return o.shipmentNum }))
 
   const tbody = document.getElementById('suppliesTableBody')
   if (tbody) tbody.innerHTML = ''
@@ -3893,14 +4113,9 @@ async function scanSupplies() {
     params.set('abortId', abortId)
     var storeId = document.getElementById('scanStoreSelect')?.value || '_all'
     if (storeId !== '_all') params.set('storeId', storeId)
-    var marketplaces = []
-    if (document.getElementById('scanFilterWb')?.checked) marketplaces.push('wb')
-    if (document.getElementById('scanFilterOzon')?.checked) marketplaces.push('ozon')
-    if (marketplaces.length > 0 && marketplaces.length < 2) params.set('marketplaces', marketplaces.join(','))
-    var dateFrom = document.getElementById('scanDateFrom')?.value || ''
-    var dateTo = document.getElementById('scanDateTo')?.value || ''
-    if (dateFrom) params.set('dateFrom', dateFrom)
-    if (dateTo) params.set('dateTo', dateTo)
+    // Даты сканирования из suppliesScanDates (установлены в initSuppliesScanSettings или через календарь)
+    if (suppliesScanDates.from) params.set('dateFrom', suppliesScanDates.from)
+    if (suppliesScanDates.to) params.set('dateTo', suppliesScanDates.to)
     const url = `/api/supplies/stream?${params.toString()}`
 
     // Таймаут 10с
@@ -3966,14 +4181,8 @@ async function scanSupplies() {
                 suppliesFilterStats = data.stats.filterStats
               }
 
-              // Мержим новые данные с предыдущими (чтобы при повторном скане не терять старые заказы)
-              var newShipmentNums = new Set(suppliesData.map(function(o) { return o.shipmentNum }))
-              prevSuppliesData.forEach(function(o) {
-                if (!newShipmentNums.has(o.shipmentNum)) {
-                  // Добавляем старые заказы, которых нет в новом скане
-                  suppliesData.push(o)
-                }
-              })
+              // Старые заказы, не попавшие в новый скан, НЕ добавляем
+              // (чтобы при рескане не показывались устаревшие/обработанные заказы)
 
               // Сохраняем результат сканирования (чтобы не пропадал при обновлении страницы)
               saveSuppliesState()
@@ -4752,6 +4961,20 @@ async function supplySingleAction(shipmentNum, action) {
               const stats = data.stats || { created: 0, skipped: 0, errors: 0 }
               hideProgress(true, 'Готово')
               showBatchResults(stats, elapsed)
+
+              // Заказ обработан — удаляем из таблицы поставок и обновляем UI
+              if (stats.errors === 0 && suppliesData.length > 0) {
+                var actionLabel = action === 'cancel' ? 'Отменён' : action === 'demand' ? 'Отгружен' : 'Обработан'
+                suppliesData = suppliesData.filter(function(o) {
+                  return o.shipmentNum !== shipmentNum
+                })
+                saveSuppliesState()
+                renderSuppliesTable()
+                renderSuppliesStats()
+
+                var statusEl = document.getElementById('statusText')
+                if (statusEl) statusEl.textContent = 'Заказ ' + shipmentNum + ' ' + actionLabel.toLowerCase() + '. Осталось: ' + suppliesData.length
+              }
             } else if (data.type === 'aborted') {
               stopOperationTimer()
               hideProgress(false, 'Прервано')

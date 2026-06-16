@@ -227,11 +227,27 @@
                 <div class="settings-dates">
                   <div class="drp-field" style="flex:1">
                     <label class="df-label">С:</label>
-                    <input type="text" id="scanDateFromDisplay" class="df-input" readonly placeholder="дд.мм.гггг">
+                    <input type="text" id="scanDateFromDisplay" class="df-input" readonly placeholder="дд.мм.гггг" onclick="toggleScanCalendar()">
                   </div>
                   <div class="drp-field" style="flex:1">
                     <label class="df-label">По:</label>
-                    <input type="text" id="scanDateToDisplay" class="df-input" readonly placeholder="дд.мм.гггг">
+                    <input type="text" id="scanDateToDisplay" class="df-input" readonly placeholder="дд.мм.гггг" onclick="toggleScanCalendar()">
+                  </div>
+                </div>
+                <!-- Календарь для дат сканирования -->
+                <div id="drpCalendarScan" class="drp-calendar" style="display:none">
+                  <div class="drp-header">
+                    <button class="drp-nav" onclick="drpPrevMonthScan()">‹</button>
+                    <span class="drp-title" id="drpTitleScan">Май 2026</span>
+                    <button class="drp-nav" onclick="drpNextMonthScan()">›</button>
+                  </div>
+                  <div class="drp-weekdays">
+                    <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+                  </div>
+                  <div class="drp-days" id="drpDaysScan"></div>
+                  <div class="df-actions" style="margin-top:8px">
+                    <button class="btn btn-cancel" onclick="resetScanDates()" style="flex:1;padding:4px 8px;font-size:0.75rem">Сбросить</button>
+                    <button class="btn btn-accent" onclick="applyScanDates()" style="flex:1;padding:4px 8px;font-size:0.75rem">Применить</button>
                   </div>
                 </div>
               </div>
@@ -241,14 +257,10 @@
                   <option value="_all">Все склады</option>
                 </select>
               </div>
-              <div class="settings-row settings-market-row">
-                <label class="settings-label">Маркеты:</label>
-                <div class="settings-markets">
-                  <label class="market-filter wb-filter"><input type="checkbox" id="scanFilterWb" checked> WB</label>
-                  <label class="market-filter ozon-filter"><input type="checkbox" id="scanFilterOzon" checked> Ozon</label>
-                </div>
-              </div>
             </div>
+            <!-- Скрытые поля для дат сканирования (читаются в scanSupplies) -->
+            <input type="hidden" id="scanDateFrom" value="">
+            <input type="hidden" id="scanDateTo" value="">
           </div>
         </div>
         <div class="center-column">
