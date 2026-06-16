@@ -1222,8 +1222,8 @@ async function ozonReturnSearch() {
             appendOrderRow(orderData)
             updateTotals()
             renderCurrentStats(true)
-          } else if (data.type === 'done') {
-            const elapsed = stopOperationTimer()
+            } else if (data.type === 'done') {
+              const elapsed = stopOperationTimer()
             realtimeMode = false
             updateTotals()
             renderCurrentStats()
@@ -1698,7 +1698,7 @@ function renderTable() {
       ? `<br><span class="status-return" style="font-size:0.85em">${order.ozonReturnInfo}</span>`
       : ''
     const ozonStatusLine = order.ozonStatus
-      ? `<br><span style="font-size:0.85em;${order.ozonStatus === 'Доставлен' ? 'color:var(--success)' : order.ozonStatus === 'Доставлен → Возврат' ? 'color:var(--warning)' : 'color:var(--text-muted)'}">${order.ozonStatus} (Ozon)</span>`
+      ? `<br><span style="font-size:0.85em;${(order.ozonStatus === 'Доставлен' || order.ozonStatus === 'Доставляется') ? 'color:var(--success)' : order.ozonStatus === 'Доставлен → Возврат' ? 'color:var(--warning)' : 'color:var(--text-muted)'}">${order.ozonStatus} (Ozon)</span>`
       : ''
     const wbLine = order.wbReturnInfo
       ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
@@ -3744,42 +3744,57 @@ function loadSavedSuppliesAndRender() {
  * @returns {void}
  */
 function initSuppliesScanSettings() {
-  // ─── Даты: lazy-init ───
+  // ─── Даты: lazy-init (только при первом открытии вкладки) ───
   var fromDisplayEl = document.getElementById('scanDateFromDisplay')
-  if (fromDisplayEl && fromDisplayEl.value) {
-    // Уже было инициализировано — только загружаем склады
-    loadScanStores()
-    return
+  if (!fromDisplayEl || !fromDisplayEl.value) {
+    var today = new Date()
+    var threeDaysAgo = new Date(today)
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+
+    var fmtISO = function(d) {
+      return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+    }
+    var fmtDisplay = function(d) {
+      return String(d.getDate()).padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + d.getFullYear()
+    }
+
+    // Сохраняем в JS-состояние
+    suppliesScanDates.from = fmtISO(threeDaysAgo)
+    suppliesScanDates.to = fmtISO(today)
+
+    // Отображаем в полях
+    if (fromDisplayEl) fromDisplayEl.value = fmtDisplay(threeDaysAgo)
+    var toDisplayEl = document.getElementById('scanDateToDisplay')
+    if (toDisplayEl) toDisplayEl.value = fmtDisplay(today)
+
+    // Скрытые поля (на случай если JS-состояние недоступно)
+    var fromHidden = document.getElementById('scanDateFrom')
+    var toHidden = document.getElementById('scanDateTo')
+    if (fromHidden) fromHidden.value = suppliesScanDates.from
+    if (toHidden) toHidden.value = suppliesScanDates.to
   }
 
-  var today = new Date()
-  var threeDaysAgo = new Date(today)
-  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
-
-  var fmtISO = function(d) {
-    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
-  }
-  var fmtDisplay = function(d) {
-    return String(d.getDate()).padStart(2,'0') + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + d.getFullYear()
-  }
-
-  // Сохраняем в JS-состояние
-  suppliesScanDates.from = fmtISO(threeDaysAgo)
-  suppliesScanDates.to = fmtISO(today)
-
-  // Отображаем в полях
-  if (fromDisplayEl) fromDisplayEl.value = fmtDisplay(threeDaysAgo)
-  var toDisplayEl = document.getElementById('scanDateToDisplay')
-  if (toDisplayEl) toDisplayEl.value = fmtDisplay(today)
-
-  // Скрытые поля (на случай если JS-состояние недоступно)
-  var fromHidden = document.getElementById('scanDateFrom')
-  var toHidden = document.getElementById('scanDateTo')
-  if (fromHidden) fromHidden.value = suppliesScanDates.from
-  if (toHidden) toHidden.value = suppliesScanDates.to
-
-  // Загружаем склады
+  // Загружаем склады (при каждом открытии вкладки)
   loadScanStores()
+
+  // Загрузка справки по версиям (при каждом открытии вкладки)
+  fetch('/data/versions.json')
+    .then(r => r.json())
+    .then(data => {
+      var container = document.getElementById('changelogContent')
+      if (!container) return
+      var last4 = data.slice(0, 4)
+      container.innerHTML = last4.map(function(v) {
+        return '<div class="version-entry">' +
+          '<span class="version-number">' + esc(v.version) + '</span>' +
+          '<span class="version-date">(' + v.date + ')</span>' +
+          '<ul style="margin:2px 0 0;padding:0">' +
+          v.changes.map(function(c) { return '<li class="version-change">' + esc(c) + '</li>' }).join('') +
+          '</ul>' +
+          '</div>'
+      }).join('')
+    })
+    .catch(function(e) { console.error('Ошибка загрузки changelog:', e) })
 }
 
 /**
@@ -3788,19 +3803,42 @@ function initSuppliesScanSettings() {
  */
 function loadScanStores() {
   var token = loadToken()
-  if (!token) return
+  if (!token) {
+    showStatus('Требуется токен МС. Нажмите кнопку "🔑 Токены" в шапке.')
+    return
+  }
   fetch('/api/supplies/stores?token=' + encodeURIComponent(token))
     .then(function(r) { return r.json() })
     .then(function(data) {
       var select = document.getElementById('scanStoreSelect')
       if (!select) return
       while (select.options.length > 1) select.remove(1)
-      ;(data.stores || []).forEach(function(s) {
+      var stores = data.stores || []
+      if (stores.length === 0) {
+        showStatus('Не удалось загрузить склады. Проверьте токен МС.')
+        return
+      }
+      stores.forEach(function(s) {
         var opt = document.createElement('option')
         opt.value = s.id
         opt.textContent = s.name
         select.appendChild(opt)
       })
+      // Восстановить последний выбранный склад
+      var lastStore = localStorage.getItem('suppliesLastStore')
+      if (lastStore && [...select.options].some(o => o.value === lastStore)) {
+        select.value = lastStore
+      }
+
+      // Сохранять выбор при изменении (только один раз)
+      if (!select.__storesListenerAttached) {
+        select.addEventListener('change', function() {
+          if (this.value) {
+            localStorage.setItem('suppliesLastStore', this.value)
+          }
+        })
+        select.__storesListenerAttached = true
+      }
     })
     .catch(function(e) { console.error('Supplies: load stores error:', e) })
 }
@@ -3824,18 +3862,32 @@ let scanCalendarOpen = false
  * @returns {void}
  */
 function toggleScanCalendar() {
-  var cal = document.getElementById('drpCalendarScan')
-  if (!cal) return
-  if (cal.style.display === 'block') { closeScanCalendar(); return }
-  // Синхронизируем месяц/год с выбранной датой from или с сегодня
+  var popup = document.getElementById('scanDatePopup')
+  var overlay = document.getElementById('scanDateOverlay')
+  if (!popup || !overlay) return
+  if (popup.style.display === 'block') { closeScanCalendar(); return }
+  
+  // Синхронизация месяца
   drpStateScan.month = suppliesScanDates.from
     ? parseInt(suppliesScanDates.from.split('-')[1]) - 1
     : new Date().getMonth()
   drpStateScan.year = suppliesScanDates.from
     ? parseInt(suppliesScanDates.from.split('-')[0])
     : new Date().getFullYear()
+  
   drpRenderScan()
-  cal.style.display = 'block'
+  
+  // Позиционирование: под полем ввода даты
+  var fromInput = document.getElementById('scanDateFromDisplay')
+  if (fromInput) {
+    var rect = fromInput.getBoundingClientRect()
+    popup.style.position = 'fixed'
+    popup.style.top = (rect.bottom + 4) + 'px'
+    popup.style.left = rect.left + 'px'
+  }
+  
+  overlay.style.display = 'block'
+  popup.style.display = 'block'
   scanCalendarOpen = true
 }
 
@@ -3844,8 +3896,10 @@ function toggleScanCalendar() {
  * @returns {void}
  */
 function closeScanCalendar() {
-  var cal = document.getElementById('drpCalendarScan')
-  if (cal) cal.style.display = 'none'
+  var popup = document.getElementById('scanDatePopup')
+  var overlay = document.getElementById('scanDateOverlay')
+  if (popup) popup.style.display = 'none'
+  if (overlay) overlay.style.display = 'none'
   scanCalendarOpen = false
 }
 
@@ -4114,18 +4168,27 @@ async function scanSupplies() {
     // Параметры сканирования из настроек
     var params = new URLSearchParams()
     params.set('abortId', abortId)
-    var storeId = document.getElementById('scanStoreSelect')?.value || '_all'
-    if (storeId !== '_all') params.set('storeId', storeId)
+    var storeSelect = document.getElementById('scanStoreSelect')
+    var storeId = storeSelect?.value || ''
+    if (!storeId) {
+      showStatus('Ошибка: выберите склад перед сканированием.')
+      hideProgress(false, 'Склад не выбран')
+      if (scanBtn) scanBtn.style.display = 'inline-flex'
+      if (abortBtn) abortBtn.style.display = 'none'
+      suppliesIsWorking = false
+      return
+    }
+    params.set('storeId', storeId)
     // Даты сканирования из suppliesScanDates (установлены в initSuppliesScanSettings или через календарь)
     if (suppliesScanDates.from) params.set('dateFrom', suppliesScanDates.from)
     if (suppliesScanDates.to) params.set('dateTo', suppliesScanDates.to)
     const url = `/api/supplies/stream?${params.toString()}`
 
-    // Таймаут 10с
+    // Таймаут 120с safety net; было 10000 — слишком мало для первого прогрева кэша
     fetchTimeout = setTimeout(() => {
       window.__fetchTimeout = true
       if (suppliesController) suppliesController.abort()
-    }, 10000)
+    }, 120000)
 
     const response = await fetch(url, {
       signal: suppliesController.signal,
@@ -4175,6 +4238,25 @@ async function scanSupplies() {
 
               appendSuppliesRow(orderData)
               applySuppliesMarketplaceFilter()
+            } else if (data.type === 'order_update') {
+              var idx = suppliesData.findIndex(function(o) { return o.shipmentNum === data.order.shipmentNum })
+              if (idx !== -1) {
+                suppliesData[idx] = { ...data.order, enabled: true }
+                var tbodyEl = document.getElementById('suppliesTableBody')
+                if (tbodyEl) {
+                  var rows = tbodyEl.querySelectorAll('tr')
+                  for (var r = 0; r < rows.length; r++) {
+                    if (rows[r].dataset.shipment === data.order.shipmentNum) {
+                      var newTr = createSuppliesRow(suppliesData[idx])
+                      rows[r].parentNode.replaceChild(newTr, rows[r])
+                      break
+                    }
+                  }
+                }
+                renderSuppliesStats()
+                renderSuppliesTable()
+                renderSuppliesMismatchStats()
+              }
             } else if (data.type === 'done') {
               const elapsed = stopOperationTimer()
               suppliesRealtimeMode = false

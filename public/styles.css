@@ -533,32 +533,36 @@ body {
 
 
 .abort-btn {
-  flex: 0 0 32px !important;
-  width: 32px !important;
-  align-self: flex-end;
-  padding: 0;
-  font-size: 1.1rem;
-  line-height: 1;
+  flex: 1 !important;
+  width: auto !important;
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   background: transparent;
-  border: 2px solid var(--border);
+  border: 2px solid #ef4444;
   border-radius: var(--radius-sm);
-  color: var(--text-muted);
+  color: #ef4444;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
 }
 
-.abort-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: var(--error);
-  color: var(--error);
+.abort-btn:hover:not(:disabled) {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.3), 0 0 30px rgba(239, 68, 68, 0.2);
+  transform: scale(1.03);
 }
 
-.abort-btn:active {
-  background: rgba(239, 68, 68, 0.25);
-  transform: scale(0.92);
+.abort-btn:active:not(:disabled) {
+  background: rgba(239, 68, 68, 0.9);
+  transform: scale(0.98);
 }
 
 /* Icon inside buttons */
@@ -4076,6 +4080,8 @@ span[id$='Dot']:not(#statusDot),
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   z-index: 9998;
 }
 .rec-legend-overlay.show { display: block; }
@@ -4087,13 +4093,15 @@ span[id$='Dot']:not(#statusDot),
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 9999;
-  background: #141414;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: rgba(30, 30, 30, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid #333;
+  border-radius: 16px;
   padding: 20px;
   min-width: 360px;
   max-width: 90vw;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   font-size: 0.8rem;
   line-height: 1.5;
 }
@@ -4163,13 +4171,7 @@ tr.day-separator td span {
   position: relative;
 }
 
-#drpCalendarScan {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 200;
-  width: 240px;
-}
+/* #drpCalendarScan удалён — календарь использует .date-filter-popup + .drp-calendar */
 .settings-select {
   width: 100%;
   padding: 4px 6px;
@@ -4179,5 +4181,44 @@ tr.day-separator td span {
   color: var(--text);
   font-size: 0.75rem;
   font-family: inherit;
+}
+
+/* ─── Supplies: Changelog ─── */
+.settings-changelog {
+  margin-top: 12px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+.settings-changelog .version-entry {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-changelog .version-entry:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.settings-changelog .version-number {
+  color: var(--accent);
+  font-weight: 700;
+}
+.settings-changelog .version-date {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  margin-left: 4px;
+}
+.settings-changelog .version-change {
+  color: var(--text);
+  padding-left: 12px;
+  list-style: none;
+}
+.settings-changelog .version-change::before {
+  content: "— ";
+  color: var(--text-muted);
 }
 

@@ -81,7 +81,7 @@
    </button>
 
    <button class="btn btn-ms" onclick="checkNumbers()"><img class="btn-icon" src="images/marketplace/ms-favicon.svg"> Поиск</button>
-   <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display:none">✕</button>
+   <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display:none">✕ Отмена</button>
 </div>
           </div>
         </div>
@@ -218,7 +218,7 @@
               <button class="btn btn-ms" id="scanSuppliesBtn" onclick="scanSupplies()">
                 <img class="btn-icon" src="images/marketplace/ms-favicon.svg"> Сканировать поставки
               </button>
-              <button onclick="abortCheck()" id="abortSuppliesBtn" class="abort-btn" style="display:none">✕</button>
+              <button onclick="abortCheck()" id="abortSuppliesBtn" class="abort-btn" style="display:none">✕ Отмена</button>
             </div>
             <!-- Настройки сканирования -->
             <div class="supplies-scan-settings">
@@ -234,31 +234,39 @@
                     <input type="text" id="scanDateToDisplay" class="df-input" readonly placeholder="дд.мм.гггг" onclick="toggleScanCalendar()">
                   </div>
                 </div>
-                <!-- Календарь для дат сканирования -->
-                <div id="drpCalendarScan" class="drp-calendar" style="display:none">
-                  <div class="drp-header">
-                    <button class="drp-nav" onclick="drpPrevMonthScan()">‹</button>
-                    <span class="drp-title" id="drpTitleScan">Май 2026</span>
-                    <button class="drp-nav" onclick="drpNextMonthScan()">›</button>
-                  </div>
-                  <div class="drp-weekdays">
-                    <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
-                  </div>
-                  <div class="drp-days" id="drpDaysScan"></div>
-                  <div class="df-actions" style="margin-top:8px">
-                    <button class="btn btn-cancel" onclick="resetScanDates()" style="flex:1;padding:4px 8px;font-size:0.75rem">Сбросить</button>
-                    <button class="btn btn-accent" onclick="applyScanDates()" style="flex:1;padding:4px 8px;font-size:0.75rem">Применить</button>
+                <!-- Календарь выносим из settings-dates — теперь fixed overlay -->
+                <div id="scanDateOverlay" class="date-filter-overlay" style="display:none"></div>
+                <div id="scanDatePopup" class="date-filter-popup" style="display:none">
+                  <div class="drp-calendar" style="margin-top:0">
+                    <div class="drp-header">
+                      <button class="drp-nav" onclick="drpPrevMonthScan()">‹</button>
+                      <span class="drp-title" id="drpTitleScan">Май 2026</span>
+                      <button class="drp-nav" onclick="drpNextMonthScan()">›</button>
+                    </div>
+                    <div class="drp-weekdays">
+                      <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+                    </div>
+                    <div class="drp-days" id="drpDaysScan"></div>
+                    <div class="df-actions" style="margin-top:8px">
+                      <button class="btn btn-cancel" onclick="resetScanDates()" style="flex:1;padding:4px 8px;font-size:0.75rem">Сбросить</button>
+                      <button class="btn btn-accent" onclick="applyScanDates()" style="flex:1;padding:4px 8px;font-size:0.75rem">Применить</button>
+                    </div>
                   </div>
                 </div>
               </div>
               <div class="settings-row">
                 <label class="settings-label">Склад:</label>
                 <select id="scanStoreSelect" class="settings-select">
-                  <option value="_all">Все склады</option>
+                  <option value="" disabled selected>— выберите склад —</option>
                 </select>
               </div>
               <div class="settings-row">
                 <button class="btn btn-ms" onclick="transferToSklad()">📋 Передать номера в Склад</button>
+              </div>
+              <!-- Справка по версиям -->
+              <div class="settings-changelog" id="versionsChangelog">
+                <div class="settings-label">История версий</div>
+                <div id="changelogContent"></div>
               </div>
             </div>
             <!-- Скрытые поля для дат сканирования (читаются в scanSupplies) -->

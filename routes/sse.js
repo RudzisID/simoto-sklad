@@ -1146,9 +1146,31 @@ module.exports = function(deps) {
     sendSSE(res, { type: 'progress', msg: 'Получение заказов из МС...' })
 
     try {
-      const result = await supplies.scanNewOrders(msToken, wbToken, ozonClientId, ozonApiKey, log, (order, index, total) => {
+      // Оборачиваем log, чтобы клиент видел статус в реальном времени
+      const sseLog = (msg) => {
+        log(msg)
+        sendSSE(res, { type: 'progress', msg })
+      }
+
+      const result = await supplies.scanNewOrders(msToken, wbToken, ozonClientId, ozonApiKey, sseLog, (order, index, total) => {
         sendSSE(res, { type: 'order', order, index, total })
       }, storeId, marketplaces, dateFrom, dateTo)
+
+      // Фоновое обновление кэша — досылаем обновления строк
+      if (result.cachePromise) {
+        sendSSE(res, { type: 'cache_refresh', status: 'started' })
+        await result.cachePromise
+        sendSSE(res, { type: 'cache_refresh', status: 'processing' })
+        for (let i = 0; i < result.orders.length; i++) {
+          const updated = supplies.recheckOrder(result.orders[i])
+          if (updated !== result.orders[i]) {
+            sendSSE(res, { type: 'order_update', order: updated, index: i + 1, total: result.orders.length })
+            result.orders[i] = updated
+          }
+        }
+        sendSSE(res, { type: 'cache_refresh', status: 'done' })
+      }
+
       endSSE(res, 'done', { orders: result.orders, stats: result.stats })
     } catch (e) {
       log(`Supplies error: ${e.message}`)
