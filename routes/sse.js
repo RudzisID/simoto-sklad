@@ -519,6 +519,10 @@ module.exports = function(deps) {
           if (returns?.length) {
             ozonReturn = returns[0]
             orderData.ozonReturnInfo = `↳ Возврат: ${ozonReturn.return_reason_name} (Ozon)`
+            // Propagate return data to block payment button and show correct sums
+            orderData.returnType = ozonReturn.type || orderData.returnType
+            orderData.reason = ozonReturn.return_reason_name || orderData.reason
+            orderData.marketplaceReturnPrice = ozonReturn.product_price || orderData.marketplaceReturnPrice
           }
         }
         if (marketplaceData.status) {
@@ -529,10 +533,10 @@ module.exports = function(deps) {
             orderData.ozonStatus = OZON_STATUS_MAP[marketplaceData.status] || marketplaceData.status
           }
         }
-        orderData.barcode = marketplaceData.barcode || ''
+        orderData.barcode = ozonReturn?.barcode || marketplaceData.barcode || ''
         orderData.offerId = marketplaceData.offer_id ||
           (marketplaceData.products?.[0]?.offer_id) || ''
-        orderData.marketplaceReturnPrice = marketplaceData.product_price || 0
+        orderData.marketplaceReturnPrice = (ozonReturn?.product_price) || marketplaceData.product_price || 0
       }
 
       if (marketplace === 'wb' && marketplaceData) {
