@@ -1365,6 +1365,10 @@ function getRowActions(order, index) {
  */
 function formatDate(isoStr) {
   if (!isoStr) return '<span class="status-no">—</span>'
+  // Если строка в формате "YYYY-MM-DD HH:mm:ss" (без timezone) — интерпретируем как UTC+3 (МойСклад)
+  if (!isoStr.includes('T') && !isoStr.endsWith('Z') && !isoStr.includes('+') && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(isoStr)) {
+    isoStr = isoStr.replace(' ', 'T') + '+03:00'
+  }
   const d = new Date(isoStr)
   if (isNaN(d.getTime())) return isoStr
   const day = String(d.getDate()).padStart(2, '0')
@@ -1644,6 +1648,7 @@ function renderTable() {
 
   pageOrders.forEach((order, i) => {
     const tr = document.createElement('tr')
+    tr.dataset.shipment = order.shipmentNum
     // Используем индекс внутри всей таблицы
     const actualIndex = ordersData.findIndex((o) => o.shipmentNum === order.shipmentNum)
 
@@ -1750,7 +1755,7 @@ function renderTable() {
             <td>${demandDisplay}</td>
             <td>${paymentDisplay}</td>
             <td>${returnDisplay}</td>
-            <td>${statusDisplay}${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
+            <td>${statusDisplay}<button class="refresh-row-btn" data-shipment="${order.shipmentNum}" onclick="refreshOrderRow('${order.shipmentNum}')" title="Обновить">⟳</button>${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
 <td>${storeDisplay}</td>
             <td class="date-cell">${formatDate(order.orderMoment)}</td>
             <td class="action-cell">${getRowActions(order, actualIndex)}</td>
@@ -1818,7 +1823,8 @@ function appendOrderRow(order) {
   const actualIndex = ordersData.findIndex((o) => o.shipmentNum === order.shipmentNum)
 
   const tr = document.createElement('tr')
-  tr.className = 'fadeInDown' // Магическая анимация из библиотеки
+  tr.dataset.shipment = order.shipmentNum
+  tr.className = 'fadeInDown'
   // Явно устанавливаем анимацию для гарантии применения
   tr.style.animation = 'fadeInDown 0.3s ease-out forwards'
   tr.style.webkitAnimation = 'fadeInDown 0.3s ease-out forwards'
@@ -1898,7 +1904,7 @@ function appendOrderRow(order) {
         <td>${demandDisplay}</td>
         <td>${paymentDisplay}</td>
         <td>${returnDisplay}</td>
-        <td>${statusDisplay}${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
+        <td>${statusDisplay}<button class="refresh-row-btn" data-shipment="${order.shipmentNum}" onclick="refreshOrderRow('${order.shipmentNum}')" title="Обновить">⟳</button>${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
         <td>${storeDisplay}</td>
         <td class="date-cell">${formatDate(displayDate)}</td>
         <td class="action-cell">${getRowActions(order, actualIndex)}</td>
@@ -2829,6 +2835,161 @@ async function refreshSpecificOrders(numbers) {
   } catch (e) {
     console.error('Refresh error:', e)
   }
+}
+
+/**
+ * Обновляет одну строку таблицы по номеру отправления.
+ * Вызывает API для проверки одного заказа и заменяет только его строку в DOM.
+ *
+ * @async
+ * @param {string} shipmentNum - Номер отправления
+ * @returns {Promise<void>}
+ */
+async function refreshOrderRow(shipmentNum) {
+  const token = loadToken()
+  if (!token) return
+
+  const btn = document.querySelector(`.refresh-row-btn[data-shipment="${shipmentNum}"]`)
+  if (btn) {
+    btn.classList.add('rotating')
+    btn.disabled = true
+  }
+
+  try {
+    const response = await fetch('/api/process', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-token': token
+      },
+      body: JSON.stringify({ numbers: [shipmentNum] })
+    })
+
+    const result = await response.json()
+    if (result.error) throw new Error(result.error)
+
+    const freshOrder = result.orders?.[0]
+    if (!freshOrder) return
+
+    // Обновляем данные в ordersData
+    const index = ordersData.findIndex(o => o.shipmentNum === shipmentNum)
+    if (index !== -1) {
+      ordersData[index] = { ...ordersData[index], ...freshOrder, enabled: true }
+      updateSingleRow(ordersData[index], index)
+      updateTotals()
+      renderCurrentStats()
+    }
+  } catch (e) {
+    console.error('Ошибка обновления:', e)
+  } finally {
+    if (btn) {
+      btn.classList.remove('rotating')
+      btn.disabled = false
+    }
+  }
+}
+
+/**
+ * Заменяет одну строку в #tableBody без перерисовки всей таблицы.
+ *
+ * @param {Object} order - Обновлённые данные заказа
+ * @param {number} index - Индекс в ordersData
+ */
+function updateSingleRow(order, index) {
+  const tbody = document.getElementById('tableBody')
+  if (!tbody) return
+
+  const existingTr = tbody.querySelector(`tr[data-shipment="${order.shipmentNum}"]`)
+  if (!existingTr) return
+
+  const newTr = buildSingleRow(order, index)
+  existingTr.replaceWith(newTr)
+}
+
+/**
+ * Создаёт DOM-элемент строки таблицы для одного заказа.
+ *
+ * @param {Object} order - Данные заказа
+ * @param {number} index - Индекс в ordersData
+ * @returns {HTMLTableRowElement}
+ */
+function buildSingleRow(order, index) {
+  const tr = document.createElement('tr')
+  tr.dataset.shipment = order.shipmentNum
+  if (order.srid) tr.dataset.srid = order.srid
+  if (order.lastChangeDate) tr.dataset.lastChangeDate = order.lastChangeDate
+
+  const statusName = order.statusName || ''
+  const status = order.status || ''
+  let cssClass = 'status-no'
+  if (status === 'return' || statusName.includes('Возврат')) cssClass = 'status-return'
+  else if (status === 'cancelled' || statusName.includes('Отмен')) cssClass = 'status-error'
+  else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж') || statusName.includes('Доставлен'))
+    cssClass = 'status-shipped'
+  else if (status === 'delayed' || statusName.includes('отсрочк')) cssClass = 'status-delayed'
+
+  if (order.lastAction && order.lastAction.includes('_error')) {
+    cssClass = 'status-error'
+    tr.classList.add('row-error')
+  }
+  if (order.foundBy === 'name') tr.classList.add('row-by-name')
+
+  const displayText = statusName || 'Новый'
+  const statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>'
+  const refreshBtn = `<button class="refresh-row-btn" data-shipment="${order.shipmentNum}" onclick="refreshOrderRow('${order.shipmentNum}')" title="Обновить">⟳</button>`
+
+  const demandDisplay = order.demandName
+    ? `<span class="demand-code">${order.demandName}</span>`
+    : '<span class="status-no">—</span>'
+  const paymentDisplay = order.paid
+    ? `<span class="payment-sum">${order.paid} ₽</span>`
+    : '<span class="status-no">—</span>'
+  let returnDisplay = ''
+  if (order.hasReturn) {
+    returnDisplay += `<span class="payment-sum">${order.returnSum} ₽</span>`
+  } else {
+    returnDisplay += '<span class="status-no">—</span>'
+  }
+
+  const ozonReturnLine = order.ozonReturnInfo
+    ? `<br><span class="status-return" style="font-size:0.85em">${order.ozonReturnInfo}</span>`
+    : ''
+  const ozonStatusLine = order.ozonStatus
+    ? `<br><span style="font-size:0.85em;${(order.ozonStatus === 'Доставлен' || order.ozonStatus === 'Доставляется') ? 'color:var(--success)' : order.ozonStatus === 'Доставлен → Возврат' ? 'color:var(--warning)' : 'color:var(--text-muted)'}">${order.ozonStatus} (Ozon)</span>`
+    : ''
+  const wbLine = order.wbReturnInfo
+    ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
+    : ''
+
+  const storeDisplay = order.storeName
+    ? `<span>${esc(order.storeName)}</span>`
+    : '<span class="status-no">—</span>'
+
+  const displayDate = order.orderMoment || order.wbCompletedDt || order.wbOrderDt || ''
+
+  let numSub = ''
+  if (order.barcode) {
+    numSub = `<br><span style="font-size:0.85em">Ozon: ${esc(order.barcode)}</span>`
+  } else if (order.wbStickerId) {
+    numSub = `<br><span style="font-size:0.85em">Стикер: ${esc(order.wbStickerId)}</span>`
+  }
+
+  tr.innerHTML = `
+    <td><input type="checkbox" ${order.enabled ? 'checked' : ''} onchange="toggleEnabled(${index}, this)"></td>
+    <td class="order-num">${esc(order.extractedShipmentNum || order.shipmentNum)}${numSub}</td>
+    <td class="order-name-cell">${esc(order.orderName || '—')}</td>
+    <td>${esc(order.sum)} ₽${order.wbForPay > 0 ? `<br><span class="price-wb">К выплате: ${esc(Number(order.wbForPay).toLocaleString('ru-RU'))} ₽</span>` : ''}</td>
+    <td>${demandDisplay}</td>
+    <td>${paymentDisplay}</td>
+    <td>${returnDisplay}</td>
+    <td>${statusDisplay}${refreshBtn}${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
+    <td>${storeDisplay}</td>
+    <td class="date-cell">${formatDate(displayDate)}</td>
+    <td class="action-cell">${getRowActions(order, index)}</td>
+  `
+
+  if (order.returnType === 'Брак') tr.classList.add('row-defect')
+  return tr
 }
 
 /**

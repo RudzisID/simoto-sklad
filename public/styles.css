@@ -4240,3 +4240,49 @@ tr.day-separator td span {
   color: var(--text-muted);
 }
 
+/* === Refresh Row Button (в колонке статуса) === */
+.refresh-row-btn {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  font-size: 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid var(--text-muted);
+  background: transparent;
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+  margin-left: 4px;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.refresh-row-btn:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  transform: scale(1.1);
+}
+
+.refresh-row-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.refresh-row-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refresh-row-btn.rotating {
+  animation: refreshSpin 0.8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes refreshSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
