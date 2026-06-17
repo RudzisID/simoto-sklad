@@ -3783,8 +3783,8 @@ function initSuppliesScanSettings() {
     .then(data => {
       var container = document.getElementById('changelogContent')
       if (!container) return
-      var last4 = data.slice(0, 4)
-      container.innerHTML = last4.map(function(v) {
+      var last7 = data.slice(0, 7)
+      container.innerHTML = last7.map(function(v) {
         return '<div class="version-entry">' +
           '<span class="version-number">' + esc(v.version) + '</span>' +
           '<span class="version-date">(' + v.date + ')</span>' +

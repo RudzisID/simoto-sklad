@@ -4183,15 +4183,33 @@ tr.day-separator td span {
   font-family: inherit;
 }
 
-/* ─── Supplies: Changelog ─── */
+/* ─── Supplies: Changelog (отдельный блок с прокруткой) ─── */
 .settings-changelog {
-  margin-top: 12px;
+  margin-top: 16px;
   padding: 8px 10px;
   background: var(--bg-primary);
   border-radius: 6px;
   border: 1px solid var(--border);
   font-size: 0.7rem;
   line-height: 1.4;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.settings-changelog .changelog-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+/* Стилизация полосы прокрутки */
+.settings-changelog .changelog-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.settings-changelog .changelog-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
 }
 .settings-changelog .version-entry {
   margin-bottom: 6px;

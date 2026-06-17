@@ -263,11 +263,11 @@
               <div class="settings-row">
                 <button class="btn btn-ms" onclick="transferToSklad()">📋 Передать номера в Склад</button>
               </div>
-              <!-- Справка по версиям -->
-              <div class="settings-changelog" id="versionsChangelog">
-                <div class="settings-label">История версий</div>
-                <div id="changelogContent"></div>
-              </div>
+            </div>
+            <!-- Справка по версиям — отдельный блок с прокруткой -->
+            <div class="settings-changelog" id="versionsChangelog">
+              <div class="settings-label">История версий</div>
+              <div class="changelog-scroll" id="changelogContent"></div>
             </div>
             <!-- Скрытые поля для дат сканирования (читаются в scanSupplies) -->
             <input type="hidden" id="scanDateFrom" value="">
