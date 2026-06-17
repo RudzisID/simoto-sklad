@@ -1156,7 +1156,10 @@ module.exports = function(deps) {
         sendSSE(res, { type: 'order', order, index, total })
       }, storeId, marketplaces, dateFrom, dateTo)
 
-      // Фоновое обновление кэша — досылаем обновления строк
+      // Отправляем done СРАЗУ — таймер на клиенте останавливается, не ждём кэш
+      sendSSE(res, { type: 'done', orders: result.orders, stats: result.stats })
+
+      // Фоновое обновление кэша — досылаем обновления строк (после done)
       if (result.cachePromise) {
         sendSSE(res, { type: 'cache_refresh', status: 'started' })
         await result.cachePromise
@@ -1171,7 +1174,7 @@ module.exports = function(deps) {
         sendSSE(res, { type: 'cache_refresh', status: 'done' })
       }
 
-      endSSE(res, 'done', { orders: result.orders, stats: result.stats })
+      res.end()
     } catch (e) {
       log(`Supplies error: ${e.message}`)
       endSSE(res, 'error', { error: e.message })
