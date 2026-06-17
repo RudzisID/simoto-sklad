@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.8.13",
+    "date": "2026-06-17",
+    "changes": [
+      "Автоматическое обновление"
+    ]
+  },
+  {
+    "version": "1.8.12",
+    "date": "2026-06-17",
+    "changes": [
+      "github-push.bat теперь синхронизирует versions.json автоматически через scripts/sync-version.js."
+    ]
+  },
+  {
     "version": "1.8.11",
     "date": "2026-06-17",
     "changes": [
