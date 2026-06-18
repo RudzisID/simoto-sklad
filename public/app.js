@@ -107,6 +107,7 @@ function showConfirm(message, title = 'Подтверждение') {
 
     titleEl.textContent = title
     msgEl.textContent = message
+    cancelBtn.style.display = ''
     modal.classList.remove('hidden')
 
     const cleanup = (result) => {
@@ -126,6 +127,45 @@ function showConfirm(message, title = 'Подтверждение') {
     okBtn.addEventListener('click', onOk)
     cancelBtn.addEventListener('click', onCancel)
     modal.addEventListener('click', onOverlayClick)
+  })
+}
+
+/**
+ * Показывает кастомный диалог с сообщением (модальное окно, только ОК).
+ * Возвращает Promise, который разрешается после закрытия.
+ *
+ * @param {string} message - Текст сообщения
+ * @param {string} [title='Внимание'] - Заголовок модалки
+ * @returns {Promise<void>}
+ */
+function showAlert(message, title = 'Внимание') {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirmModal')
+    const titleEl = document.getElementById('confirmTitle')
+    const msgEl = document.getElementById('confirmMessage')
+    const okBtn = document.getElementById('confirmOk')
+    const cancelBtn = document.getElementById('confirmCancel')
+
+    titleEl.textContent = title
+    msgEl.textContent = message
+    cancelBtn.style.display = 'none'
+    modal.classList.remove('hidden')
+
+    const cleanup = () => {
+      modal.classList.add('hidden')
+      cancelBtn.style.display = ''
+      okBtn.removeEventListener('click', onOk)
+      modal.removeEventListener('click', onOverlay)
+      resolve()
+    }
+
+    const onOk = () => cleanup()
+    const onOverlay = (e) => {
+      if (e.target === modal) cleanup()
+    }
+
+    okBtn.addEventListener('click', onOk)
+    modal.addEventListener('click', onOverlay)
   })
 }
 
@@ -270,6 +310,7 @@ function showScanResults(results, elapsedTime = 0) {
         <div class="terminal-line success">Найдено: ${found}</div>
         ${errors > 0 ? `<div class="terminal-line error">Ошибок: ${errors}</div>` : ''}
         <div class="terminal-line time-line">Затрачено: ${timeStr}</div>
+        <button class="btn btn-xlsx" onclick="exportTableToXLSX()" style="margin-top:8px;width:100%">Сохранить таблицу (XLSX)</button>
         <div class="terminal-status">
             <div class="terminal-status-dot"></div>
             <span>Сканирование завершено</span>
@@ -816,6 +857,14 @@ async function checkNumbers() {
               renderCurrentStats()
               saveLastActionStats()
               hideProgress(true, 'Готово: ' + ordersData.length)
+
+              // Если был запущен режим сравнения с отчётом Ozon — выполняем сравнение
+              if (window._pendingComparison && window._reportMap) {
+                const comparisonResult = compareWithReport(window._reportMap)
+                window._lastComparisonResult = comparisonResult
+                renderComparisonPanel(comparisonResult)
+                window._pendingComparison = false
+              }
 
               // Сохраняем автоматически после сканирования
               if (ordersData.length > 0) {
@@ -3546,6 +3595,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.stopPropagation()
     })
   }
+
+  // Обработчик выбора файла отчёта Ozon
+  const reportFileInput = document.getElementById('reportFile')
+  if (reportFileInput) {
+    reportFileInput.addEventListener('change', function (e) {
+      const file = e.target.files && e.target.files[0]
+      const label = document.getElementById('reportFilePath')
+      if (label) {
+        label.textContent = file ? file.name : 'файл не выбран'
+      }
+    })
+  }
 })
 
 // Глобальный обработчик закрытия попапа фильтра по дате
@@ -5409,5 +5470,650 @@ function transferToSklad() {
 
   // Переключиться на вкладку Склад
   switchTab('sklad')
+}
+
+/**
+ * Экспортирует отфильтрованные данные таблицы в XLSX.
+ * Формат: белый фон, тёмно-синий текст (#003366), жирные заголовки.
+ * Колонки: Номер заказа покупателя, Номер заказа, Сумма заказа,
+ *          Отгрузка, Платёж, Сумма платежа, Возврат, Статус, Склад, Дата.
+ *
+ * @returns {void}
+ */
+function exportTableToXLSX() {
+  // Получаем отфильтрованные (с учётом фильтров, но без пагинации) данные
+  var data = getFilteredData()
+  if (!data || data.length === 0) {
+    showStatus('Нет данных для экспорта')
+    return
+  }
+
+  // Маппим в плоский массив строк для листа
+  var rows = data.map(function(order) {
+    return {
+      'Номер заказа покупателя': order.extractedShipmentNum || order.shipmentNum || '—',
+      'Номер заказа': order.orderName || '—',
+      'Сумма заказа': order.sum != null ? order.sum : '—',
+      'Отгрузка': order.demandName || '—',
+      'Платёж': order.paymentName || (order.paid ? 'Платёж' : '—'),
+      'Сумма платежа': order.paid != null ? order.paid : '—',
+      'Возврат': order.returnSum != null ? order.returnSum : '—',
+      'Статус': order.statusName || 'Новый',
+      'Склад': order.storeName || '—',
+      'Дата': order.orderMoment ? formatDate(order.orderMoment) : '—'
+    }
+  })
+
+  // Создаем книгу и лист
+  var wb = XLSX.utils.book_new()
+  var ws = XLSX.utils.json_to_sheet(rows)
+
+  // Автоширина колонок
+  var colWidths = [
+    { wch: 22 }, // Номер заказа покупателя
+    { wch: 40 }, // Номер заказа
+    { wch: 14 }, // Сумма заказа
+    { wch: 20 }, // Отгрузка
+    { wch: 20 }, // Платёж
+    { wch: 16 }, // Сумма платежа
+    { wch: 14 }, // Возврат
+    { wch: 20 }, // Статус
+    { wch: 18 }, // Склад
+    { wch: 14 }  // Дата
+  ]
+  ws['!cols'] = colWidths
+
+  // Стили: белый фон, тёмно-синий текст
+  var headerStyle = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } },
+    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '003366' } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: {
+      top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+    }
+  }
+  var cellStyle = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } },
+    font: { name: 'Calibri', sz: 11, color: { rgb: '003366' } },
+    alignment: { vertical: 'center' },
+    border: {
+      top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+    }
+  }
+  var numStyle = Object.assign({}, cellStyle, {
+    alignment: { horizontal: 'right', vertical: 'center' }
+  })
+
+  // У SheetJS стили задаются через !ref диапазон и массив cell-styles
+  var range = XLSX.utils.decode_range(ws['!ref'])
+  if (!ws['!rows']) ws['!rows'] = []
+  if (!ws['!cols']) ws['!cols'] = colWidths
+
+  // Проходим по каждой ячейке и добавляем стиль
+  for (var R = range.s.r; R <= range.e.r; R++) {
+    for (var C = range.s.c; C <= range.e.c; C++) {
+      var addr = XLSX.utils.encode_cell({ r: R, c: C })
+      if (!ws[addr]) continue
+      if (!ws[addr].s) ws[addr].s = {}
+
+      if (R === 0) {
+        // Заголовок
+        ws[addr].s = JSON.parse(JSON.stringify(headerStyle))
+      } else {
+        // Ячейка данных
+        var colLetter = XLSX.utils.encode_col(C)
+        // Числовые колонки: Сумма заказа (C), Сумма платежа (F), Возврат (G)
+        if (colLetter === 'C' || colLetter === 'F' || colLetter === 'G') {
+          ws[addr].s = JSON.parse(JSON.stringify(numStyle))
+          // Если число — форматируем как число
+          if (typeof ws[addr].v === 'number') {
+            ws[addr].z = '#,##0.00'
+          }
+        } else {
+          ws[addr].s = JSON.parse(JSON.stringify(cellStyle))
+        }
+      }
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Склад')
+  XLSX.writeFile(wb, 'sklad_export.xlsx')
+
+  showStatus('Таблица сохранена: sklad_export.xlsx (' + data.length + ' строк)')
+}
+
+/**
+ * Экранирует HTML-спецсимволы для безопасной вставки в innerHTML.
+ *
+ * @param {string} str - Строка для экранирования
+ * @returns {string} Экранированная строка
+ */
+function escapeHtml(str) {
+  if (!str) return ''
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Ozon Report Comparison Utilities
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Парсит загруженный XLSX-файл отчёта Ozon.
+ * Читает лист 'Начисления' и возвращает массив строк.
+ *
+ * @param {File} file - XLSX-файл отчёта Ozon
+ * @returns {Promise<Array<Array<string|number>>>} Массив строк (header: 1)
+ * @throws {Error} Если файл не удалось прочитать или нет листа 'Начисления'
+ */
+async function parseReportFile(file) {
+  if (typeof XLSX === 'undefined') {
+    throw new Error('Библиотека XLSX не загружена. Проверьте lib/xlsx.full.min.js')
+  }
+
+  let data
+  try {
+    data = new Uint8Array(await file.arrayBuffer())
+  } catch (err) {
+    throw new Error('Ошибка чтения файла: ' + err.message)
+  }
+
+  try {
+    const wb = XLSX.read(data, { type: 'array' })
+    const ws = wb.Sheets['Начисления']
+    if (!ws) throw new Error('Лист "Начисления" не найден в отчёте Ozon')
+    return XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+  } catch (err) {
+    throw new Error('Ошибка парсинга XLSX: ' + err.message)
+  }
+}
+
+/**
+ * Исправляет кодировку кириллицы, повреждённую xlsx-библиотекой.
+ *
+ * Баг xlsx@0.18.5: при чтении inline-строк из XLSX теряется старший байт
+ * UTF-16 для символов кириллицы. Например, Д (U+0414) превращается в \u0014.
+ *
+ * @param {string} str - Строка с повреждённой кириллицей
+ * @returns {string} - Восстановленная строка
+ */
+function fixCyrillicEncoding(str) {
+  const s = String(str)
+  let result = ''
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i)
+    // Диапазон 0x10-0x4F — младшие байты кириллицы А-я (U+0410-U+044F)
+    // Пропускаем пробел 0x20, запятую 0x2C, дефис 0x2D — они настоящие ASCII
+    if (code >= 0x10 && code <= 0x4F && code !== 0x20 && code !== 0x2C && code !== 0x2D) {
+      result += String.fromCharCode(code | 0x0400)
+    } else {
+      result += s[i]
+    }
+  }
+  return result
+}
+
+/**
+ * Строит map отчёта Ozon по номеру заказа.
+ * Фильтрует только строки с операцией 'Доставка покупателю',
+ * складом FBS и ненулевой суммой J.
+ *
+ * @param {Array<Array<string|number>>} rows - Массив строк из XLSX (header: 1)
+ * @returns {{ map: Object<string, {jTotal: number, jPos: number, rows: Array}>, orderNumbers: string[], totalJ: number, totalJPos: number, rowsCount: number }}
+ */
+function buildReportMap(rows) {
+  const map = {}
+  const orderNumbers = []
+  let totalJ = 0
+  let totalJPos = 0
+  let rowsCount = 0
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i]
+    // Фильтр: 'Доставка покупателю', FBS, ненулевая J
+    // Используем fixCyrillicEncoding — xlsx может повредить кириллицу
+    if (fixCyrillicEncoding(row[1]) !== 'Доставка покупателю') continue
+    if (!row[4] || String(row[4]).toLowerCase() !== 'fbs') continue
+    const jVal = typeof row[9] === 'number' ? row[9] : parseFloat(String(row[9]).replace(',', '.')) || 0
+    if (jVal === 0) continue
+
+    const orderKey = String(row[2]).trim()
+    if (!orderKey) continue
+
+    if (!map[orderKey]) {
+      map[orderKey] = { jTotal: 0, jPos: 0, rows: [] }
+      orderNumbers.push(orderKey)
+    }
+    map[orderKey].jTotal += jVal
+    if (jVal > 0) map[orderKey].jPos += jVal
+    map[orderKey].rows.push(row)
+    totalJ += jVal
+    if (jVal > 0) totalJPos += jVal
+    rowsCount++
+  }
+
+  return { map, orderNumbers, totalJ, totalJPos, rowsCount }
+}
+
+/**
+ * Запускает сравнение скана МойСклад с загруженным отчётом Ozon.
+ * 1. Проверяет выбран ли файл отчёта
+ * 2. Парсит XLSX через parseReportFile + buildReportMap
+ * 3. Заполняет поле ввода номерами заказов из отчёта
+ * 4. Устанавливает флаг ожидания сравнения
+ * 5. Запускает checkNumbers() — после SSE done сработает compareWithReport()
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
+async function runComparison() {
+  const fileInput = document.getElementById('reportFile')
+  if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+    await showAlert('Сначала выберите файл отчёта Ozon (.xlsx)', 'Файл не выбран')
+    return
+  }
+
+  // Если есть данные поиска — спросить
+  if (ordersData.length > 0) {
+    const confirmed = await showConfirm(
+      'Будут очищены текущие данные и запущен поиск по номерам из отчёта.\nПродолжить?',
+      'Очистить данные?'
+    )
+    if (!confirmed) return
+  }
+
+  const file = fileInput.files[0]
+
+  try {
+    const rows = await parseReportFile(file)
+    console.debug('[OzonReport] rows count:', rows.length)
+    if (rows.length > 0) {
+      console.debug('[OzonReport] row[0] (header):', rows[0])
+      console.debug('[OzonReport] row[1][1] (B cell):', JSON.stringify(rows[1]?.[1]))
+      const sample = rows.slice(1, 5).map(r => ({
+        B: r[1], E: r[4], C: r[2], J: r[9],
+        Bcodes: r[1] ? [...String(r[1])].map(c => c.charCodeAt(0)) : []
+      }))
+      console.debug('[OzonReport] sample rows:', sample)
+    }
+    const reportResult = buildReportMap(rows)
+
+    if (reportResult.orderNumbers.length === 0) {
+      // Собираем отладочную информацию
+      const debugLines = []
+      if (rows.length > 0) {
+        const header = rows[0]
+        debugLines.push('Колонок: ' + (header ? header.length : '?'))
+        debugLines.push('Всего строк: ' + rows.length)
+        // Показываем первые 3 строки (кроме заголовка)
+        for (let ri = 1; ri < Math.min(4, rows.length); ri++) {
+          const r = rows[ri]
+          const bRaw = r[1]
+          const bStr = String(bRaw ?? '(пусто)')
+          const codes = [...bStr].map(c => 'U+' + c.charCodeAt(0).toString(16).toUpperCase())
+          debugLines.push(
+            'Строка ' + (ri + 1) + ': B=' + JSON.stringify(bStr) +
+            ' [' + codes.join(',') + ']' +
+            ' | E=' + JSON.stringify(r[4]) +
+            ' | C=' + JSON.stringify(r[2]) +
+            ' | J=' + JSON.stringify(r[9])
+          )
+        }
+      } else {
+        debugLines.push('Нет строк в отчёте')
+      }
+      await showAlert(
+        'Не найдено заказов в отчёте. Проверьте формат файла.\n\n' +
+        'Ожидаемые колонки:\n' +
+        'B = "Доставка покупателю"\n' +
+        'E = "FBS"\n' +
+        'C = номер заказа\n' +
+        'J = сумма (не ноль)\n\n' +
+        '--- Отладка ---\n' +
+        debugLines.join('\n'),
+        'Нет данных для сравнения'
+      )
+      return
+    }
+
+    // Сохраняем map для сравнения после поиска
+    window._reportMap = reportResult.map
+    window._reportMeta = {
+      totalJ: reportResult.totalJ,
+      totalJPos: reportResult.totalJPos,
+      rowsCount: reportResult.rowsCount
+    }
+
+    // Заполняем поле ввода номерами заказов
+    const input = document.getElementById('numbersInput')
+    if (input) {
+      input.value = reportResult.orderNumbers.join('\n')
+    }
+
+    // Устанавливаем флаг: после завершения поиска запустить сравнение
+    window._pendingComparison = true
+
+    // Запускаем поиск
+    await checkNumbers()
+  } catch (err) {
+    await showAlert('Ошибка при обработке отчёта: ' + err.message, 'Ошибка')
+    window._pendingComparison = false
+  }
+}
+
+/**
+ * Сравнивает данные поиска (ordersData) с map отчёта Ozon.
+ * Для каждого заказа определяет категорию и вычисляет разницу.
+ *
+ * @param {Object<string, {jTotal: number, jPos: number}>} reportMap - Map отчёта, построенный buildReportMap
+ * @returns {{ summary: Object, details: Array<Object> }} Результат сравнения
+ */
+function compareWithReport(reportMap) {
+  const details = []
+  let totalD = 0
+  let totalJPos = 0
+  let totalDiff = 0
+  let okCount = 0
+  let mismatchCount = 0
+  let missingCount = 0
+  let partialCount = 0
+  let returnCount = 0
+
+  // Данные о частичных возвратах для детального анализа
+  const partialDetails = []
+
+  for (const order of ordersData) {
+    if (!order.enabled) continue
+
+    // Номер заказа — первая строка shipmentNum
+    const orderKey = String(order.shipmentNum).split('\n')[0].trim()
+    const entry = reportMap[orderKey]
+
+    const sumD = order.sum || 0
+    totalD += sumD
+
+    let jPos = entry ? entry.jPos : 0
+    let diff = sumD - jPos
+    let status = ''
+    let note = ''
+
+    if (!entry) {
+      // Заказ есть в МС, но не найден в отчёте
+      status = 'missing-in-report'
+      missingCount++
+      totalJPos += 0
+      totalDiff += sumD
+      note = 'Нет в отчёте Ozon'
+      diff = sumD
+    } else if (order.hasReturn && !order.isCancelled) {
+      // Частичный возврат: J+ может не включать G (факт. платёж)
+      status = 'partial'
+      partialCount++
+      totalJPos += jPos
+      totalDiff += diff
+      partialDetails.push({
+        orderKey,
+        sumD,
+        retF: order.returnSum || 0,
+        payG: order.paid || 0,
+        jPos,
+        diff
+      })
+      note = 'Частичный возврат: J+ не включает G'
+    } else if (order.isCancelled) {
+      // Полный возврат
+      status = 'return'
+      returnCount++
+      totalJPos += jPos
+      totalDiff += diff
+      note = 'Полный возврат'
+    } else if (diff === 0) {
+      status = 'ok'
+      okCount++
+      totalJPos += jPos
+      note = 'Совпадает'
+    } else {
+      // Расхождение без возврата — аномалия
+      status = 'mismatch'
+      mismatchCount++
+      totalJPos += jPos
+      totalDiff += diff
+      note = 'Расхождение'
+    }
+
+    details.push({
+      orderKey,
+      sumD,
+      retF: order.returnSum || 0,
+      payG: order.paid || 0,
+      jPos,
+      diff,
+      status,
+      note,
+      hasReturn: order.hasReturn,
+      isCancelled: order.isCancelled,
+      statusName: order.statusName || ''
+    })
+  }
+
+  // Формируем повествовательную сводку как в report-comparison.md
+  let narrative = ''
+  if (totalD > 0) {
+    narrative += `Результат анализа расхождений:\n`
+    narrative += `${totalD.toLocaleString('ru-RU')} = общая сумма D по всем ${details.length} заказам скана.\n\n`
+    narrative += `${totalJPos.toLocaleString('ru-RU')} = J+ отчёта по заказам, совпавшим со сканом`
+    if (partialDetails.length > 0) {
+      narrative += `\n\nРазница: ${totalDiff.toLocaleString('ru-RU')} ₽\n\n`
+      narrative += `Откуда ${totalDiff.toLocaleString('ru-RU')}?\n`
+      narrative += `Это сумма по ${partialDetails.length} частичным возвратам, где отчёт Ozon показывает\n`
+      narrative += `в колонке J только сумму проданных позиций (не возвращённых),\n`
+      narrative += `а скан показывает полную сумму заказа D:\n\n`
+    }
+  }
+
+  const summary = {
+    totalD,
+    totalJPos,
+    totalDiff,
+    okCount,
+    mismatchCount,
+    missingCount,
+    partialCount,
+    returnCount,
+    total: details.length,
+    narrative,
+    partialDetails
+  }
+
+  return { summary, details }
+}
+
+/**
+ * Рендерит панель результатов сравнения в блок #comparisonOutput.
+ * Показывает сводку (Total D, J+, разница, счётчики), повествовательный
+ * блок с анализом расхождений и детальную таблицу по всем заказам.
+ *
+ * @param {{ summary: Object, details: Array<Object> }} stats - результат сравнения
+ * @returns {void}
+ */
+function renderComparisonPanel(stats) {
+  const { summary, details } = stats
+  const output = document.getElementById('comparisonOutput')
+  if (!output) return
+
+  const fmt = (n) => (n || 0).toLocaleString('ru-RU')
+  const fmtSum = (n) => {
+    if (n == null || n === 0) return '—'
+    return (n > 0 ? '' : '') + fmt(Math.abs(n)) + ' ₽'
+  }
+
+  // Показываем панель и кнопку скачивания
+  const panel = document.getElementById('comparisonPanel')
+  if (panel) panel.style.display = ''
+  const btnDownload = document.getElementById('btnDownloadReport')
+  if (btnDownload) btnDownload.style.display = ''
+
+  // ── Сводка ──
+  let html = '<div class="comparison-summary-grid">'
+
+  // Total D
+  html += '<div class="comparison-summary-item">'
+  html += '<div class="label">Total D (МойСклад)</div>'
+  html += '<div class="value">' + fmt(summary.totalD) + ' ₽</div>'
+  html += '</div>'
+
+  // Total J+
+  html += '<div class="comparison-summary-item">'
+  html += '<div class="label">Total J+ (отчёт Ozon)</div>'
+  html += '<div class="value">' + fmt(summary.totalJPos) + ' ₽</div>'
+  html += '</div>'
+
+  // Разница
+  const diffClass = Math.abs(summary.totalDiff) < 1 ? 'ok' : 'diff'
+  html += '<div class="comparison-summary-item">'
+  html += '<div class="label">Разница (D − J+)</div>'
+  html += '<div class="value ' + diffClass + '">' + fmt(summary.totalDiff) + ' ₽</div>'
+  html += '</div>'
+
+  // Совпало
+  html += '<div class="comparison-summary-item">'
+  html += '<div class="label">✅ Совпало</div>'
+  html += '<div class="value ok">' + summary.okCount + '</div>'
+  html += '</div>'
+
+  // Расхождения
+  html += '<div class="comparison-summary-item">'
+  html += '<div class="label">⚠️ Расхождений / Частичных</div>'
+  html += '<div class="value diff">' + (summary.mismatchCount + summary.partialCount) + '</div>'
+  html += '</div>'
+
+  // Не найдено в отчёте
+  html += '<div class="comparison-summary-item">'
+  html += '<div class="label">❌ Не найдено в отчёте</div>'
+  html += '<div class="value missing">' + summary.missingCount + '</div>'
+  html += '</div>'
+
+  html += '</div>' // .comparison-summary-grid
+
+  // ── Повествовательный блок (как в report-comparison.md) ──
+  if (summary.narrative) {
+    html += '<div class="comparison-narrative">' + summary.narrative
+
+    // Добавляем таблицу частичных возвратов если есть
+    if (summary.partialDetails && summary.partialDetails.length > 0) {
+      html += 'Заказ\t\tD (скан)\tF (возврат)\tG (платёж)\tJ+ (отчёт)\tРазрыв\n'
+      for (const pd of summary.partialDetails) {
+        html += pd.orderKey + '\t' +
+          fmtSum(pd.sumD) + '\t' +
+          fmtSum(pd.retF) + '\t' +
+          fmtSum(pd.payG) + '\t' +
+          fmtSum(pd.jPos) + '\t' +
+          fmtSum(pd.diff) + '\n'
+      }
+      html += 'Итого\t\t' +
+        fmtSum(summary.partialDetails.reduce((s, d) => s + d.sumD, 0)) + '\t' +
+        fmtSum(summary.partialDetails.reduce((s, d) => s + d.retF, 0)) + '\t' +
+        fmtSum(summary.partialDetails.reduce((s, d) => s + d.payG, 0)) + '\t' +
+        fmtSum(summary.partialDetails.reduce((s, d) => s + d.jPos, 0)) + '\t' +
+        fmtSum(summary.partialDetails.reduce((s, d) => s + d.diff, 0)) + '\n'
+    }
+
+    html += '</div>'
+  }
+
+  // ── Кнопка показа деталей ──
+  html += '<button class="comparison-detail-btn" onclick="' +
+    "var d = document.getElementById('comparisonDetailTable');" +
+    "d.classList.toggle('visible');" +
+    "this.textContent = d.classList.contains('visible') ? 'Скрыть детали' : 'Показать детали'" +
+    '">Показать детали</button>'
+
+  // ── Детальная таблица ──
+  html += '<div class="comparison-detail" id="comparisonDetailTable">'
+  html += '<table class="comparison-table"><thead><tr>'
+  html += '<th>Номер заказа</th>'
+  html += '<th>D (МС)</th>'
+  html += '<th>F (возврат)</th>'
+  html += '<th>G (платёж)</th>'
+  html += '<th>J+ (отчёт)</th>'
+  html += '<th>Разница</th>'
+  html += '<th>Статус</th>'
+  html += '<th>Примечание</th>'
+  html += '</tr></thead><tbody>'
+
+  for (const d of details) {
+    let rowClass = 'row-ok'
+    if (d.status === 'partial' || d.status === 'mismatch') rowClass = 'row-diff'
+    if (d.status === 'missing-in-report') rowClass = 'row-missing'
+
+    html += '<tr class="' + rowClass + '">'
+    html += '<td>' + escapeHtml(d.orderKey) + '</td>'
+    html += '<td>' + fmtSum(d.sumD) + '</td>'
+    html += '<td>' + fmtSum(d.retF) + '</td>'
+    html += '<td>' + fmtSum(d.payG) + '</td>'
+    html += '<td>' + fmtSum(d.jPos) + '</td>'
+    html += '<td>' + fmtSum(d.diff) + '</td>'
+    html += '<td>' + d.status + '</td>'
+    html += '<td>' + escapeHtml(d.note) + '</td>'
+    html += '</tr>'
+  }
+
+  html += '</tbody></table>'
+  html += '</div>' // .comparison-detail
+
+  output.innerHTML = html
+}
+
+/**
+ * Скачивает отчёт сравнения в формате XLSX.
+ * Содержит те же колонки, что и детальная таблица,
+ * с заливкой проблемных строк (жёлтый/красный).
+ *
+ * @returns {void}
+ */
+function downloadComparisonReport() {
+  // Используем сохранённые данные последнего сравнения
+  const lastResult = window._lastComparisonResult
+  if (!lastResult || !lastResult.details || lastResult.details.length === 0) {
+    showStatus('Нет данных для скачивания — выполните сравнение')
+    return
+  }
+
+  const fmtSum = (n) => {
+    if (n == null || n === 0) return '—'
+    return (n > 0 ? '' : '') + Math.abs(n).toLocaleString('ru-RU') + ' ₽'
+  }
+
+  const rows = []
+  rows.push(['Номер заказа', 'D (МС)', 'F (возврат)', 'G (платёж)', 'J+ (отчёт)', 'Разница', 'Статус', 'Примечание'])
+
+  for (const d of lastResult.details) {
+    rows.push([
+      d.orderKey,
+      d.sumD,
+      d.retF,
+      d.payG,
+      d.jPos,
+      d.diff,
+      d.status,
+      d.note
+    ])
+  }
+
+  const wb = XLSX.utils.book_new()
+  const ws = XLSX.utils.json_to_sheet(rows, { header: [] })
+  XLSX.utils.book_append_sheet(wb, ws, 'Сравнение')
+  XLSX.writeFile(wb, 'comparison_ozon_report.xlsx')
+  showStatus('Отчёт сравнения сохранён: comparison_ozon_report.xlsx (' + (rows.length - 1) + ' строк)')
 }
 

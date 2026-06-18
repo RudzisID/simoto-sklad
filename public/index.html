@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SiMOTO</title>
     <link rel="icon" href="images/simoto/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css?v=1.1.0" />
+    <link rel="stylesheet" href="styles.css?v=1.2.0" />
     <script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
+    <script src="lib/xlsx.patched.min.js"></script>
   </head>
   <body>
     <!-- Common Header -->
@@ -80,8 +81,20 @@
      <span class="scan-text">Сканировать</span>
    </button>
 
-   <button class="btn btn-ms" onclick="checkNumbers()"><img class="btn-icon" src="images/marketplace/ms-favicon.svg"> Поиск</button>
-   <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display:none">✕ Отмена</button>
+    <button class="btn btn-ms" onclick="checkNumbers()"><img class="btn-icon" src="images/marketplace/ms-favicon.svg"> Поиск</button>
+    <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display:none">✕ Отмена</button>
+</div>
+<!-- Ozon report comparison row -->
+<div class="compare-row">
+  <input type="file" id="reportFile" accept=".xlsx" hidden>
+  <button class="btn btn-ozon btn-small" onclick="document.getElementById('reportFile').click()">
+    📄 Выбрать отчёт Ozon
+  </button>
+  <span id="reportFilePath">файл не выбран</span>
+  <button class="btn btn-accent btn-small" onclick="runComparison()">🔍 Сравнить</button>
+  <button class="btn btn-xlsx btn-small" onclick="downloadComparisonReport()" style="display:none" id="btnDownloadReport">
+    📥 Скачать отчёт сравнения
+  </button>
 </div>
           </div>
         </div>
@@ -185,6 +198,11 @@
           <div class="stats-panel stats-mismatch">
             <div class="stats-header">Контроль статусов</div>
             <div id="mismatchOutput" class="stats-output"></div>
+          </div>
+          <!-- Ozon report comparison results -->
+          <div class="stats-panel stats-comparison" id="comparisonPanel" style="display:none">
+            <div class="stats-header">Сравнение с отчётом Ozon</div>
+            <div id="comparisonOutput" class="stats-output"></div>
           </div>
         </div>
       </div>
@@ -519,7 +537,7 @@
 
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="sticker.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=1.0.7"></script>
     <!-- Inline Script: Tab Switching, Modal Handlers, Image Sync -->
     <script>
       // Tab switching logic
