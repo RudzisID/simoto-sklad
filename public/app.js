@@ -864,6 +864,15 @@ async function checkNumbers() {
                 window._lastComparisonResult = comparisonResult
                 renderComparisonPanel(comparisonResult)
                 window._pendingComparison = false
+
+                // Сохраняем снапшот для последующего сравнения после массовых действий
+                window._comparisonBaseline = JSON.parse(JSON.stringify(ordersData))
+                window._comparisonBaselineStats = {
+                  totalD: comparisonResult.summary.totalD,
+                  totalJPos: comparisonResult.summary.totalJPos,
+                  totalDiff: comparisonResult.summary.totalDiff
+                }
+                window._comparisonDiffLog = []
               }
 
               // Сохраняем автоматически после сканирования
@@ -3260,6 +3269,11 @@ async function batchAction(actionType) {
 
               // Убираем анимацию сканирования
               document.querySelector('.stats-final').classList.remove('scanning')
+
+              // Устанавливаем флаг для повторного сравнения после массовых действий
+              if (window._comparisonBaseline) {
+                window._pendingRecompare = true
+              }
             } else if (data.type === 'aborted') {
               const stats = data.stats || { created, skipped, errors }
 
@@ -3607,6 +3621,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     })
   }
+
+  // Инициализация переменных для механизма ре-компаризона
+  window._pendingRecompare = false
+  window._recompareRequested = false
+  window._comparisonBaseline = null
+  window._comparisonBaselineStats = null
+  window._comparisonDiffLog = []
 })
 
 // Глобальный обработчик закрытия попапа фильтра по дате
@@ -5717,6 +5738,13 @@ function buildReportMap(rows) {
  * @returns {Promise<void>}
  */
 async function runComparison() {
+  // Если запрошено повторное сравнение после массовых действий
+  if (window._pendingRecompare) {
+    window._pendingRecompare = false
+    await recompareAfterActions()
+    return
+  }
+
   const fileInput = document.getElementById('reportFile')
   if (!fileInput || !fileInput.files || !fileInput.files[0]) {
     await showAlert('Сначала выберите файл отчёта Ozon (.xlsx)', 'Файл не выбран')
@@ -5939,16 +5967,17 @@ function compareWithReport(reportMap) {
 }
 
 /**
- * Рендерит панель результатов сравнения в блок #comparisonOutput.
- * Показывает сводку (Total D, J+, разница, счётчики), повествовательный
- * блок с анализом расхождений и детальную таблицу по всем заказам.
+ * Рендерит панель результатов сравнения в модал #comparisonModalContent.
+ * Показывает сводку (Total D, J+, разница, счётчики), цветовые блоки,
+ * повествовательный блок с анализом расхождений, таблицу частичных возвратов,
+ * детальную таблицу и секцию after-actions (если есть).
  *
  * @param {{ summary: Object, details: Array<Object> }} stats - результат сравнения
  * @returns {void}
  */
 function renderComparisonPanel(stats) {
   const { summary, details } = stats
-  const output = document.getElementById('comparisonOutput')
+  const output = document.getElementById('comparisonModalContent')
   if (!output) return
 
   const fmt = (n) => (n || 0).toLocaleString('ru-RU')
@@ -5957,127 +5986,242 @@ function renderComparisonPanel(stats) {
     return (n > 0 ? '' : '') + fmt(Math.abs(n)) + ' ₽'
   }
 
-  // Показываем панель и кнопку скачивания
-  const panel = document.getElementById('comparisonPanel')
-  if (panel) panel.style.display = ''
+  // Показываем кнопки
+  const btnView = document.getElementById('btnViewComparison')
+  if (btnView) btnView.style.display = ''
   const btnDownload = document.getElementById('btnDownloadReport')
   if (btnDownload) btnDownload.style.display = ''
+  // Скрываем старую инлайн-панель
+  const oldPanel = document.getElementById('comparisonPanel')
+  if (oldPanel) oldPanel.style.display = 'none'
 
-  // ── Сводка ──
+  // ── Сводка (2 колонки) ──
   let html = '<div class="comparison-summary-grid">'
 
   // Total D
   html += '<div class="comparison-summary-item">'
-  html += '<div class="label">Total D (МойСклад)</div>'
+  html += '<div class="label">💰 Total D (МойСклад)</div>'
   html += '<div class="value">' + fmt(summary.totalD) + ' ₽</div>'
   html += '</div>'
 
   // Total J+
   html += '<div class="comparison-summary-item">'
-  html += '<div class="label">Total J+ (отчёт Ozon)</div>'
+  html += '<div class="label">📄 Total J+ (отчёт Ozon)</div>'
   html += '<div class="value">' + fmt(summary.totalJPos) + ' ₽</div>'
   html += '</div>'
 
   // Разница
   const diffClass = Math.abs(summary.totalDiff) < 1 ? 'ok' : 'diff'
   html += '<div class="comparison-summary-item">'
-  html += '<div class="label">Разница (D − J+)</div>'
+  html += '<div class="label">⚖️ Разница (D − J+)</div>'
   html += '<div class="value ' + diffClass + '">' + fmt(summary.totalDiff) + ' ₽</div>'
   html += '</div>'
 
   // Совпало
   html += '<div class="comparison-summary-item">'
-  html += '<div class="label">✅ Совпало</div>'
+  html += '<div class="label"><span class="comparison-status-ok"></span> Совпало</div>'
   html += '<div class="value ok">' + summary.okCount + '</div>'
   html += '</div>'
 
-  // Расхождения
+  // Расхождения / Частичные
   html += '<div class="comparison-summary-item">'
-  html += '<div class="label">⚠️ Расхождений / Частичных</div>'
+  html += '<div class="label"><span class="comparison-status-partial"></span> Расхождений / Частичных</div>'
   html += '<div class="value diff">' + (summary.mismatchCount + summary.partialCount) + '</div>'
   html += '</div>'
 
   // Не найдено в отчёте
   html += '<div class="comparison-summary-item">'
-  html += '<div class="label">❌ Не найдено в отчёте</div>'
+  html += '<div class="label"><span class="comparison-status-missing"></span> Не найдено в отчёте</div>'
   html += '<div class="value missing">' + summary.missingCount + '</div>'
+  html += '</div>'
+
+  // Полные возвраты
+  html += '<div class="comparison-summary-item">'
+  html += '<div class="label"><span class="comparison-status-return"></span> Полных возвратов (отмены)</div>'
+  html += '<div class="value">' + summary.returnCount + '</div>'
+  html += '</div>'
+
+  // Всего заказов
+  html += '<div class="comparison-summary-item">'
+  html += '<div class="label">📦 Всего заказов в скане</div>'
+  html += '<div class="value">' + summary.total + '</div>'
   html += '</div>'
 
   html += '</div>' // .comparison-summary-grid
 
-  // ── Повествовательный блок (как в report-comparison.md) ──
-  if (summary.narrative) {
-    html += '<div class="comparison-narrative">' + summary.narrative
+  // ── Цветовые блоки ──
+  // Блок итоговых сумм
+  html += '<div class="cmp-block-total">'
+  html += '<strong>💰 Итоговые суммы</strong><br>'
+  html += 'Total D (МойСклад): <strong>' + fmt(summary.totalD) + ' ₽</strong><br>'
+  html += 'Total J+ (отчёт): <strong>' + fmt(summary.totalJPos) + ' ₽</strong><br>'
+  const diffIcon = Math.abs(summary.totalDiff) < 1 ? '✅' : '⚠️'
+  html += 'Разница: <strong>' + fmt(summary.totalDiff) + ' ₽</strong> ' + diffIcon + '<br>'
+  html += '</div>'
 
-    // Добавляем таблицу частичных возвратов если есть
-    if (summary.partialDetails && summary.partialDetails.length > 0) {
-      html += 'Заказ\t\tD (скан)\tF (возврат)\tG (платёж)\tJ+ (отчёт)\tРазрыв\n'
-      for (const pd of summary.partialDetails) {
-        html += pd.orderKey + '\t' +
-          fmtSum(pd.sumD) + '\t' +
-          fmtSum(pd.retF) + '\t' +
-          fmtSum(pd.payG) + '\t' +
-          fmtSum(pd.jPos) + '\t' +
-          fmtSum(pd.diff) + '\n'
+  // Счётчики
+  html += '<div class="cmp-block-ok">'
+  html += '✅ Совпало: <strong>' + summary.okCount + '</strong><br>'
+  if (summary.mismatchCount + summary.partialCount > 0) {
+    html += '⚠️ Расхождений / частичных: <strong>' + (summary.mismatchCount + summary.partialCount) + '</strong><br>'
+  }
+  if (summary.missingCount > 0) {
+    html += '❌ Не найдено в отчёте: <strong>' + summary.missingCount + '</strong><br>'
+  }
+  if (summary.returnCount > 0) {
+    html += '🔄 Полных возвратов (отмен): <strong>' + summary.returnCount + '</strong><br>'
+  }
+  html += '</div>'
+
+  // ── Повествовательный блок ──
+  if (summary.narrative) {
+    html += '<div class="comparison-narrative">' + esc(summary.narrative) + '</div>'
+  }
+
+  // ── Таблица частичных возвратов ──
+  if (summary.partialDetails && summary.partialDetails.length > 0) {
+    html += '<div class="cmp-block-diff">'
+    html += '<strong>📋 Таблица частичных возвратов</strong><br>'
+    html += '<table class="comparison-table">'
+    html += '<thead><tr>'
+    html += '<th>Заказ</th><th>D (скан)</th><th>F (возврат)</th><th>G (платёж)</th><th>J+ (отчёт)</th><th>Разрыв</th>'
+    html += '</tr></thead><tbody>'
+    for (const pd of summary.partialDetails) {
+      html += '<tr>'
+      html += '<td>' + esc(pd.orderKey) + '</td>'
+      html += '<td>' + fmtSum(pd.sumD) + '</td>'
+      html += '<td>' + fmtSum(pd.retF) + '</td>'
+      html += '<td>' + fmtSum(pd.payG) + '</td>'
+      html += '<td>' + fmtSum(pd.jPos) + '</td>'
+      html += '<td>' + fmtSum(pd.diff) + '</td>'
+      html += '</tr>'
+    }
+    // Итоговая строка
+    const pSum = (fn) => summary.partialDetails.reduce((s, d) => s + fn(d), 0)
+    html += '<tr style="font-weight:700;border-top:2px solid rgba(255,255,255,0.15)">'
+    html += '<td>Итого</td>'
+    html += '<td>' + fmtSum(pSum(d => d.sumD)) + '</td>'
+    html += '<td>' + fmtSum(pSum(d => d.retF)) + '</td>'
+    html += '<td>' + fmtSum(pSum(d => d.payG)) + '</td>'
+    html += '<td>' + fmtSum(pSum(d => d.jPos)) + '</td>'
+    html += '<td>' + fmtSum(pSum(d => d.diff)) + '</td>'
+    html += '</tr>'
+    html += '</tbody></table>'
+    html += '</div>'
+  }
+
+  // ── FBO cписок ──
+  const fboOrders = details.filter(d => {
+    const order = ordersData.find(o => String(o.shipmentNum).split('\n')[0].trim() === d.orderKey)
+    return order && String(order.storeName || '').toUpperCase() === 'FBO'
+  })
+  if (fboOrders.length > 0) {
+    const fboNumbers = fboOrders.map(d => d.orderKey)
+    html += '<div class="cmp-section">'
+    html += '<h4>📋 FBO заказы</h4>'
+    html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">По каким FBS отправлениям были проданы эти FBO заказы?</p>'
+    html += '<code style="font-size:0.8rem;word-break:break-all;color:#eab308;">' + esc(fboNumbers.join(', ')) + '</code>'
+    html += '</div>'
+  }
+
+  // ── Секция after-actions (Stage 3) ──
+  if (window._comparisonDiffLog && window._comparisonDiffLog.length > 0) {
+    const diffLog = window._comparisonDiffLog
+    html += '<div class="cmp-section cmp-section-actions">'
+    html += '<h4>📋 После массовых действий</h4>'
+    html += '<p>Изменено <strong>' + diffLog.length + '</strong> заказов после массовой операции (повторное нажатие «Сравнить»):</p>'
+    html += '<table class="cmp-diff-table">'
+    html += '<tr><th>Заказ</th><th>Изменения</th></tr>'
+    for (const item of diffLog) {
+      html += '<tr><td>' + esc(item.orderKey) + '</td><td>'
+      for (const change of item.changes) {
+        html += '<div>' + esc(change) + '</div>'
       }
-      html += 'Итого\t\t' +
-        fmtSum(summary.partialDetails.reduce((s, d) => s + d.sumD, 0)) + '\t' +
-        fmtSum(summary.partialDetails.reduce((s, d) => s + d.retF, 0)) + '\t' +
-        fmtSum(summary.partialDetails.reduce((s, d) => s + d.payG, 0)) + '\t' +
-        fmtSum(summary.partialDetails.reduce((s, d) => s + d.jPos, 0)) + '\t' +
-        fmtSum(summary.partialDetails.reduce((s, d) => s + d.diff, 0)) + '\n'
+      html += '</td></tr>'
+    }
+    html += '</table>'
+
+    // Было/Стало
+    if (window._comparisonBaselineStats) {
+      const bs = window._comparisonBaselineStats
+      html += '<div class="cmp-before-after">'
+      html += '<div class="cmp-before">'
+      html += '<h5>📌 До действий</h5>'
+      html += '<p>Total D: ' + fmt(bs.totalD) + ' ₽</p>'
+      html += '<p>Total J+: ' + fmt(bs.totalJPos) + ' ₽</p>'
+      html += '<p>Разница: ' + fmt(bs.totalDiff) + ' ₽ ⚠️</p>'
+      html += '</div>'
+      html += '<div class="cmp-after">'
+      html += '<h5>✅ После действий</h5>'
+      html += '<p>Total D: ' + fmt(summary.totalD) + ' ₽</p>'
+      html += '<p>Total J+: ' + fmt(summary.totalJPos) + ' ₽</p>'
+      html += '<p>Разница: ' + fmt(summary.totalDiff) + ' ₽ ⚠️</p>'
+      html += '</div>'
+      html += '</div>'
+
+      // Легенда
+      const deltaDiff = summary.totalDiff - bs.totalDiff
+      const paidCount = diffLog.filter(i => i.changes.some(c => c.includes('Оплата') && c.includes('создана'))).length
+      let paidSum = 0
+      for (const item of diffLog) {
+        const payMatch = item.changes.find(c => c.includes('Сумма оплаты'))
+        if (payMatch) {
+          const m = payMatch.match(/→\s*([\d\s]+)/)
+          if (m) paidSum += parseInt(m[1].replace(/\s/g, '')) || 0
+        }
+      }
+      let retSum = 0
+      for (const item of diffLog) {
+        const retMatch = item.changes.find(c => c.includes('Сумма возврата'))
+        if (retMatch) {
+          const m = retMatch.match(/→\s*([\d\s]+)/)
+          if (m) retSum += parseInt(m[1].replace(/\s/g, '')) || 0
+        }
+      }
+
+      html += '<div class="cmp-legend">'
+      html += '<strong>Что произошло:</strong>'
+      html += '<ul>'
+      if (paidCount > 0) html += '<li>Создано <strong>' + paidCount + '</strong> платежей на сумму <strong>' + fmt(paidSum) + ' ₽</strong></li>'
+      if (retSum > 0) html += '<li>Создано возвратов на сумму <strong>' + fmt(retSum) + ' ₽</strong></li>'
+      html += '<li>Разница: <strong>' + fmt(bs.totalDiff) + ' ₽ → ' + fmt(summary.totalDiff) + ' ₽</strong> (' + (deltaDiff >= 0 ? '+' : '') + fmt(Math.abs(deltaDiff)) + ' ₽)</li>'
+      html += '</ul>'
+      html += '</div>'
     }
 
     html += '</div>'
   }
 
-  // ── Кнопка показа деталей ──
-  html += '<button class="comparison-detail-btn" onclick="' +
-    "var d = document.getElementById('comparisonDetailTable');" +
-    "d.classList.toggle('visible');" +
-    "this.textContent = d.classList.contains('visible') ? 'Скрыть детали' : 'Показать детали'" +
-    '">Показать детали</button>'
-
-  // ── Детальная таблица ──
-  html += '<div class="comparison-detail" id="comparisonDetailTable">'
-  html += '<table class="comparison-table"><thead><tr>'
-  html += '<th>Номер заказа</th>'
-  html += '<th>D (МС)</th>'
-  html += '<th>F (возврат)</th>'
-  html += '<th>G (платёж)</th>'
-  html += '<th>J+ (отчёт)</th>'
-  html += '<th>Разница</th>'
-  html += '<th>Статус</th>'
-  html += '<th>Примечание</th>'
-  html += '</tr></thead><tbody>'
-
-  for (const d of details) {
-    let rowClass = 'row-ok'
-    if (d.status === 'partial' || d.status === 'mismatch') rowClass = 'row-diff'
-    if (d.status === 'missing-in-report') rowClass = 'row-missing'
-
-    html += '<tr class="' + rowClass + '">'
-    html += '<td>' + escapeHtml(d.orderKey) + '</td>'
-    html += '<td>' + fmtSum(d.sumD) + '</td>'
-    html += '<td>' + fmtSum(d.retF) + '</td>'
-    html += '<td>' + fmtSum(d.payG) + '</td>'
-    html += '<td>' + fmtSum(d.jPos) + '</td>'
-    html += '<td>' + fmtSum(d.diff) + '</td>'
-    html += '<td>' + d.status + '</td>'
-    html += '<td>' + escapeHtml(d.note) + '</td>'
-    html += '</tr>'
-  }
-
-  html += '</tbody></table>'
-  html += '</div>' // .comparison-detail
-
   output.innerHTML = html
 }
 
 /**
+ * Открывает модал сравнения. Если контент пуст — рендерит заново.
+ * @returns {void}
+ */
+function openComparisonModal() {
+  const content = document.getElementById('comparisonModalContent')
+  if (!content) return
+  // Если контент пуст — перерендериваем
+  if (content.innerHTML.trim() === '' && window._lastComparisonResult) {
+    renderComparisonPanel(window._lastComparisonResult)
+  }
+  const modal = document.getElementById('comparisonModal')
+  if (modal) modal.classList.remove('hidden')
+}
+
+/**
+ * Закрывает модал сравнения.
+ * @returns {void}
+ */
+function closeComparisonModal() {
+  const modal = document.getElementById('comparisonModal')
+  if (modal) modal.classList.add('hidden')
+}
+
+/**
  * Скачивает отчёт сравнения в формате XLSX.
- * Содержит те же колонки, что и детальная таблица,
- * с заливкой проблемных строк (жёлтый/красный).
+ * Колонки A–K: данные заказов, колонки L+: итоги, анализ, FBO-список.
  *
  * @returns {void}
  */
@@ -6089,31 +6233,265 @@ function downloadComparisonReport() {
     return
   }
 
+  const { summary, details } = lastResult
+
+  const fmtNum = (n) => (n || 0).toLocaleString('ru-RU')
   const fmtSum = (n) => {
     if (n == null || n === 0) return '—'
-    return (n > 0 ? '' : '') + Math.abs(n).toLocaleString('ru-RU') + ' ₽'
+    return fmtNum(Math.abs(n)) + ' ₽'
   }
 
+  // Строим rows как массив массивов (до 20 колонок для A–T)
   const rows = []
-  rows.push(['Номер заказа', 'D (МС)', 'F (возврат)', 'G (платёж)', 'J+ (отчёт)', 'Разница', 'Статус', 'Примечание'])
 
-  for (const d of lastResult.details) {
-    rows.push([
-      d.orderKey,
-      d.sumD,
-      d.retF,
-      d.payG,
-      d.jPos,
-      d.diff,
-      d.status,
-      d.note
-    ])
+  // ── Заголовок ──
+  const headerRow = Array(20).fill('')
+  headerRow[0] = 'Номер заказа'
+  headerRow[1] = 'D (МС)'
+  headerRow[2] = 'F (возврат)'
+  headerRow[3] = 'G (платёж)'
+  headerRow[4] = 'J+ (отчёт)'
+  headerRow[5] = 'Разница'
+  headerRow[6] = 'Статус'
+  headerRow[7] = 'Примечание'
+  headerRow[11] = '═══ ИТОГИ ═══'
+  rows.push(headerRow)
+
+  // ── Данные ──
+  for (const d of details) {
+    const row = Array(20).fill('')
+    row[0] = d.orderKey
+    row[1] = d.sumD
+    row[2] = d.retF
+    row[3] = d.payG
+    row[4] = d.jPos
+    row[5] = d.diff
+    row[6] = d.status
+    row[7] = d.note
+    rows.push(row)
   }
 
+  // ── Пустая строка ──
+  const emptyRow = Array(20).fill('')
+  rows.push(emptyRow)
+
+  // ── Итоги (L+) ──
+  const diffIcon = Math.abs(summary.totalDiff) < 1 ? '✅' : '⚠️'
+
+  const lTotalD = Array(20).fill(''); lTotalD[11] = 'Total D (МойСклад):'; lTotalD[12] = fmtNum(summary.totalD) + ' ₽'; rows.push(lTotalD)
+  const lTotalJ = Array(20).fill(''); lTotalJ[11] = 'Total J+ (отчёт):'; lTotalJ[12] = fmtNum(summary.totalJPos) + ' ₽'; rows.push(lTotalJ)
+  const lDiff = Array(20).fill(''); lDiff[11] = 'Разница (D − J+):'; lDiff[12] = fmtNum(summary.totalDiff) + ' ₽ ' + diffIcon; rows.push(lDiff)
+  const emptyRow2 = Array(20).fill(''); rows.push(emptyRow2)
+
+  // ── Анализ (L+) ──
+  const analysisHeader = Array(20).fill(''); analysisHeader[11] = '═══ АНАЛИЗ ═══'; rows.push(analysisHeader)
+  const aOk = Array(20).fill(''); aOk[11] = '✅ Совпало:'; aOk[12] = String(summary.okCount); rows.push(aOk)
+  if (summary.mismatchCount + summary.partialCount > 0) {
+    const aMis = Array(20).fill(''); aMis[11] = '⚠️ Расхождений / частичных:'; aMis[12] = String(summary.mismatchCount + summary.partialCount); rows.push(aMis)
+  }
+  if (summary.missingCount > 0) {
+    const aMiss = Array(20).fill(''); aMiss[11] = '❌ Не найдено в отчёте:'; aMiss[12] = String(summary.missingCount); rows.push(aMiss)
+  }
+  if (summary.returnCount > 0) {
+    const aRet = Array(20).fill(''); aRet[11] = '🔄 Полных возвратов (отмен):'; aRet[12] = String(summary.returnCount); rows.push(aRet)
+  }
+  const emptyRow3 = Array(20).fill(''); rows.push(emptyRow3)
+
+  // ── Частичные возвраты ──
+  if (summary.partialDetails && summary.partialDetails.length > 0) {
+    const partialHeader = Array(20).fill(''); partialHeader[11] = '═══ ЧАСТИЧНЫЕ ВОЗВРАТЫ ═══'; rows.push(partialHeader)
+    const ph = Array(20).fill('')
+    ph[11] = 'Заказ'; ph[12] = 'D (скан)'; ph[13] = 'F (возврат)'; ph[14] = 'G (платёж)'; ph[15] = 'J+ (отчёт)'; ph[16] = 'Разрыв'
+    rows.push(ph)
+    for (const pd of summary.partialDetails) {
+      const pr = Array(20).fill('')
+      pr[11] = pd.orderKey
+      pr[12] = pd.sumD
+      pr[13] = pd.retF
+      pr[14] = pd.payG
+      pr[15] = pd.jPos
+      pr[16] = pd.diff
+      rows.push(pr)
+    }
+    const pSumRow = Array(20).fill('')
+    pSumRow[11] = 'Итого'
+    pSumRow[12] = summary.partialDetails.reduce((s, d) => s + d.sumD, 0)
+    pSumRow[13] = summary.partialDetails.reduce((s, d) => s + d.retF, 0)
+    pSumRow[14] = summary.partialDetails.reduce((s, d) => s + d.payG, 0)
+    pSumRow[15] = summary.partialDetails.reduce((s, d) => s + d.jPos, 0)
+    pSumRow[16] = summary.partialDetails.reduce((s, d) => s + d.diff, 0)
+    rows.push(pSumRow)
+    const emptyRow4 = Array(20).fill(''); rows.push(emptyRow4)
+  }
+
+  // ── FBO список ──
+  const fboOrders = details.filter(d => {
+    const order = ordersData.find(o => String(o.shipmentNum).split('\n')[0].trim() === d.orderKey)
+    return order && String(order.storeName || '').toUpperCase() === 'FBO'
+  })
+  if (fboOrders.length > 0) {
+    const fboHeader = Array(20).fill(''); fboHeader[11] = '═══ FBO ЗАКАЗЫ ═══'; rows.push(fboHeader)
+    const fboDesc = Array(20).fill(''); fboDesc[11] = 'По каким FBS отправлениям были проданы эти FBO заказы?'; rows.push(fboDesc)
+    const fboNums = Array(20).fill(''); fboNums[11] = fboOrders.map(d => d.orderKey).join(', '); rows.push(fboNums)
+  }
+
+  // ── After-actions diffLog (если есть) ──
+  if (window._comparisonDiffLog && window._comparisonDiffLog.length > 0) {
+    const diffLog = window._comparisonDiffLog
+    const emptyRow5 = Array(20).fill(''); rows.push(emptyRow5)
+    const aaHeader = Array(20).fill(''); aaHeader[11] = '═══ ПОСЛЕ МАССОВЫХ ДЕЙСТВИЙ ═══'; rows.push(aaHeader)
+    for (const item of diffLog) {
+      for (const change of item.changes) {
+        const ac = Array(20).fill('')
+        ac[11] = item.orderKey
+        ac[12] = change
+        rows.push(ac)
+      }
+    }
+  }
+
+  // Создаём XLSX
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.json_to_sheet(rows, { header: [] })
+
+  // Устанавливаем ширину колонок
+  ws['!cols'] = [
+    { wch: 24 },  // A — номер заказа
+    { wch: 14 },  // B — D
+    { wch: 14 },  // C — F
+    { wch: 14 },  // D — G
+    { wch: 14 },  // E — J+
+    { wch: 14 },  // F — разница
+    { wch: 18 },  // G — статус
+    { wch: 28 },  // H — примечание
+    { wch: 4 },   // I
+    { wch: 4 },   // J
+    { wch: 4 },   // K
+    { wch: 32 },  // L — итоги/анализ (label)
+    { wch: 24 },  // M — итоги/анализ (value)
+    { wch: 14 },  // N
+    { wch: 14 },  // O
+    { wch: 14 },  // P
+    { wch: 14 },  // Q
+    { wch: 4 },   // R
+    { wch: 4 },   // S
+    { wch: 4 }    // T
+  ]
+
   XLSX.utils.book_append_sheet(wb, ws, 'Сравнение')
   XLSX.writeFile(wb, 'comparison_ozon_report.xlsx')
-  showStatus('Отчёт сравнения сохранён: comparison_ozon_report.xlsx (' + (rows.length - 1) + ' строк)')
+  showStatus('Отчёт сравнения сохранён: comparison_ozon_report.xlsx (' + details.length + ' строк)')
+}
+
+/**
+ * Повторное сравнение после массовых действий (без API-сканирования).
+ * Сравнивает сохранённый baseline (снапшот до действий) с текущим ordersData,
+ * формирует diffLog с изменениями и обновляет модал сравнения.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
+async function recompareAfterActions() {
+  if (!window._comparisonBaseline || !window._lastComparisonResult) {
+    await showAlert('Нет данных для повторного сравнения. Выполните обычное сравнение сначала.', 'Нет базовых данных')
+    return
+  }
+
+  const baseline = window._comparisonBaseline
+  const current = ordersData
+  const diffLog = []
+
+  // Сравниваем каждый заказ из baseline с текущим состоянием
+  for (const baseOrder of baseline) {
+    if (!baseOrder.enabled) continue
+
+    const shipmentNum = String(baseOrder.shipmentNum).split('\n')[0].trim()
+    const currentOrder = current.find(o => String(o.shipmentNum).split('\n')[0].trim() === shipmentNum)
+    if (!currentOrder) continue
+
+    const changes = []
+
+    if (baseOrder.hasDemand !== currentOrder.hasDemand) {
+      changes.push(currentOrder.hasDemand ? 'создана отгрузка' : 'отгрузка удалена')
+    }
+    if (baseOrder.hasPayment !== currentOrder.hasPayment) {
+      changes.push(currentOrder.hasPayment ? 'создан платёж' : 'платёж удалён')
+    }
+    if (baseOrder.hasReturn !== currentOrder.hasReturn) {
+      changes.push(currentOrder.hasReturn ? 'создан возврат' : 'возврат удалён')
+    }
+    if (baseOrder.isCancelled !== currentOrder.isCancelled) {
+      changes.push(currentOrder.isCancelled ? 'отменён' : 'отмена снята')
+    }
+
+    // Проверяем изменение сумм
+    if (Math.abs((baseOrder.returnSum || 0) - (currentOrder.returnSum || 0)) > 0.01) {
+      changes.push('сумма возврата изменена: ' + (currentOrder.returnSum || 0).toLocaleString('ru-RU') + ' ₽')
+    }
+    if (Math.abs((baseOrder.paid || 0) - (currentOrder.paid || 0)) > 0.01) {
+      changes.push('оплачено изменено: ' + (currentOrder.paid || 0).toLocaleString('ru-RU') + ' ₽')
+    }
+
+    if (changes.length > 0) {
+      diffLog.push({ orderKey: shipmentNum, changes })
+    }
+  }
+
+  window._comparisonDiffLog = diffLog
+
+  // Обновляем детали с учётом текущего состояния заказов
+  const lastResult = window._lastComparisonResult
+  const updatedDetails = lastResult.details.map(d => {
+    const currentOrder = current.find(o => String(o.shipmentNum).split('\n')[0].trim() === d.orderKey)
+    if (!currentOrder) return d
+
+    // Пересчитываем diff с учётом новых данных
+    const newSumD = currentOrder.sum || 0
+    const newRetF = currentOrder.returnSum || 0
+    const newPayG = currentOrder.paid || 0
+    const newDiff = newSumD - d.jPos
+
+    return {
+      ...d,
+      sumD: newSumD,
+      retF: newRetF,
+      payG: newPayG,
+      diff: newDiff,
+      hasReturn: currentOrder.hasReturn,
+      isCancelled: currentOrder.isCancelled,
+      statusName: currentOrder.statusName || ''
+    }
+  })
+
+  // Пересчитываем сводку
+  let totalD = 0
+  let totalJPos = 0
+  let totalDiff = 0
+  let okCount = 0
+  let mismatchCount = 0
+
+  for (const d of updatedDetails) {
+    totalD += d.sumD
+    totalJPos += d.jPos
+    totalDiff += d.diff
+    if (d.status === 'ok') okCount++
+    if (d.status === 'mismatch') mismatchCount++
+  }
+
+  const updatedSummary = {
+    ...lastResult.summary,
+    totalD,
+    totalJPos,
+    totalDiff,
+    okCount,
+    mismatchCount,
+    total: updatedDetails.length
+  }
+
+  const updatedResult = { summary: updatedSummary, details: updatedDetails }
+  window._lastComparisonResult = updatedResult
+
+  // Рендерим обновлённый модал
+  renderComparisonPanel(updatedResult)
 }
 

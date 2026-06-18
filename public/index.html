@@ -92,6 +92,7 @@
   </button>
   <span id="reportFilePath">файл не выбран</span>
   <button class="btn btn-accent btn-small" onclick="runComparison()">🔍 Сравнить</button>
+  <button class="btn btn-ozon btn-small" id="btnViewComparison" onclick="openComparisonModal()" style="display:none">📊 Посмотреть сравнение</button>
   <button class="btn btn-xlsx btn-small" onclick="downloadComparisonReport()" style="display:none" id="btnDownloadReport">
     📥 Скачать отчёт сравнения
   </button>
@@ -531,6 +532,22 @@
       </div>
     </div>
 
+    <!-- Comparison Modal -->
+    <div id="comparisonModal" class="modal-overlay hidden">
+      <div class="modal-dialog comparison-modal-dialog">
+        <div class="modal-header">
+          <h3>📊 Сравнение с отчётом Ozon</h3>
+        </div>
+        <div class="modal-body comparison-modal-body">
+          <div id="comparisonModalContent"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-cancel" onclick="closeComparisonModal()">Закрыть</button>
+          <button class="btn btn-accent" onclick="downloadComparisonReport()">📥 Скачать XLSX</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Hidden elements for JS compatibility (status replaced by sticker button) -->
     <span id="statusText" style="display: none">Готов</span>
     <span id="statusDot" style="display: none"></span>
@@ -680,6 +697,14 @@
         document.getElementById('pushArchiveModal').addEventListener('click', function(e) {
           if (e.target === this) this.classList.add('hidden');
         });
+
+        // Comparison modal close on overlay click
+        const comparisonModal = document.getElementById('comparisonModal');
+        if (comparisonModal) {
+          comparisonModal.addEventListener('click', function(e) {
+            if (e.target === this) this.classList.add('hidden');
+          });
+        }
       });
       // OEM код для сравнения при поиске
       var _syncedOemCode = '';
