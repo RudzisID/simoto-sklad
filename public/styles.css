@@ -4678,3 +4678,37 @@ tr.day-separator td span {
   max-height: 50vh;
 }
 
+/* ── Анимация строк при массовой отгрузке поставок ── */
+
+/* Строка обрабатывается — пульсация */
+#suppliesTableBody tr.processing {
+  animation: supplyPulse 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes supplyPulse {
+  from {
+    outline: 2px solid transparent;
+    opacity: 0.7;
+  }
+  to {
+    outline: 2px solid var(--accent, #f97316);
+    opacity: 1;
+  }
+}
+
+/* Строка обработана — зелёная метка */
+#suppliesTableBody tr.completed {
+  position: relative;
+}
+
+#suppliesTableBody tr.completed td:first-child::after {
+  content: '✔';
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--success, #22c55e);
+  font-size: 14px;
+  font-weight: bold;
+}
+

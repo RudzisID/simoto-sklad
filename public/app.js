@@ -5357,7 +5357,13 @@ async function supplyBatchAction(action) {
                   var oldTr = document.querySelector('#suppliesTableBody tr[data-shipment="' + result.shipmentNum + '"]')
                   if (oldTr) {
                     var newTr = createSuppliesRow(suppliesData[idx])
-                    if (newTr) oldTr.replaceWith(newTr)
+                    if (newTr) {
+                      oldTr.replaceWith(newTr)
+                      // Анимация завершения
+                      newTr.classList.remove('processing')
+                      newTr.classList.add('completed')
+                      setTimeout(function() { newTr.classList.remove('completed') }, 2000)
+                    }
                   }
                 }
               }
@@ -5369,6 +5375,8 @@ async function supplyBatchAction(action) {
               // --- Обновить статистику поставок инкрементально ---
               renderSuppliesStats()
             } else if (data.type === 'done') {
+              // Снимаем анимацию обработки со всех строк
+              document.querySelectorAll('#suppliesTableBody tr.processing').forEach(function(el) { el.classList.remove('processing') })
               const elapsed = stopOperationTimer()
               const stats = data.stats || { created: 0, skipped: 0, errors: 0 }
               hideProgress(true, 'Готово: ' + stats.created)
@@ -5386,9 +5394,11 @@ async function supplyBatchAction(action) {
               // Обновить статистику поставок после массовой операции
               renderSuppliesStats()
             } else if (data.type === 'aborted') {
+              document.querySelectorAll('#suppliesTableBody tr.processing').forEach(function(el) { el.classList.remove('processing') })
               const elapsed = stopOperationTimer()
               hideProgress(false, 'Прервано')
             } else if (data.type === 'error') {
+              document.querySelectorAll('#suppliesTableBody tr.processing').forEach(function(el) { el.classList.remove('processing') })
               hideProgress(false, data.error || 'Ошибка')
               return
             }
@@ -5399,6 +5409,7 @@ async function supplyBatchAction(action) {
       }
     }
   } catch (e) {
+    document.querySelectorAll('#suppliesTableBody tr.processing').forEach(function(el) { el.classList.remove('processing') })
     hideProgress(false, 'Ошибка: ' + e.message)
     stopOperationTimer()
   }
@@ -5419,6 +5430,12 @@ async function supplySingleAction(shipmentNum, action) {
   if (!token) {
     showStatus('Ошибка: Токен МС не найден.')
     return
+  }
+
+  // Подсвечиваем все обрабатываемые строки
+  for (const num of numbers) {
+    const tr = document.querySelector('#suppliesTableBody tr[data-shipment="' + num + '"]')
+    if (tr) tr.classList.add('processing')
   }
 
   showProgress(true)
@@ -5807,16 +5824,30 @@ function fixCyrillicEncoding(str) {
 function buildReportMap(rows) {
   const map = {}
   const orderNumbers = []
+  const fboOrderNumbers = []
   let totalJ = 0
   let totalJPos = 0
   let rowsCount = 0
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i]
-    // Фильтр: 'Доставка покупателю', FBS, ненулевая J
+    // Фильтр: 'Доставка покупателю'
     // Используем fixCyrillicEncoding — xlsx может повредить кириллицу
     if (fixCyrillicEncoding(row[1]) !== 'Доставка покупателю') continue
-    if (!row[4] || String(row[4]).toLowerCase() !== 'fbs') continue
+
+    const colE = String(row[4] || '').toLowerCase()
+
+    // FBO: собираем номера заказов для списка техподдержки, не участвуют в сравнении
+    if (colE === 'fbo') {
+      const fboKey = String(row[2]).trim()
+      if (fboKey && !fboOrderNumbers.includes(fboKey)) {
+        fboOrderNumbers.push(fboKey)
+      }
+      continue
+    }
+
+    // FBS: участвует в сравнении
+    if (colE !== 'fbs') continue
     const jVal = typeof row[9] === 'number' ? row[9] : parseFloat(String(row[9]).replace(',', '.')) || 0
     if (jVal === 0) continue
 
@@ -5835,7 +5866,7 @@ function buildReportMap(rows) {
     rowsCount++
   }
 
-  return { map, orderNumbers, totalJ, totalJPos, rowsCount }
+  return { map, orderNumbers, fboOrderNumbers, totalJ, totalJPos, rowsCount }
 }
 
 /**
@@ -5933,6 +5964,8 @@ async function runComparison() {
       totalJPos: reportResult.totalJPos,
       rowsCount: reportResult.rowsCount
     }
+    // Сохраняем FBO номера для вывода в отчёте
+    window._fboOrderNumbers = reportResult.fboOrderNumbers || []
 
     // Заполняем поле ввода номерами заказов
     const input = document.getElementById('numbersInput')
@@ -5995,8 +6028,8 @@ function compareWithReport(reportMap) {
       totalDiff += sumD
       note = 'Нет в отчёте Ozon'
       diff = sumD
-    } else if (order.hasReturn && !order.isCancelled) {
-      // Частичный возврат: J+ может не включать G (факт. платёж)
+    } else if (order.hasReturn && !order.isCancelled && (order.returnSum || 0) < (order.sum || 0)) {
+      // Действительно частичный возврат: сумма возврата меньше суммы заказа
       status = 'partial'
       partialCount++
       totalJPos += jPos
@@ -6010,8 +6043,8 @@ function compareWithReport(reportMap) {
         diff
       })
       note = 'Частичный возврат: J+ не включает G'
-    } else if (order.isCancelled) {
-      // Полный возврат
+    } else if (order.isCancelled || (order.hasReturn && (order.returnSum || 0) >= (order.sum || 0))) {
+      // Отменён ИЛИ полный возврат всей суммы
       status = 'return'
       returnCount++
       totalJPos += jPos
@@ -6221,12 +6254,8 @@ function renderComparisonPanel(stats) {
   }
 
   // ── FBO cписок ──
-  const fboOrders = details.filter(d => {
-    const order = ordersData.find(o => String(o.shipmentNum).split('\n')[0].trim() === d.orderKey)
-    return order && String(order.storeName || '').toUpperCase() === 'FBO'
-  })
-  if (fboOrders.length > 0) {
-    const fboNumbers = fboOrders.map(d => d.orderKey)
+  const fboNumbers = window._fboOrderNumbers || []
+  if (fboNumbers.length > 0) {
     html += '<div class="cmp-section">'
     html += '<h4>📋 FBO заказы</h4>'
     html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">По каким FBS отправлениям были проданы эти FBO заказы?</p>'
@@ -6458,14 +6487,11 @@ function downloadComparisonReport() {
   }
 
   // ── FBO список ──
-  const fboOrders = details.filter(d => {
-    const order = ordersData.find(o => String(o.shipmentNum).split('\n')[0].trim() === d.orderKey)
-    return order && String(order.storeName || '').toUpperCase() === 'FBO'
-  })
-  if (fboOrders.length > 0) {
+  const fboNumbers = window._fboOrderNumbers || []
+  if (fboNumbers.length > 0) {
     rowsSummary.push(['FBO ЗАКАЗЫ', ''])
     rowsSummary.push(['По каким FBS отправлениям были проданы эти FBO заказы?', ''])
-    rowsSummary.push([fboOrders.map(d => d.orderKey).join(', '), ''])
+    rowsSummary.push([fboNumbers.join(', '), ''])
   }
 
   // ── After-actions diffLog ──
