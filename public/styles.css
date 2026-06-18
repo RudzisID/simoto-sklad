@@ -4314,6 +4314,15 @@ tr.day-separator td span {
   font-size: 0.85rem;
 }
 
+.compare-buttons {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.compare-buttons .btn-small {
+  flex: 1;
+}
+
 #reportFilePath {
   font-size: 0.8rem;
   color: var(--text-secondary, #94a3b8);

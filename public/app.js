@@ -1681,6 +1681,9 @@ function renderTable() {
   if (!tbody) return
   tbody.innerHTML = ''
 
+  // Очищаем старый баннер фильтра расхождений, если он висел вне tbody
+  document.querySelectorAll('#tableContainer > .mismatch-filter-banner').forEach(el => el.remove())
+
   const filtered = getFilteredData()
   const sorted = getSortedOrders(filtered)
   console.log('Rendering table, orders count:', sorted.length, '(filtered from', filtered.length, ')')
@@ -2227,11 +2230,13 @@ function calculateMismatches(orderList) {
     msReturnNoMarketplaceOrders: [],
     financialMismatchCount: 0,
     financialMismatchOrders: [],
+    partialReturnCount: 0,
     totalMismatches: 0
   }
   
   list.forEach(o => {
-    const hasMarketplaceReturn = !!(o.wbReturnInfo || o.ozonReturnInfo)
+    // Учитываем returnType как признак возврата на площадке (даже без wbReturnInfo/ozonReturnInfo)
+    const hasMarketplaceReturn = !!(o.wbReturnInfo || o.ozonReturnInfo || o.returnType)
     
     if (o.wbArticle || o.srid || o.wbStickerId) result.wbCount++
     if (o.offerId || o.ozonStatus) result.ozonCount++
@@ -2242,14 +2247,21 @@ function calculateMismatches(orderList) {
       result.totalMismatches++
     }
     
-    if (o.hasReturn && !hasMarketplaceReturn) {
+    // Не считаем расхождением, если заказ отменён — возврат в МС без возврата на площадке нормален
+    if (o.hasReturn && !hasMarketplaceReturn && !o.isCancelled) {
       result.msReturnNoMarketplace++
       if (o.shipmentNum) result.msReturnNoMarketplaceOrders.push(o.shipmentNum)
       result.totalMismatches++
     }
     
+    // Частичные возвраты: сумма возврата > 0, но меньше суммы заказа
+    if (o.returnSum > 0 && o.returnSum < (o.sum || 0)) {
+      result.partialReturnCount++
+    }
+    
     // Financial mismatch: msReturnSum vs marketplaceReturnPrice
-    const msRS = o.msReturnSum || 0
+    // Берём максимальное значение из доступных источников суммы возврата в МС
+    const msRS = Math.max(o.msReturnSum || 0, o.returnSum || 0)
     const mpRP = o.marketplaceReturnPrice || 0
     if (msRS > 0 && mpRP > 0 && Math.abs(msRS - mpRP) > 1) {
       result.financialMismatchCount++
@@ -2312,6 +2324,14 @@ function renderMismatchStats() {
   } else {
     html += `<div class="stat-row">
       <span class="stat-value mismatch-ok-text">✓ Нет расхождений</span>
+    </div>`
+  }
+  
+  // Информация о частичных возвратах (не является расхождением)
+  if (s.partialReturnCount > 0) {
+    html += `<div class="stat-row" style="margin-top:6px">
+      <span class="stat-label">↳ Частичных возвратов:</span>
+      <span class="stat-value">${s.partialReturnCount}</span>
     </div>`
   }
   
@@ -4726,22 +4746,32 @@ function calculateSuppliesStats() {
 
 /**
  * Рассчитывает расхождения для поставок.
- * @returns {{ wbCount: number, ozonCount: number, cancelledOnMarketplace: number, deliveredOnMarketplace: number, totalMismatches: number }}
+ * @returns {{ wbCount: number, ozonCount: number, cancelledOnMarketplace: number, cancelledInMs: number, deliveredOnMarketplace: number, deliveredInMs: number, totalMismatches: number }}
  */
 function calculateSuppliesMismatches() {
   var data = getFilteredSuppliesData()
-  var result = { wbCount: 0, ozonCount: 0, cancelledOnMarketplace: 0, deliveredOnMarketplace: 0, totalMismatches: 0 }
+  var result = { wbCount: 0, ozonCount: 0, cancelledOnMarketplace: 0, cancelledInMs: 0, deliveredOnMarketplace: 0, deliveredInMs: 0, totalMismatches: 0 }
   data.forEach(function(o) {
     if (o.marketplace === 'wb') result.wbCount++
     else if (o.marketplace === 'ozon') result.ozonCount++
-    // Отменённые на маркете, но ещё не отменённые в МС
+    // Отменённые на маркете, но без отмены в МС (и ещё не отгружены)
     if (o.marketplaceIsCancelled && !o.hasDemand && !o.isCancelled) {
       result.cancelledOnMarketplace++
+      result.totalMismatches++
+    }
+    // Отменённые в МС, но не отменённые на маркете
+    if (o.isCancelled && !o.marketplaceIsCancelled) {
+      result.cancelledInMs++
       result.totalMismatches++
     }
     // Доставленные на маркете, но без отгрузки в МС
     if (o.marketplaceIsDelivered && !o.hasDemand) {
       result.deliveredOnMarketplace++
+      result.totalMismatches++
+    }
+    // Отгруженные в МС, но не доставленные на маркете
+    if (o.hasDemand && !o.marketplaceIsDelivered) {
+      result.deliveredInMs++
       result.totalMismatches++
     }
   })
@@ -4764,7 +4794,13 @@ function renderSuppliesMismatchStats() {
 
   if (s.totalMismatches > 0) {
     html += '<div class="stat-row mismatch-error"><span class="stat-label">↳ Отменён на маркете, ждёт в МС:</span><span class="stat-value">' + s.cancelledOnMarketplace + '</span></div>'
+    if (s.cancelledInMs > 0) {
+      html += '<div class="stat-row mismatch-warn"><span class="stat-label">↳ Отменён в МС, нет на маркете:</span><span class="stat-value">' + s.cancelledInMs + '</span></div>'
+    }
     html += '<div class="stat-row mismatch-warn"><span class="stat-label">↳ Доставлен на маркете, нет отгрузки:</span><span class="stat-value">' + s.deliveredOnMarketplace + '</span></div>'
+    if (s.deliveredInMs > 0) {
+      html += '<div class="stat-row mismatch-warn"><span class="stat-label">↳ Отгружен в МС, нет доставки на маркете:</span><span class="stat-value">' + s.deliveredInMs + '</span></div>'
+    }
   } else {
     html += '<div class="stat-row"><span class="stat-value mismatch-ok-text">✓ Нет расхождений</span></div>'
   }
@@ -5494,10 +5530,9 @@ function transferToSklad() {
 }
 
 /**
- * Экспортирует отфильтрованные данные таблицы в XLSX.
- * Формат: белый фон, тёмно-синий текст (#003366), жирные заголовки.
- * Колонки: Номер заказа покупателя, Номер заказа, Сумма заказа,
- *          Отгрузка, Платёж, Сумма платежа, Возврат, Статус, Склад, Дата.
+ * Экспортирует отфильтрованные данные таблицы в XLSX с многоуровневой структурой.
+ * Для каждого заказа с N товарами — N строк; ячейки A–J объединены по вертикали,
+ * колонки K–O содержат товарные позиции (артикул, наименование, кол-во, цена, сумма).
  *
  * @returns {void}
  */
@@ -5509,45 +5544,99 @@ function exportTableToXLSX() {
     return
   }
 
-  // Маппим в плоский массив строк для листа
-  var rows = data.map(function(order) {
-    return {
-      'Номер заказа покупателя': order.extractedShipmentNum || order.shipmentNum || '—',
-      'Номер заказа': order.orderName || '—',
-      'Сумма заказа': order.sum != null ? order.sum : '—',
-      'Отгрузка': order.demandName || '—',
-      'Платёж': order.paymentName || (order.paid ? 'Платёж' : '—'),
-      'Сумма платежа': order.paid != null ? order.paid : '—',
-      'Возврат': order.returnSum != null ? order.returnSum : '—',
-      'Статус': order.statusName || 'Новый',
-      'Склад': order.storeName || '—',
-      'Дата': order.orderMoment ? formatDate(order.orderMoment) : '—'
+  // ─── Построение многоуровневого массива rows и merges ───
+  var header = [
+    'Номер заказа покупателя', 'Номер заказа', 'Сумма заказа',
+    'Отгрузка', 'Платёж', 'Сумма платежа', 'Возврат',
+    'Статус', 'Склад', 'Дата',
+    'Артикул', 'Наименование', 'Кол-во', 'Цена', 'Сумма'
+  ]
+  var rows = [header]
+  var merges = [] // массив { s: { r, c }, e: { r, c } }
+
+  data.forEach(function(order) {
+    var orderVals = [
+      order.extractedShipmentNum || order.shipmentNum || '—',
+      order.orderName || '—',
+      order.sum != null ? order.sum : '—',
+      order.demandName || '—',
+      order.paymentName || (order.paid ? 'Платёж' : '—'),
+      order.paid != null ? order.paid : '—',
+      order.returnSum != null ? order.returnSum : '—',
+      order.statusName || 'Новый',
+      order.storeName || '—',
+      order.orderMoment ? formatDate(order.orderMoment) : '—'
+    ]
+
+    // Собираем все позиции (заказа + отгрузки)
+    var orderPos = order.orderPositions || []
+    var demandPos = order.demandPositions || []
+    var allPositions = orderPos.concat(demandPos)
+
+    var startRow = rows.length // текущая строка (0-indexed, header уже добавлен)
+
+    if (allPositions.length > 0) {
+      // Для каждой позиции — отдельная строка
+      allPositions.forEach(function(p) {
+        var posRow = orderVals.slice() // копия значений заказа
+        posRow.push(
+          p.code || '',
+          p.name || '',
+          p.quantity != null ? p.quantity : 0,
+          p.price != null ? p.price : 0,
+          p.sum != null ? p.sum : (p.price || 0) * (p.quantity || 0)
+        )
+        rows.push(posRow)
+      })
+    } else {
+      // Нет позиций — одна строка, K–O пустые
+      var emptyRow = orderVals.slice()
+      emptyRow.push('', '', '', '', '')
+      rows.push(emptyRow)
+    }
+
+    var endRow = rows.length - 1
+
+    // Объединяем ячейки A–J если строк > 1
+    if (endRow > startRow) {
+      for (var c = 0; c <= 9; c++) {
+        merges.push({ s: { r: startRow, c: c }, e: { r: endRow, c: c } })
+      }
     }
   })
 
-  // Создаем книгу и лист
+  // ─── Создание листа ───
   var wb = XLSX.utils.book_new()
-  var ws = XLSX.utils.json_to_sheet(rows)
+  var ws = XLSX.utils.aoa_to_sheet(rows)
 
-  // Автоширина колонок
-  var colWidths = [
-    { wch: 22 }, // Номер заказа покупателя
-    { wch: 40 }, // Номер заказа
-    { wch: 14 }, // Сумма заказа
-    { wch: 20 }, // Отгрузка
-    { wch: 20 }, // Платёж
-    { wch: 16 }, // Сумма платежа
-    { wch: 14 }, // Возврат
-    { wch: 20 }, // Статус
-    { wch: 18 }, // Склад
-    { wch: 14 }  // Дата
+  // Добавляем объединения
+  if (merges.length > 0) {
+    ws['!merges'] = merges
+  }
+
+  // Ширина колонок
+  ws['!cols'] = [
+    { wch: 22 }, // A — Номер заказа покупателя
+    { wch: 40 }, // B — Номер заказа
+    { wch: 14 }, // C — Сумма заказа
+    { wch: 20 }, // D — Отгрузка
+    { wch: 20 }, // E — Платёж
+    { wch: 16 }, // F — Сумма платежа
+    { wch: 14 }, // G — Возврат
+    { wch: 20 }, // H — Статус
+    { wch: 18 }, // I — Склад
+    { wch: 14 }, // J — Дата
+    { wch: 16 }, // K — Артикул
+    { wch: 36 }, // L — Наименование
+    { wch: 10 }, // M — Кол-во
+    { wch: 12 }, // N — Цена
+    { wch: 14 }  // O — Сумма
   ]
-  ws['!cols'] = colWidths
 
-  // Стили: белый фон, тёмно-синий текст
+  // ─── Стили ───
   var headerStyle = {
-    fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } },
-    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '003366' } },
+    fill: { patternType: 'solid', fgColor: { rgb: '003366' } },
+    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
     alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
     border: {
       top: { style: 'thin', color: { rgb: 'CCCCCC' } },
@@ -5556,10 +5645,10 @@ function exportTableToXLSX() {
       right: { style: 'thin', color: { rgb: 'CCCCCC' } }
     }
   }
-  var cellStyle = {
+  var orderStyle = {
     fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } },
     font: { name: 'Calibri', sz: 11, color: { rgb: '003366' } },
-    alignment: { vertical: 'center' },
+    alignment: { vertical: 'center', wrapText: true },
     border: {
       top: { style: 'thin', color: { rgb: 'CCCCCC' } },
       bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
@@ -5567,46 +5656,69 @@ function exportTableToXLSX() {
       right: { style: 'thin', color: { rgb: 'CCCCCC' } }
     }
   }
-  var numStyle = Object.assign({}, cellStyle, {
-    alignment: { horizontal: 'right', vertical: 'center' }
-  })
+  var itemStyle = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'F5F5F5' } },
+    font: { name: 'Calibri', sz: 11, color: { rgb: '333333' } },
+    alignment: { vertical: 'center', wrapText: true },
+    border: {
+      top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+    }
+  }
+  var orderNumStyle = JSON.parse(JSON.stringify(orderStyle))
+  orderNumStyle.alignment = { horizontal: 'right', vertical: 'center' }
+  var itemNumStyle = JSON.parse(JSON.stringify(itemStyle))
+  itemNumStyle.alignment = { horizontal: 'right', vertical: 'center' }
 
-  // У SheetJS стили задаются через !ref диапазон и массив cell-styles
-  var range = XLSX.utils.decode_range(ws['!ref'])
-  if (!ws['!rows']) ws['!rows'] = []
-  if (!ws['!cols']) ws['!cols'] = colWidths
+  function applyStyles() {
+    var range = XLSX.utils.decode_range(ws['!ref'])
+    if (!range) return
+    for (var R = range.s.r; R <= range.e.r; R++) {
+      for (var C = range.s.c; C <= range.e.c; C++) {
+        var addr = XLSX.utils.encode_cell({ r: R, c: C })
+        if (!ws[addr]) continue
 
-  // Проходим по каждой ячейке и добавляем стиль
-  for (var R = range.s.r; R <= range.e.r; R++) {
-    for (var C = range.s.c; C <= range.e.c; C++) {
-      var addr = XLSX.utils.encode_cell({ r: R, c: C })
-      if (!ws[addr]) continue
-      if (!ws[addr].s) ws[addr].s = {}
+        // Определяем, является ли строка товарной (содержит данные в колонке K)
+        var isItemRow = R > 0 && ws[XLSX.utils.encode_cell({ r: R, c: 10 })] && ws[XLSX.utils.encode_cell({ r: R, c: 10 })].v !== ''
+        // Строка заказа — строка с данными, но без артикула (или первая строка merge-блока)
+        // Определяем: если это не header, не itemRow, и есть данные в A
+        var isOrderRow = R > 0 && !isItemRow
 
-      if (R === 0) {
-        // Заголовок
-        ws[addr].s = JSON.parse(JSON.stringify(headerStyle))
-      } else {
-        // Ячейка данных
+        // Определяем, какие ячейки — числовые
         var colLetter = XLSX.utils.encode_col(C)
-        // Числовые колонки: Сумма заказа (C), Сумма платежа (F), Возврат (G)
-        if (colLetter === 'C' || colLetter === 'F' || colLetter === 'G') {
-          ws[addr].s = JSON.parse(JSON.stringify(numStyle))
-          // Если число — форматируем как число
-          if (typeof ws[addr].v === 'number') {
+        var isNumericCol = colLetter === 'C' || colLetter === 'F' || colLetter === 'G' || colLetter === 'N' || colLetter === 'O'
+
+        if (R === 0) {
+          ws[addr].s = JSON.parse(JSON.stringify(headerStyle))
+        } else if (isItemRow) {
+          ws[addr].s = isNumericCol
+            ? JSON.parse(JSON.stringify(itemNumStyle))
+            : JSON.parse(JSON.stringify(itemStyle))
+          if (isNumericCol && typeof ws[addr].v === 'number') {
             ws[addr].z = '#,##0.00'
           }
         } else {
-          ws[addr].s = JSON.parse(JSON.stringify(cellStyle))
+          // Строка заказа (данные заказа, без товаров или объединённая)
+          ws[addr].s = isNumericCol
+            ? JSON.parse(JSON.stringify(orderNumStyle))
+            : JSON.parse(JSON.stringify(orderStyle))
+          if (isNumericCol && typeof ws[addr].v === 'number') {
+            ws[addr].z = '#,##0.00'
+          }
         }
       }
     }
   }
 
+  applyStyles()
+
   XLSX.utils.book_append_sheet(wb, ws, 'Склад')
   XLSX.writeFile(wb, 'sklad_export.xlsx')
 
-  showStatus('Таблица сохранена: sklad_export.xlsx (' + data.length + ' строк)')
+  var totalRows = rows.length - 1 // минус заголовок
+  showStatus('Таблица сохранена: sklad_export.xlsx (' + totalRows + ' строк, ' + data.length + ' заказов)')
 }
 
 /**
@@ -5989,8 +6101,6 @@ function renderComparisonPanel(stats) {
   // Показываем кнопки
   const btnView = document.getElementById('btnViewComparison')
   if (btnView) btnView.style.display = ''
-  const btnDownload = document.getElementById('btnDownloadReport')
-  if (btnDownload) btnDownload.style.display = ''
   // Скрываем старую инлайн-панель
   const oldPanel = document.getElementById('comparisonPanel')
   if (oldPanel) oldPanel.style.display = 'none'
@@ -6220,8 +6330,9 @@ function closeComparisonModal() {
 }
 
 /**
- * Скачивает отчёт сравнения в формате XLSX.
- * Колонки A–K: данные заказов, колонки L+: итоги, анализ, FBO-список.
+ * Скачивает отчёт сравнения в формате XLSX с двумя листами:
+ *   «Сравнение» — колонки A–K (данные по заказам),
+ *   «Итоги»     — сводка, анализ, частичные возвраты, FBO, diffLog.
  *
  * @returns {void}
  */
@@ -6241,87 +6352,109 @@ function downloadComparisonReport() {
     return fmtNum(Math.abs(n)) + ' ₽'
   }
 
-  // Строим rows как массив массивов (до 20 колонок для A–T)
-  const rows = []
-
-  // ── Заголовок ──
-  const headerRow = Array(20).fill('')
-  headerRow[0] = 'Номер заказа'
-  headerRow[1] = 'D (МС)'
-  headerRow[2] = 'F (возврат)'
-  headerRow[3] = 'G (платёж)'
-  headerRow[4] = 'J+ (отчёт)'
-  headerRow[5] = 'Разница'
-  headerRow[6] = 'Статус'
-  headerRow[7] = 'Примечание'
-  headerRow[11] = '═══ ИТОГИ ═══'
-  rows.push(headerRow)
-
-  // ── Данные ──
-  for (const d of details) {
-    const row = Array(20).fill('')
-    row[0] = d.orderKey
-    row[1] = d.sumD
-    row[2] = d.retF
-    row[3] = d.payG
-    row[4] = d.jPos
-    row[5] = d.diff
-    row[6] = d.status
-    row[7] = d.note
-    rows.push(row)
+  // ─── Вспомогательная функция: применить стили ко всем ячейкам листа ───
+  function applySheetStyles(ws, headerStyle, cellStyle) {
+    if (!ws['!ref']) return
+    var range = XLSX.utils.decode_range(ws['!ref'])
+    for (var R = range.s.r; R <= range.e.r; R++) {
+      for (var C = range.s.c; C <= range.e.c; C++) {
+        var addr = XLSX.utils.encode_cell({ r: R, c: C })
+        if (!ws[addr]) continue
+        if (R === 0 && headerStyle) {
+          ws[addr].s = JSON.parse(JSON.stringify(headerStyle))
+        } else if (cellStyle) {
+          ws[addr].s = JSON.parse(JSON.stringify(cellStyle))
+        }
+      }
+    }
   }
 
-  // ── Пустая строка ──
-  const emptyRow = Array(20).fill('')
-  rows.push(emptyRow)
+  var sharedHeaderStyle = {
+    fill: { patternType: 'solid', fgColor: { rgb: '003366' } },
+    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: {
+      top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+    }
+  }
+  var sharedCellStyle = {
+    font: { name: 'Calibri', sz: 11, color: { rgb: '003366' } },
+    alignment: { vertical: 'center', wrapText: true },
+    border: {
+      top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+      right: { style: 'thin', color: { rgb: 'CCCCCC' } }
+    }
+  }
 
-  // ── Итоги (L+) ──
+  // ═══════════════════════════════════════════
+  // Лист 1: «Сравнение» — только A–K
+  // ═══════════════════════════════════════════
+  const rowsCompare = []
+
+  // Заголовок (8 колонок)
+  const headerCompare = ['Номер заказа', 'D (МС)', 'F (возврат)', 'G (платёж)', 'J+ (отчёт)', 'Разница', 'Статус', 'Примечание']
+  rowsCompare.push(headerCompare)
+
+  // Данные
+  for (const d of details) {
+    rowsCompare.push([d.orderKey, d.sumD, d.retF, d.payG, d.jPos, d.diff, d.status, d.note])
+  }
+
+  const wsCompare = XLSX.utils.aoa_to_sheet(rowsCompare)
+  wsCompare['!cols'] = [
+    { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+    { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 28 }
+  ]
+  applySheetStyles(wsCompare, sharedHeaderStyle, sharedCellStyle)
+
+  // ═══════════════════════════════════════════
+  // Лист 2: «Итоги» — сводка, анализ, частичные, FBO, diffLog
+  // ═══════════════════════════════════════════
+  const rowsSummary = []
+
+  // ── Итоги ──
+  rowsSummary.push(['ИТОГИ', ''])
   const diffIcon = Math.abs(summary.totalDiff) < 1 ? '✅' : '⚠️'
+  rowsSummary.push(['Total D (МойСклад):', fmtNum(summary.totalD) + ' ₽'])
+  rowsSummary.push(['Total J+ (отчёт):', fmtNum(summary.totalJPos) + ' ₽'])
+  rowsSummary.push(['Разница (D − J+):', fmtNum(summary.totalDiff) + ' ₽ ' + diffIcon])
+  rowsSummary.push([])
 
-  const lTotalD = Array(20).fill(''); lTotalD[11] = 'Total D (МойСклад):'; lTotalD[12] = fmtNum(summary.totalD) + ' ₽'; rows.push(lTotalD)
-  const lTotalJ = Array(20).fill(''); lTotalJ[11] = 'Total J+ (отчёт):'; lTotalJ[12] = fmtNum(summary.totalJPos) + ' ₽'; rows.push(lTotalJ)
-  const lDiff = Array(20).fill(''); lDiff[11] = 'Разница (D − J+):'; lDiff[12] = fmtNum(summary.totalDiff) + ' ₽ ' + diffIcon; rows.push(lDiff)
-  const emptyRow2 = Array(20).fill(''); rows.push(emptyRow2)
-
-  // ── Анализ (L+) ──
-  const analysisHeader = Array(20).fill(''); analysisHeader[11] = '═══ АНАЛИЗ ═══'; rows.push(analysisHeader)
-  const aOk = Array(20).fill(''); aOk[11] = '✅ Совпало:'; aOk[12] = String(summary.okCount); rows.push(aOk)
+  // ── Анализ ──
+  rowsSummary.push(['АНАЛИЗ', ''])
+  rowsSummary.push(['✅ Совпало:', String(summary.okCount)])
   if (summary.mismatchCount + summary.partialCount > 0) {
-    const aMis = Array(20).fill(''); aMis[11] = '⚠️ Расхождений / частичных:'; aMis[12] = String(summary.mismatchCount + summary.partialCount); rows.push(aMis)
+    rowsSummary.push(['⚠️ Расхождений / частичных:', String(summary.mismatchCount + summary.partialCount)])
   }
   if (summary.missingCount > 0) {
-    const aMiss = Array(20).fill(''); aMiss[11] = '❌ Не найдено в отчёте:'; aMiss[12] = String(summary.missingCount); rows.push(aMiss)
+    rowsSummary.push(['❌ Не найдено в отчёте:', String(summary.missingCount)])
   }
   if (summary.returnCount > 0) {
-    const aRet = Array(20).fill(''); aRet[11] = '🔄 Полных возвратов (отмен):'; aRet[12] = String(summary.returnCount); rows.push(aRet)
+    rowsSummary.push(['🔄 Полных возвратов (отмен):', String(summary.returnCount)])
   }
-  const emptyRow3 = Array(20).fill(''); rows.push(emptyRow3)
+  rowsSummary.push([])
 
   // ── Частичные возвраты ──
   if (summary.partialDetails && summary.partialDetails.length > 0) {
-    const partialHeader = Array(20).fill(''); partialHeader[11] = '═══ ЧАСТИЧНЫЕ ВОЗВРАТЫ ═══'; rows.push(partialHeader)
-    const ph = Array(20).fill('')
-    ph[11] = 'Заказ'; ph[12] = 'D (скан)'; ph[13] = 'F (возврат)'; ph[14] = 'G (платёж)'; ph[15] = 'J+ (отчёт)'; ph[16] = 'Разрыв'
-    rows.push(ph)
+    rowsSummary.push(['ЧАСТИЧНЫЕ ВОЗВРАТЫ', '', '', '', '', ''])
+    rowsSummary.push(['Заказ', 'D (скан)', 'F (возврат)', 'G (платёж)', 'J+ (отчёт)', 'Разрыв'])
     for (const pd of summary.partialDetails) {
-      const pr = Array(20).fill('')
-      pr[11] = pd.orderKey
-      pr[12] = pd.sumD
-      pr[13] = pd.retF
-      pr[14] = pd.payG
-      pr[15] = pd.jPos
-      pr[16] = pd.diff
-      rows.push(pr)
+      rowsSummary.push([pd.orderKey, pd.sumD, pd.retF, pd.payG, pd.jPos, pd.diff])
     }
-    const pSumRow = Array(20).fill('')
-    pSumRow[11] = 'Итого'
-    pSumRow[12] = summary.partialDetails.reduce((s, d) => s + d.sumD, 0)
-    pSumRow[13] = summary.partialDetails.reduce((s, d) => s + d.retF, 0)
-    pSumRow[14] = summary.partialDetails.reduce((s, d) => s + d.payG, 0)
-    pSumRow[15] = summary.partialDetails.reduce((s, d) => s + d.jPos, 0)
-    pSumRow[16] = summary.partialDetails.reduce((s, d) => s + d.diff, 0)
-    rows.push(pSumRow)
-    const emptyRow4 = Array(20).fill(''); rows.push(emptyRow4)
+    rowsSummary.push([
+      'Итого',
+      summary.partialDetails.reduce((s, d) => s + d.sumD, 0),
+      summary.partialDetails.reduce((s, d) => s + d.retF, 0),
+      summary.partialDetails.reduce((s, d) => s + d.payG, 0),
+      summary.partialDetails.reduce((s, d) => s + d.jPos, 0),
+      summary.partialDetails.reduce((s, d) => s + d.diff, 0)
+    ])
+    rowsSummary.push([])
   }
 
   // ── FBO список ──
@@ -6330,57 +6463,36 @@ function downloadComparisonReport() {
     return order && String(order.storeName || '').toUpperCase() === 'FBO'
   })
   if (fboOrders.length > 0) {
-    const fboHeader = Array(20).fill(''); fboHeader[11] = '═══ FBO ЗАКАЗЫ ═══'; rows.push(fboHeader)
-    const fboDesc = Array(20).fill(''); fboDesc[11] = 'По каким FBS отправлениям были проданы эти FBO заказы?'; rows.push(fboDesc)
-    const fboNums = Array(20).fill(''); fboNums[11] = fboOrders.map(d => d.orderKey).join(', '); rows.push(fboNums)
+    rowsSummary.push(['FBO ЗАКАЗЫ', ''])
+    rowsSummary.push(['По каким FBS отправлениям были проданы эти FBO заказы?', ''])
+    rowsSummary.push([fboOrders.map(d => d.orderKey).join(', '), ''])
   }
 
-  // ── After-actions diffLog (если есть) ──
+  // ── After-actions diffLog ──
   if (window._comparisonDiffLog && window._comparisonDiffLog.length > 0) {
-    const diffLog = window._comparisonDiffLog
-    const emptyRow5 = Array(20).fill(''); rows.push(emptyRow5)
-    const aaHeader = Array(20).fill(''); aaHeader[11] = '═══ ПОСЛЕ МАССОВЫХ ДЕЙСТВИЙ ═══'; rows.push(aaHeader)
-    for (const item of diffLog) {
+    rowsSummary.push([])
+    rowsSummary.push(['ПОСЛЕ МАССОВЫХ ДЕЙСТВИЙ', ''])
+    for (const item of window._comparisonDiffLog) {
       for (const change of item.changes) {
-        const ac = Array(20).fill('')
-        ac[11] = item.orderKey
-        ac[12] = change
-        rows.push(ac)
+        rowsSummary.push([item.orderKey, change])
       }
     }
   }
 
-  // Создаём XLSX
-  const wb = XLSX.utils.book_new()
-  const ws = XLSX.utils.json_to_sheet(rows, { header: [] })
-
-  // Устанавливаем ширину колонок
-  ws['!cols'] = [
-    { wch: 24 },  // A — номер заказа
-    { wch: 14 },  // B — D
-    { wch: 14 },  // C — F
-    { wch: 14 },  // D — G
-    { wch: 14 },  // E — J+
-    { wch: 14 },  // F — разница
-    { wch: 18 },  // G — статус
-    { wch: 28 },  // H — примечание
-    { wch: 4 },   // I
-    { wch: 4 },   // J
-    { wch: 4 },   // K
-    { wch: 32 },  // L — итоги/анализ (label)
-    { wch: 24 },  // M — итоги/анализ (value)
-    { wch: 14 },  // N
-    { wch: 14 },  // O
-    { wch: 14 },  // P
-    { wch: 14 },  // Q
-    { wch: 4 },   // R
-    { wch: 4 },   // S
-    { wch: 4 }    // T
+  const wsSummary = XLSX.utils.aoa_to_sheet(rowsSummary)
+  wsSummary['!cols'] = [
+    { wch: 36 }, { wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }
   ]
+  applySheetStyles(wsSummary, sharedHeaderStyle, sharedCellStyle)
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Сравнение')
+  // ═══════════════════════════════════════════
+  // Собираем книгу
+  // ═══════════════════════════════════════════
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, wsCompare, 'Сравнение')
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Итоги')
   XLSX.writeFile(wb, 'comparison_ozon_report.xlsx')
-  showStatus('Отчёт сравнения сохранён: comparison_ozon_report.xlsx (' + details.length + ' строк)')
+  showStatus('Отчёт сравнения сохранён: comparison_ozon_report.xlsx (' + details.length + ' строк, 2 листа)')
 }
 
 /**
