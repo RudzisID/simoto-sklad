@@ -135,38 +135,6 @@
                   </tr>
                 </tbody>
               </table>
-<!-- Date Filter Overlay -->
-<div id="dateFilterOverlay" class="date-filter-overlay" style="display:none"></div>
-<!-- Date Filter Popup -->
-<div id="dateFilterPopup" class="date-filter-popup" style="display:none">
-  <div class="df-range">
-    <div class="drp-row">
-      <div class="drp-field">
-        <label class="df-label">С:</label>
-        <input type="text" id="dfFromDisplay" class="df-input" readonly placeholder="дд.мм.гггг">
-      </div>
-      <div class="drp-field">
-        <label class="df-label">По:</label>
-        <input type="text" id="dfToDisplay" class="df-input" readonly placeholder="дд.мм.гггг">
-      </div>
-    </div>
-    <div id="drpCalendar" class="drp-calendar">
-      <div class="drp-header">
-        <button class="drp-nav" onclick="drpPrevMonth()">‹</button>
-        <span class="drp-title" id="drpTitle">Май 2026</span>
-        <button class="drp-nav" onclick="drpNextMonth()">›</button>
-      </div>
-      <div class="drp-weekdays">
-        <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
-      </div>
-      <div class="drp-days" id="drpDays"></div>
-    </div>
-  </div>
-  <div class="df-actions">
-    <button class="btn btn-cancel" onclick="resetDateFilter()">Сбросить</button>
-    <button class="btn btn-accent" onclick="applyDateFilter()">Применить</button>
-  </div>
-</div>
             </div>
           </div>
         </div>
@@ -252,25 +220,6 @@
                     <input type="text" id="scanDateToDisplay" class="df-input" readonly placeholder="дд.мм.гггг" onclick="toggleScanCalendar()">
                   </div>
                 </div>
-                <!-- Календарь выносим из settings-dates — теперь fixed overlay -->
-                <div id="scanDateOverlay" class="date-filter-overlay" style="display:none"></div>
-                <div id="scanDatePopup" class="date-filter-popup" style="display:none">
-                  <div class="drp-calendar" style="margin-top:0">
-                    <div class="drp-header">
-                      <button class="drp-nav" onclick="drpPrevMonthScan()">‹</button>
-                      <span class="drp-title" id="drpTitleScan">Май 2026</span>
-                      <button class="drp-nav" onclick="drpNextMonthScan()">›</button>
-                    </div>
-                    <div class="drp-weekdays">
-                      <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
-                    </div>
-                    <div class="drp-days" id="drpDaysScan"></div>
-                    <div class="df-actions" style="margin-top:8px">
-                      <button class="btn btn-cancel" onclick="resetScanDates()" style="flex:1;padding:4px 8px;font-size:0.75rem">Сбросить</button>
-                      <button class="btn btn-accent" onclick="applyScanDates()" style="flex:1;padding:4px 8px;font-size:0.75rem">Применить</button>
-                    </div>
-                  </div>
-                </div>
               </div>
               <div class="settings-row">
                 <label class="settings-label">Склад:</label>
@@ -310,7 +259,7 @@
                       <div id="storeFilterDropdown" class="store-filter-dropdown" style="display:none"></div>
                     </th>
                     <th class="sortable" onclick="sortSuppliesTable('sum')" data-col="sum">Сумма</th>
-                    <th class="sortable date-header" onclick="sortSuppliesTable('orderMoment')" data-col="orderMoment">Дата<span id="dateFilterBadgeSupplies" class="filter-badge" style="display:none" onclick="event.stopPropagation();toggleSuppliesDateFilter()"></span></th>
+                    <th class="sortable date-header" onclick="sortSuppliesTable('orderMoment')" data-col="orderMoment">Дата</th>
                     <th class="sortable" onclick="sortSuppliesTable('hasDemand')" data-col="hasDemand">Отгрузка</th>
                     <th class="sortable" onclick="sortSuppliesTable('marketplaceStatus')" data-col="marketplaceStatus">Статус маркета</th>
                     <th class="sortable rec-header" onclick="sortSuppliesTable('recommendationType')" data-col="recommendationType">
@@ -324,38 +273,6 @@
                   <tr><td colspan="10" class="empty">Нажмите "Сканировать поставки" для поиска новых заказов</td></tr>
                 </tbody>
               </table>
-<!-- Date Filter Overlay Supplies -->
-<div id="dateFilterOverlaySupplies" class="date-filter-overlay" style="display:none"></div>
-<!-- Date Filter Popup Supplies -->
-<div id="dateFilterPopupSupplies" class="date-filter-popup" style="display:none">
-  <div class="df-range">
-    <div class="drp-row">
-      <div class="drp-field">
-        <label class="df-label">С:</label>
-        <input type="text" id="dfFromDisplaySupplies" class="df-input" readonly placeholder="дд.мм.гггг">
-      </div>
-      <div class="drp-field">
-        <label class="df-label">По:</label>
-        <input type="text" id="dfToDisplaySupplies" class="df-input" readonly placeholder="дд.мм.гггг">
-      </div>
-    </div>
-    <div id="drpCalendarSupplies" class="drp-calendar">
-      <div class="drp-header">
-        <button class="drp-nav" onclick="drpPrevMonthSupplies()">‹</button>
-        <span class="drp-title" id="drpTitleSupplies">Май 2026</span>
-        <button class="drp-nav" onclick="drpNextMonthSupplies()">›</button>
-      </div>
-      <div class="drp-weekdays">
-        <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
-      </div>
-      <div class="drp-days" id="drpDaysSupplies"></div>
-    </div>
-  </div>
-  <div class="df-actions">
-    <button class="btn btn-cancel" onclick="resetSuppliesDateFilter()">Сбросить</button>
-    <button class="btn btn-accent" onclick="applySuppliesDateFilter()">Применить</button>
-  </div>
-</div>
             </div>
           </div>
         </div>
@@ -673,18 +590,6 @@
         stickerModal.addEventListener('click', function (e) {
           if (e.target === stickerModal) stickerModal.classList.add('hidden');
         });
-
-        // Supplies date picker
-        var drpDaysSupplies = document.getElementById('drpDaysSupplies')
-        if (drpDaysSupplies) {
-          drpDaysSupplies.addEventListener('click', function(e) {
-            var dayEl = e.target.closest('.drp-day:not(.drp-empty)')
-            if (!dayEl) return
-            var ds = dayEl.dataset.date
-            if (!ds) return
-            drpSelectSupplies(ds)
-          })
-        }
 
         // Push archive modal close handlers
         document.getElementById('pushArchiveCloseBtn').addEventListener('click', function() {
@@ -1407,5 +1312,70 @@
       <div class="rec-legend-item"><span class="rec-icon">✅</span> Всё ок — всё хорошо</div>
     </div>
     <div id="recLegendOverlay" class="rec-legend-overlay"></div>
+
+    <!-- Date Filter Overlay + Popup (Склад) — на уровне body -->
+    <div id="dateFilterOverlay" class="date-filter-overlay"></div>
+    <div id="dateFilterPopup" class="date-filter-popup">
+      <div class="df-range">
+        <div class="drp-row">
+          <div class="drp-field">
+            <label class="df-label">С:</label>
+            <input type="text" id="dfFromDisplay" class="df-input" readonly placeholder="дд.мм.гггг">
+          </div>
+          <div class="drp-field">
+            <label class="df-label">По:</label>
+            <input type="text" id="dfToDisplay" class="df-input" readonly placeholder="дд.мм.гггг">
+          </div>
+        </div>
+        <div id="drpCalendar" class="drp-calendar">
+          <div class="drp-header">
+            <button class="drp-nav" onclick="drpPrevMonth()">‹</button>
+            <span class="drp-title" id="drpTitle">Май 2026</span>
+            <button class="drp-nav" onclick="drpNextMonth()">›</button>
+          </div>
+          <div class="drp-weekdays">
+            <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+          </div>
+          <div class="drp-days" id="drpDays"></div>
+        </div>
+      </div>
+      <div class="df-actions">
+        <button class="btn btn-cancel" onclick="resetDateFilter()">Сбросить</button>
+        <button class="btn btn-accent" onclick="applyDateFilter()">Применить</button>
+      </div>
+    </div>
+
+    <!-- Scan Date Overlay + Popup (Поставки — даты сканирования) — на уровне body -->
+    <div id="scanDateOverlay" class="date-filter-overlay"></div>
+    <div id="scanDatePopup" class="date-filter-popup">
+      <div class="df-range">
+        <div class="drp-row">
+          <div class="drp-field">
+            <label class="df-label">С:</label>
+            <input type="text" id="scanDateFromPopup" class="df-input" readonly placeholder="дд.мм.гггг">
+          </div>
+          <div class="drp-field">
+            <label class="df-label">По:</label>
+            <input type="text" id="scanDateToPopup" class="df-input" readonly placeholder="дд.мм.гггг">
+          </div>
+        </div>
+        <div class="drp-calendar">
+          <div class="drp-header">
+            <button class="drp-nav" onclick="drpPrevMonthScan()">‹</button>
+            <span class="drp-title" id="drpTitleScan">Май 2026</span>
+            <button class="drp-nav" onclick="drpNextMonthScan()">›</button>
+          </div>
+          <div class="drp-weekdays">
+            <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+          </div>
+          <div class="drp-days" id="drpDaysScan"></div>
+        </div>
+      </div>
+      <div class="df-actions">
+        <button class="btn btn-cancel" onclick="resetScanDates()">Сбросить</button>
+        <button class="btn btn-accent" onclick="applyScanDates()">Применить</button>
+      </div>
+    </div>
+
   </body>
 </html>

@@ -870,23 +870,41 @@ td.action-cell {
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: 9998;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+.date-filter-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* === Date Filter Popup === */
 .date-filter-popup {
   position: fixed;
   left: 50%;
-  transform: translateX(-50%);
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0.92);
   z-index: 9999;
-  background: var(--bg-card, #1e1e1e);
-  border: 1px solid var(--border, #333);
-  border-radius: var(--radius-md);
-  padding: 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
   min-width: 240px;
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+}
+.date-filter-popup.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
 }
 
 .df-label {

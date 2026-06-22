@@ -1471,8 +1471,8 @@ function getFilteredData() {
  * @returns {void}
  */
 function closeDateFilter() {
-  document.getElementById('dateFilterOverlay').style.display = 'none'
-  document.getElementById('dateFilterPopup').style.display = 'none'
+  document.getElementById('dateFilterOverlay').classList.remove('show')
+  document.getElementById('dateFilterPopup').classList.remove('show')
 }
 
 // ─── Custom Date Range Picker ────────────────────────────────────────────────
@@ -1597,10 +1597,7 @@ function drpRender() {
  */
 function toggleDateFilter() {
   const popup = document.getElementById('dateFilterPopup')
-  if (popup.style.display === 'block') { closeDateFilter(); return }
-  const th = document.querySelector('th.date-header')
-  const rect = th.getBoundingClientRect()
-  popup.style.top = rect.bottom + 'px'
+  if (popup.classList.contains('show')) { closeDateFilter(); return }
   drpState.month = dateFilter.from
     ? parseInt(dateFilter.from.split('-')[1]) - 1
     : new Date().getMonth()
@@ -1609,8 +1606,8 @@ function toggleDateFilter() {
     : new Date().getFullYear()
   drpUpdateDisplay()
   drpRender()
-  document.getElementById('dateFilterOverlay').style.display = 'block'
-  popup.style.display = 'block'
+  document.getElementById('dateFilterOverlay').classList.add('show')
+  popup.classList.add('show')
 }
 
 /**
@@ -1769,6 +1766,15 @@ function renderTable() {
     const wbLine = order.wbReturnInfo
       ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
       : ''
+    const wbStatusLine = order.wbStatus && order.marketplace === 'wb'
+      ? `<br><span style="font-size:0.85em;${
+          order.wbStatus === 'delivered' || order.wbStatus === 'sale'
+            ? 'color:var(--success)'
+            : order.wbStatus === 'cancelled' || order.wbStatus === 'cancel'
+              ? 'color:var(--error)'
+              : 'color:var(--text-muted)'
+        }">${WB_STATUS_MAP[order.wbStatus] || order.wbStatus} (WB)</span>`
+      : ''
 
     const storeDisplay = order.storeName
       ? `<span>${esc(order.storeName)}</span>`
@@ -1816,7 +1822,7 @@ function renderTable() {
             <td>${demandDisplay}</td>
             <td>${paymentDisplay}</td>
             <td>${returnDisplay}</td>
-            <td>${statusDisplay}<button class="refresh-row-btn" data-shipment="${order.shipmentNum}" onclick="refreshOrderRow('${order.shipmentNum}')" title="Обновить">⟳</button>${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
+            <td>${statusDisplay}<button class="refresh-row-btn" data-shipment="${order.shipmentNum}" onclick="refreshOrderRow('${order.shipmentNum}')" title="Обновить">⟳</button>${ozonStatusLine}${ozonReturnLine}${wbStatusLine}${wbLine}</td>
 <td>${storeDisplay}</td>
             <td class="date-cell">${formatDate(order.orderMoment)}</td>
             <td class="action-cell">${getRowActions(order, actualIndex)}</td>
@@ -1930,6 +1936,15 @@ function appendOrderRow(order) {
   const wbLine = order.wbReturnInfo
     ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
     : ''
+  const wbStatusLine = order.wbStatus && order.marketplace === 'wb'
+    ? `<br><span style="font-size:0.85em;${
+        order.wbStatus === 'delivered' || order.wbStatus === 'sale'
+          ? 'color:var(--success)'
+          : order.wbStatus === 'cancelled' || order.wbStatus === 'cancel'
+            ? 'color:var(--error)'
+            : 'color:var(--text-muted)'
+      }">${WB_STATUS_MAP[order.wbStatus] || order.wbStatus} (WB)</span>`
+    : ''
 
   const storeDisplay = order.storeName
     ? `<span>${esc(order.storeName)}</span>`
@@ -1965,7 +1980,7 @@ function appendOrderRow(order) {
         <td>${demandDisplay}</td>
         <td>${paymentDisplay}</td>
         <td>${returnDisplay}</td>
-        <td>${statusDisplay}<button class="refresh-row-btn" data-shipment="${order.shipmentNum}" onclick="refreshOrderRow('${order.shipmentNum}')" title="Обновить">⟳</button>${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
+        <td>${statusDisplay}<button class="refresh-row-btn" data-shipment="${order.shipmentNum}" onclick="refreshOrderRow('${order.shipmentNum}')" title="Обновить">⟳</button>${ozonStatusLine}${ozonReturnLine}${wbStatusLine}${wbLine}</td>
         <td>${storeDisplay}</td>
         <td class="date-cell">${formatDate(displayDate)}</td>
         <td class="action-cell">${getRowActions(order, actualIndex)}</td>
@@ -3038,6 +3053,15 @@ function buildSingleRow(order, index) {
   const wbLine = order.wbReturnInfo
     ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
     : ''
+  const wbStatusLine = order.wbStatus && order.marketplace === 'wb'
+    ? `<br><span style="font-size:0.85em;${
+        order.wbStatus === 'delivered' || order.wbStatus === 'sale'
+          ? 'color:var(--success)'
+          : order.wbStatus === 'cancelled' || order.wbStatus === 'cancel'
+            ? 'color:var(--error)'
+            : 'color:var(--text-muted)'
+      }">${WB_STATUS_MAP[order.wbStatus] || order.wbStatus} (WB)</span>`
+    : ''
 
   const storeDisplay = order.storeName
     ? `<span>${esc(order.storeName)}</span>`
@@ -3060,7 +3084,7 @@ function buildSingleRow(order, index) {
     <td>${demandDisplay}</td>
     <td>${paymentDisplay}</td>
     <td>${returnDisplay}</td>
-    <td>${statusDisplay}${refreshBtn}${ozonStatusLine}${ozonReturnLine}${wbLine}</td>
+    <td>${statusDisplay}${refreshBtn}${ozonStatusLine}${ozonReturnLine}${wbStatusLine}${wbLine}</td>
     <td>${storeDisplay}</td>
     <td class="date-cell">${formatDate(displayDate)}</td>
     <td class="action-cell">${getRowActions(order, index)}</td>
@@ -3650,53 +3674,42 @@ document.addEventListener('DOMContentLoaded', async () => {
   window._comparisonDiffLog = []
 })
 
-// Глобальный обработчик закрытия попапа фильтра по дате
+// Глобальный обработчик закрытия попапа фильтра по дате (Склад)
 document.addEventListener('click', function (e) {
   const popup = document.getElementById('dateFilterPopup')
-  if (!popup || popup.style.display !== 'block') return
+  if (!popup || !popup.classList.contains('show')) return
   const th = document.querySelector('th.date-header')
   if (th && th.contains(e.target)) return
   if (popup.contains(e.target)) return
   closeDateFilter()
 })
 
-document.addEventListener('keydown', function (e) {
-  if (e.key !== 'Escape') return
-  const popup = document.getElementById('dateFilterPopup')
-  if (popup && popup.style.display === 'block') closeDateFilter()
-  const popupSupplies = document.getElementById('dateFilterPopupSupplies')
-  if (popupSupplies && popupSupplies.style.display === 'block') closeSuppliesDateFilter()
-  if (scanCalendarOpen) closeScanCalendar()
-})
-
-// Скрывать попап даты при прокрутке
-window.addEventListener('scroll', function () {
-  const popup = document.getElementById('dateFilterPopup')
-  if (popup && popup.style.display === 'block') closeDateFilter()
-  const popupSupplies = document.getElementById('dateFilterPopupSupplies')
-  if (popupSupplies && popupSupplies.style.display === 'block') closeSuppliesDateFilter()
-  if (scanCalendarOpen) closeScanCalendar()
-}, true)
-
-// Глобальный обработчик закрытия supplies date filter
-document.addEventListener('click', function(e) {
-  const popup = document.getElementById('dateFilterPopupSupplies')
-  if (!popup || popup.style.display !== 'block') return
-  const th = document.querySelector('th.date-header')
-  if (th && th.contains(e.target)) return
-  if (popup.contains(e.target)) return
-  closeSuppliesDateFilter()
-})
-
 // Глобальный обработчик закрытия календаря сканирования
 document.addEventListener('click', function(e) {
   if (!scanCalendarOpen) return
-  var cal = document.getElementById('drpCalendarScan')
-  if (!cal || cal.style.display !== 'block') return
-  var settings = document.querySelector('.supplies-scan-settings')
-  if (settings && settings.contains(e.target)) return
+  var popup = document.getElementById('scanDatePopup')
+  if (!popup || !popup.classList.contains('show')) return
+  var fromInput = document.getElementById('scanDateFromDisplay')
+  var toInput = document.getElementById('scanDateToDisplay')
+  if ((fromInput && fromInput.contains(e.target)) ||
+      (toInput && toInput.contains(e.target))) return
+  if (popup.contains(e.target)) return
   closeScanCalendar()
 })
+
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return
+  const popup = document.getElementById('dateFilterPopup')
+  if (popup && popup.classList.contains('show')) closeDateFilter()
+  if (scanCalendarOpen) closeScanCalendar()
+})
+
+// Скрывать попапы дат при прокрутке (когда привязаны к полям ввода)
+window.addEventListener('scroll', function () {
+  const popup = document.getElementById('dateFilterPopup')
+  if (popup && popup.classList.contains('show')) closeDateFilter()
+  if (scanCalendarOpen) closeScanCalendar()
+}, true)
 
 /**
  * Очищает все сохранённые данные заказов (через DELETE /api/orders-state).
@@ -3929,14 +3942,21 @@ let suppliesIsWorking = false
 let suppliesSortCol = 'orderMoment'
 let suppliesSortAsc = false
 /** @type {{ from: string, to: string }} Фильтр дат для поставок (отдельный от склада) */
-let dateFilterSupplies = { from: '', to: '' }
-/** @type {{ month: number, year: number }} Состояние календаря date range picker для поставок */
-let drpStateSupplies = { month: new Date().getMonth(), year: new Date().getFullYear() }
 /** @type {Object|null} Последняя статистика фильтрации сканирования поставок */
 let suppliesFilterStats = null
 
 /** Константа для ключа localStorage */
 const SUPPLIES_STORAGE_KEY = 'sklad_supplies_data'
+
+/** @type {Object<string, string>} Маппинг WB статусов для отображения */
+const WB_STATUS_MAP = {
+  'cancelled': 'Отменён',
+  'cancel': 'Отменён',
+  'delivered': 'Доставлен',
+  'sale': 'Реализован',
+  'return': 'Возврат',
+  'returning': 'Возвращается',
+}
 
 /**
  * Сохраняет текущие данные поставок в localStorage.
@@ -4128,7 +4148,7 @@ function toggleScanCalendar() {
   var popup = document.getElementById('scanDatePopup')
   var overlay = document.getElementById('scanDateOverlay')
   if (!popup || !overlay) return
-  if (popup.style.display === 'block') { closeScanCalendar(); return }
+  if (popup.classList.contains('show')) { closeScanCalendar(); return }
   
   // Синхронизация месяца
   drpStateScan.month = suppliesScanDates.from
@@ -4138,19 +4158,11 @@ function toggleScanCalendar() {
     ? parseInt(suppliesScanDates.from.split('-')[0])
     : new Date().getFullYear()
   
+  drpUpdateDisplayScan()
   drpRenderScan()
   
-  // Позиционирование: под полем ввода даты
-  var fromInput = document.getElementById('scanDateFromDisplay')
-  if (fromInput) {
-    var rect = fromInput.getBoundingClientRect()
-    popup.style.position = 'fixed'
-    popup.style.top = (rect.bottom + 4) + 'px'
-    popup.style.left = rect.left + 'px'
-  }
-  
-  overlay.style.display = 'block'
-  popup.style.display = 'block'
+  overlay.classList.add('show')
+  popup.classList.add('show')
   scanCalendarOpen = true
 }
 
@@ -4161,14 +4173,14 @@ function toggleScanCalendar() {
 function closeScanCalendar() {
   var popup = document.getElementById('scanDatePopup')
   var overlay = document.getElementById('scanDateOverlay')
-  if (popup) popup.style.display = 'none'
-  if (overlay) overlay.style.display = 'none'
+  if (popup) popup.classList.remove('show')
+  if (overlay) overlay.classList.remove('show')
   scanCalendarOpen = false
 }
 
 /**
  * Отрисовывает календарь выбора дат сканирования в #drpDaysScan.
- * Аналогичен drpRender() на вкладке Склад и drpRenderSupplies() для табличного фильтра.
+ * Аналогичен drpRender() на вкладке Склад.
  * @returns {void}
  */
 function drpRenderScan() {
@@ -4239,6 +4251,11 @@ function drpUpdateDisplayScan() {
   var toEl = document.getElementById('scanDateToDisplay')
   if (fromEl) fromEl.value = fmt(suppliesScanDates.from)
   if (toEl) toEl.value = fmt(suppliesScanDates.to)
+  // Поля внутри попапа
+  var fromPopup = document.getElementById('scanDateFromPopup')
+  var toPopup = document.getElementById('scanDateToPopup')
+  if (fromPopup) fromPopup.value = fmt(suppliesScanDates.from)
+  if (toPopup) toPopup.value = fmt(suppliesScanDates.to)
   // Скрытые поля (резерв)
   var fromHidden = document.getElementById('scanDateFrom')
   var toHidden = document.getElementById('scanDateTo')
@@ -4850,144 +4867,7 @@ function renderSuppliesStats() {
  * Переключает отображение попапа фильтра по дате для поставок.
  * @returns {void}
  */
-function toggleSuppliesDateFilter() {
-  const popup = document.getElementById('dateFilterPopupSupplies')
-  if (!popup) return
-  if (popup.style.display === 'block') { closeSuppliesDateFilter(); return }
-  // Позиционирование как на складе (fixed, центрирован)
-  popup.style.position = 'fixed'
-  popup.style.top = ''
-  popup.style.left = ''
-  var th = document.querySelector('#tab-supplies .date-header')
-  if (th) {
-    var rect = th.getBoundingClientRect()
-    popup.style.top = rect.bottom + 'px'
-  }
-  drpStateSupplies.month = dateFilterSupplies.from
-    ? parseInt(dateFilterSupplies.from.split('-')[1]) - 1
-    : new Date().getMonth()
-  drpStateSupplies.year = dateFilterSupplies.from
-    ? parseInt(dateFilterSupplies.from.split('-')[0])
-    : new Date().getFullYear()
-  drpUpdateDisplaySupplies()
-  drpRenderSupplies()
-  var overlay = document.getElementById('dateFilterOverlaySupplies')
-  if (overlay) overlay.style.display = 'block'
-  popup.style.display = 'block'
-}
 
-/**
- * Закрывает попап фильтра дат для поставок.
- * @returns {void}
- */
-function closeSuppliesDateFilter() {
-  const popup = document.getElementById('dateFilterPopupSupplies')
-  const overlay = document.getElementById('dateFilterOverlaySupplies')
-  if (popup) popup.style.display = 'none'
-  if (overlay) overlay.style.display = 'none'
-}
-
-/**
- * Рендерит календарь date range picker для поставок.
- * @returns {void}
- */
-function drpRenderSupplies() {
-  const daysEl = document.getElementById('drpDaysSupplies')
-  if (!daysEl) return
-  var month = drpStateSupplies.month
-  var year = drpStateSupplies.year
-  var months = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
-  var titleEl = document.getElementById('drpTitleSupplies')
-  if (titleEl) titleEl.textContent = months[month] + ' ' + year
-  
-  var firstDay = new Date(year, month, 1).getDay()
-  var startOffset = firstDay === 0 ? 6 : firstDay - 1
-  var daysInMonth = new Date(year, month + 1, 0).getDate()
-  var today = new Date()
-  var todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0')
-  
-  // Даты из suppliesData
-  var availSet = new Set()
-  suppliesData.forEach(function(o) {
-    if (o.orderMoment) availSet.add(o.orderMoment.substring(0, 10))
-  })
-  
-  var from = dateFilterSupplies.from
-  var to = dateFilterSupplies.to
-  
-  var html = ''
-  for (var i = 0; i < startOffset; i++) html += '<span class="drp-day drp-empty"></span>'
-  for (var d = 1; d <= daysInMonth; d++) {
-    var ds = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0')
-    var cls = 'drp-day'
-    if (ds === todayStr) cls += ' drp-today'
-    if (availSet.has(ds)) cls += ' drp-has'
-    if (ds === from) cls += ' drp-from'
-    if (ds === to) cls += ' drp-to'
-    if (from && to && ds > from && ds < to) cls += ' drp-range'
-    html += '<span class="' + cls + '" data-date="' + ds + '">' + d + '</span>'
-  }
-  daysEl.innerHTML = html
-}
-
-function drpPrevMonthSupplies() {
-  drpStateSupplies.month--
-  if (drpStateSupplies.month < 0) { drpStateSupplies.month = 11; drpStateSupplies.year-- }
-  drpRenderSupplies()
-}
-
-function drpNextMonthSupplies() {
-  drpStateSupplies.month++
-  if (drpStateSupplies.month > 11) { drpStateSupplies.month = 0; drpStateSupplies.year++ }
-  drpRenderSupplies()
-}
-
-function drpSelectSupplies(dateStr) {
-  if (!dateFilterSupplies.from || (dateFilterSupplies.from && dateFilterSupplies.to)) {
-    dateFilterSupplies.from = dateStr
-    dateFilterSupplies.to = ''
-  } else {
-    dateFilterSupplies.to = dateStr
-    if (dateFilterSupplies.to < dateFilterSupplies.from) {
-      var tmp = dateFilterSupplies.from
-      dateFilterSupplies.from = dateFilterSupplies.to
-      dateFilterSupplies.to = tmp
-    }
-  }
-  drpUpdateDisplaySupplies()
-  drpRenderSupplies()
-}
-
-function drpUpdateDisplaySupplies() {
-  var fmt = function(iso) {
-    if (!iso) return ''
-    var parts = iso.split('-')
-    return parts[2] + '.' + parts[1] + '.' + parts[0]
-  }
-  var fromEl = document.getElementById('dfFromDisplaySupplies')
-  var toEl = document.getElementById('dfToDisplaySupplies')
-  if (fromEl) fromEl.value = fmt(dateFilterSupplies.from)
-  if (toEl) toEl.value = fmt(dateFilterSupplies.to)
-}
-
-function applySuppliesDateFilter() {
-  closeSuppliesDateFilter()
-  renderSuppliesTable()
-  renderSuppliesStats()
-  var badge = document.getElementById('dateFilterBadgeSupplies')
-  if (badge) badge.style.display = dateFilterSupplies.from || dateFilterSupplies.to ? 'inline-block' : 'none'
-}
-
-function resetSuppliesDateFilter() {
-  dateFilterSupplies.from = ''
-  dateFilterSupplies.to = ''
-  drpUpdateDisplaySupplies()
-  closeSuppliesDateFilter()
-  renderSuppliesTable()
-  renderSuppliesStats()
-  var badge = document.getElementById('dateFilterBadgeSupplies')
-  if (badge) badge.style.display = 'none'
-}
 
 /**
  * Обновляет блок "После сканирования" на вкладке Поставки (statsFinalOutputSupplies).
@@ -5177,17 +5057,6 @@ function getFilteredSuppliesData() {
     return suppliesStoreFilterState[storeId] !== false
   })
   
-  // Фильтр даты (отдельный от склада — dateFilterSupplies)
-  if (dateFilterSupplies.from || dateFilterSupplies.to) {
-    data = data.filter(function(order) {
-      if (!order.orderMoment) return false
-      var orderDate = order.orderMoment.substring(0, 10)
-      if (dateFilterSupplies.from && orderDate < dateFilterSupplies.from) return false
-      if (dateFilterSupplies.to && orderDate > dateFilterSupplies.to) return false
-      return true
-    })
-  }
-  
   return data
 }
 
@@ -5261,6 +5130,12 @@ async function supplyBatchAction(action) {
   startOperationTimer()
 
   const abortId = Math.random().toString(36).substring(2, 15)
+
+  // Подсветка всех обрабатываемых строк анимацией
+  numbers.forEach(function(n) {
+    var row = document.querySelector('#suppliesTableBody tr[data-shipment="' + n + '"]')
+    if (row) row.classList.add('processing')
+  })
 
   try {
     const response = await fetch('/api/batch/stream', {
@@ -5432,11 +5307,9 @@ async function supplySingleAction(shipmentNum, action) {
     return
   }
 
-  // Подсвечиваем все обрабатываемые строки
-  for (const num of numbers) {
-    const tr = document.querySelector('#suppliesTableBody tr[data-shipment="' + num + '"]')
-    if (tr) tr.classList.add('processing')
-  }
+  // Подсвечиваем обрабатываемую строку
+  var row = document.querySelector('#suppliesTableBody tr[data-shipment="' + shipmentNum + '"]')
+  if (row) row.classList.add('processing')
 
   showProgress(true)
   startOperationTimer()
