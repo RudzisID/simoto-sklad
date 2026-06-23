@@ -254,3 +254,45 @@ marketplaceFound = !!(salesRec || returnsRec || stickerInfo || analyticsRec || o
 1. Прочитать и применить изменения из этого плана
 2. Запустить `npm test`
 3. Запустить сервер и проверить
+
+---
+
+## Этап 2: POST /api/v3/orders/status (добавлено 2026-06-23)
+
+После анализа выяснилось, что `GET /api/v3/orders` **не возвращает** поле `status` для сборочных заданий.
+Правильный метод — **`POST /api/v3/orders/status`**, который принимает массив `ordersIds` (до 1000) и возвращает:
+- `wbStatus`: `sold | canceled_by_client | ready_for_pickup | sorted`
+- `supplierStatus`: статус продавца
+
+### Изменения
+
+**lib/wb.js:**
+- Добавлен `wbOrdersStatusCache` (`Map<orderId, {wbStatus, supplierStatus}>`, TTL=5мин)
+- Функция `getWBOrdersStatus(wbToken, orderIds, log)`:
+  - Кэш-фёрст (5 мин)
+  - Concurrent fetch protection
+  - POST /api/v3/orders/status с батчами по 1000
+  - Merge в кэш + сохранение на диск
+  - Graceful degradation (ошибка → stale кэш)
+
+**lib/supplies.js — scanNewOrders:**
+- После `refreshIfStale` → сбор WB orderId из `wbOrdersCache.byId` по `shipmentNum` из описаний
+- Вызов `wb.getWBOrdersStatus()` 1 раз на страницу
+- В приоритете статусов: `wbStatus` между `cancel(sticker)` и `delivered(orders)`
+
+**Приоритет статусов (итоговый):**
+```
+return → cancel(orders) → cancel(sticker) → wbStatus=sold → wbStatus=canceled →
+complete(orders) → delivered(sales) → delivered(sticker) → wbStatus(другие) → mpStatus(другие) → processing
+```
+
+### Маппинг wbStatus → наш статус
+
+| wbStatus | marketplaceStatus | isDelivered | isCancelled |
+|---|---|---|---|
+| `sold` | `delivered` | true | false |
+| `canceled_by_client` | `cancelled` | false | true |
+| `ready_for_pickup` | `ready_for_pickup` → "В обработке" | false | false |
+| `sorted` | `sorted` → "В обработке" | false | false |
+
+**recheckOrder:** использует `wb.wbOrdersStatusCache?.byOrderId` (только кэш, без API — нет wbToken)

@@ -108,10 +108,10 @@ function showConfirm(message, title = 'Подтверждение') {
     titleEl.textContent = title
     msgEl.textContent = message
     cancelBtn.style.display = ''
-    modal.classList.remove('hidden')
+    modal.classList.add('show')
 
     const cleanup = (result) => {
-      modal.classList.add('hidden')
+      modal.classList.remove('show')
       okBtn.removeEventListener('click', onOk)
       cancelBtn.removeEventListener('click', onCancel)
       modal.removeEventListener('click', onOverlayClick)
@@ -149,10 +149,10 @@ function showAlert(message, title = 'Внимание') {
     titleEl.textContent = title
     msgEl.textContent = message
     cancelBtn.style.display = 'none'
-    modal.classList.remove('hidden')
+    modal.classList.add('show')
 
     const cleanup = () => {
-      modal.classList.add('hidden')
+      modal.classList.remove('show')
       cancelBtn.style.display = ''
       okBtn.removeEventListener('click', onOk)
       modal.removeEventListener('click', onOverlay)
@@ -3775,7 +3775,7 @@ async function startScan() {
 
   statusEl.classList.remove('hidden')
   errorEl.classList.add('hidden')
-  modal.classList.remove('hidden')
+  modal.classList.add('show')
 
   try {
     const cameras = await Html5Qrcode.getCameras()
@@ -3888,7 +3888,7 @@ function stopScanner() {
     } catch (_) {}
     html5QrCode = null
   }
-  document.getElementById('scannerModal').classList.add('hidden')
+  document.getElementById('scannerModal').classList.remove('show')
   scannerFlashAvailable = false
 }
 
@@ -6219,7 +6219,7 @@ function openComparisonModal() {
     renderComparisonPanel(window._lastComparisonResult)
   }
   const modal = document.getElementById('comparisonModal')
-  if (modal) modal.classList.remove('hidden')
+  if (modal) modal.classList.add('show')
 }
 
 /**
@@ -6228,7 +6228,7 @@ function openComparisonModal() {
  */
 function closeComparisonModal() {
   const modal = document.getElementById('comparisonModal')
-  if (modal) modal.classList.add('hidden')
+  if (modal) modal.classList.remove('show')
 }
 
 /**

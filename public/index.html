@@ -299,7 +299,7 @@
     </div>
 
     <!-- Token Modal -->
-    <div id="tokenModal" class="modal-overlay hidden">
+    <div id="tokenModal" class="modal-overlay">
       <div class="modal-dialog">
         <div class="modal-header">
           <h3>Токены API</h3>
@@ -331,7 +331,7 @@
     </div>
 
     <!-- QR Modal -->
-    <div id="qrModal" class="modal-overlay hidden">
+    <div id="qrModal" class="modal-overlay">
       <div class="modal-dialog" style="max-width: 360px; text-align: center;">
         <div class="modal-header">
           <h3>Подключение с телефона</h3>
@@ -350,7 +350,7 @@
     </div>
 
     <!-- Custom Confirm Modal -->
-    <div id="confirmModal" class="modal-overlay hidden">
+    <div id="confirmModal" class="modal-overlay">
       <div class="modal-dialog">
         <div class="modal-header">
           <h3 id="confirmTitle">Подтверждение</h3>
@@ -366,7 +366,7 @@
     </div>
 
     <!-- Sticker Modal -->
-    <div id="stickerModal" class="modal-overlay hidden">
+    <div id="stickerModal" class="modal-overlay">
       <div class="modal-dialog" style="width: 340px; min-width: auto">
         <div class="modal-header">
           <h3>Параметры наклейки</h3>
@@ -414,7 +414,7 @@
     </div>
 
     <!-- Push Archive Modal -->
-    <div id="pushArchiveModal" class="modal-overlay hidden">
+    <div id="pushArchiveModal" class="modal-overlay">
       <div class="modal-dialog" style="max-width: 800px; width: 90%;">
         <div class="modal-header">
           <h3>Редактирование маркета (архив)</h3>
@@ -430,7 +430,7 @@
     </div>
 
     <!-- Scanner Modal -->
-    <div id="scannerModal" class="modal-overlay hidden">
+    <div id="scannerModal" class="modal-overlay">
       <div class="modal-dialog scanner-dialog">
         <div class="modal-header scanner-header">
           <h3>Сканировать код</h3>
@@ -449,7 +449,7 @@
     </div>
 
     <!-- Comparison Modal -->
-    <div id="comparisonModal" class="modal-overlay hidden">
+    <div id="comparisonModal" class="modal-overlay">
       <div class="modal-dialog comparison-modal-dialog">
         <div class="modal-header">
           <h3>📊 Сравнение с отчётом Ozon</h3>
@@ -498,7 +498,7 @@
         // Token modal
         const tokenModal = document.getElementById('tokenModal');
         document.querySelector('.token-btn').addEventListener('click', () => {
-          tokenModal.classList.remove('hidden');
+          tokenModal.classList.add('show');
           // Pre-fill from localStorage if exist
           document.getElementById('msTokenInput').value = localStorage.getItem('ms_token') || '';
           document.getElementById('wbTokenInput').value = localStorage.getItem('wb_token') || '';
@@ -508,7 +508,7 @@
             localStorage.getItem('ozon_api_key') || '';
         });
         document.getElementById('tokenCancel').addEventListener('click', () => {
-          tokenModal.classList.add('hidden');
+          tokenModal.classList.remove('show');
         });
         document.getElementById('tokenSave').addEventListener('click', () => {
           const msToken = document.getElementById('msTokenInput').value;
@@ -521,18 +521,18 @@
           localStorage.setItem('ozon_client_id', ozonClientId);
           localStorage.setItem('ozon_api_key', ozonApiKey);
 
-          tokenModal.classList.add('hidden');
+          tokenModal.classList.remove('show');
         });
         // Close modal on overlay click
         tokenModal.addEventListener('click', (e) => {
-          if (e.target === tokenModal) tokenModal.classList.add('hidden');
+          if (e.target === tokenModal) tokenModal.classList.remove('show');
         });
 
         // QR modal
         const qrModal = document.getElementById('qrModal');
         const qrCanvas = document.getElementById('qrCanvas');
         document.getElementById('qrBtn').addEventListener('click', async () => {
-          qrModal.classList.remove('hidden');
+          qrModal.classList.add('show');
           // Fetch server URL and generate QR
           try {
             const resp = await fetch('/api/server-url');
@@ -544,16 +544,16 @@
           }
         });
         document.getElementById('qrClose').addEventListener('click', () => {
-          qrModal.classList.add('hidden');
+          qrModal.classList.remove('show');
         });
         qrModal.addEventListener('click', (e) => {
-          if (e.target === qrModal) qrModal.classList.add('hidden');
+          if (e.target === qrModal) qrModal.classList.remove('show');
         });
 
         // Global Escape — закрывает любой открытый попап
         document.addEventListener('keydown', (e) => {
           if (e.key === 'Escape') {
-            document.querySelectorAll('.modal-overlay').forEach((m) => m.classList.add('hidden'));
+            document.querySelectorAll('.modal-overlay').forEach((m) => m.classList.remove('show'));
             if (typeof stopScanner === 'function') stopScanner();
           }
         });
@@ -588,25 +588,25 @@
         document.getElementById('stickerCreate').addEventListener('click', generateSticker);
         // Close on overlay click
         stickerModal.addEventListener('click', function (e) {
-          if (e.target === stickerModal) stickerModal.classList.add('hidden');
+          if (e.target === stickerModal) stickerModal.classList.remove('show');
         });
 
         // Push archive modal close handlers
         document.getElementById('pushArchiveCloseBtn').addEventListener('click', function() {
-          document.getElementById('pushArchiveModal').classList.add('hidden');
+          document.getElementById('pushArchiveModal').classList.remove('show');
         });
         document.getElementById('pushArchiveCloseBtn2').addEventListener('click', function() {
-          document.getElementById('pushArchiveModal').classList.add('hidden');
+          document.getElementById('pushArchiveModal').classList.remove('show');
         });
         document.getElementById('pushArchiveModal').addEventListener('click', function(e) {
-          if (e.target === this) this.classList.add('hidden');
+          if (e.target === this) this.classList.remove('show');
         });
 
         // Comparison modal close on overlay click
         const comparisonModal = document.getElementById('comparisonModal');
         if (comparisonModal) {
           comparisonModal.addEventListener('click', function(e) {
-            if (e.target === this) this.classList.add('hidden');
+            if (e.target === this) this.classList.remove('show');
           });
         }
       });
@@ -1262,7 +1262,7 @@
           .then(function(r) { return r.json(); })
           .then(function(data) {
             document.getElementById('pushArchiveContent').textContent = data.content;
-            document.getElementById('pushArchiveModal').classList.remove('hidden');
+            document.getElementById('pushArchiveModal').classList.add('show');
           })
           .catch(function(err) {
             alert('Ошибка загрузки архива: ' + err.message);

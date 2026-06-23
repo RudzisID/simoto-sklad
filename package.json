@@ -1,6 +1,6 @@
 {
   "name": "simoto-sklad",
-  "version": "1.8.20",
+  "version": "1.8.21",
   "description": "Модуль автоматизации платежей и управления заказами для МойСклад",
   "main": "server.js",
   "scripts": {

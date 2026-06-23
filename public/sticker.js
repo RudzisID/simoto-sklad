@@ -119,7 +119,7 @@ function openStickerPrint(carrier, code, size, avito) {
 function toggleStickerModal(show) {
   var modal = document.getElementById('stickerModal')
   if (!modal) return
-  modal.classList.toggle('hidden', !show)
+  modal.classList.toggle('show', show)
   if (show) {
     document.getElementById('stickerCarrier').value = ''
     document.getElementById('stickerCode').value = ''
