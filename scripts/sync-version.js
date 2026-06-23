@@ -40,8 +40,8 @@ const entry = {
 }
 
 versions.unshift(entry)
-// Ограничение: не более 10 записей
-while (versions.length > 10) versions.pop()
+// Ограничение: не более 30 записей
+while (versions.length > 30) versions.pop()
 
 fs.writeFileSync(versionsPath, JSON.stringify(versions, null, 2) + '\n', 'utf8')
 console.log('📝 Добавлена запись v' + version + ' в versions.json')
