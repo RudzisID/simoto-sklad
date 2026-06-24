@@ -4622,7 +4622,7 @@ function createSuppliesRow(order) {
     var recType = order.recommendationType || ''
     if (recType === 'ok' || recType === 'action_cancel_demand') {
       actionsHtml += '<span class="status-ok-icon" title="' + esc(order.recommendation || '') + '">✅</span>'
-    } else if (recType === 'waiting') {
+    } else if (recType === 'waiting' || recType === 'waiting_pickup') {
       actionsHtml += '<span class="status-wait-icon" title="' + esc(order.recommendation || '') + '">⏳</span>'
     } else {
       actionsHtml += '<span class="status-no">—</span>'
@@ -4642,7 +4642,8 @@ function createSuppliesRow(order) {
       'awaiting_packaging': 'Ожидает упаковки',
       'awaiting_deliver': 'Ожидает отгрузки',
       'delivering': 'Доставляется',
-      'accepted': 'Принят'
+      'accepted': 'Принят',
+      'pickup': 'Собран, ожидает отправки'
     }
     return map[status.toLowerCase()] || status
   }

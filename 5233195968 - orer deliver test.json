@@ -1,0 +1,80 @@
+{
+  "_meta": {
+    "orderId": 5233195968,
+    "date": "2026-06-24T10:20+",
+    "note": "Снимок данных до фактической передачи заказа в WB. После передачи перепроверить."
+  },
+  "wbOrdersCache (stale)": {
+    "fetchedAt": 1782271230000,
+    "data": {
+      "id": 5233195968,
+      "supplyId": "",
+      "scanPrice": null,
+      "rid": "eBa.i112b6cfe35c20017b28d702e23180737.0.1",
+      "orderUid": "i112b6cfe35c20017b28d702e23180737",
+      "deliveryType": "fbs",
+      "article": "0180-311001",
+      "nmId": 850306847,
+      "price": 37200,
+      "createdAt": "2026-06-23T22:23:06Z",
+      "status": "",
+      "orderStatus": ""
+    }
+  },
+  "live GET /api/v3/orders (fresh)": {
+    "data": {
+      "id": 5233195968,
+      "supplyId": "WB-GI-249158820",
+      "scanPrice": null,
+      "rid": "eBa.i112b6cfe35c20017b28d702e23180737.0.1",
+      "orderUid": "i112b6cfe35c20017b28d702e23180737",
+      "deliveryType": "fbs",
+      "article": "0180-311001",
+      "nmId": 850306847,
+      "price": 37200,
+      "createdAt": "2026-06-23T22:23:06Z"
+    },
+    "note": "supplyId уже заполнен! Заказ назначен в поставку. Кэш устарел."
+  },
+  "live GET /api/v3/orders (second record)": {
+    "data": {
+      "id": 5233195969,
+      "supplyId": "WB-GI-249158820",
+      "scanPrice": null,
+      "rid": "eBa.i112b6cfe35c20017b28d702e23180737.0.0",
+      "orderUid": "i112b6cfe35c20017b28d702e23180737"
+    },
+    "note": "Дубликат с тем же orderUid, но id+1 и rid=.0.0 (предыдущая версия)."
+  },
+  "wbOrdersStickersCache": {
+    "fetchedAt": 1782271230871,
+    "found": false,
+    "note": "29 записей, заказ 5233195968 не найден ни по sticker, ни по srid."
+  },
+  "wbOrdersStatusCache": {
+    "fetchedAt": 1782211531086,
+    "found": false,
+    "note": "0 записей — POST /api/v3/orders/status возвращает 400."
+  },
+  "wbSalesCache": {
+    "found": false,
+    "note": "Не найден в продажах."
+  },
+  "wbAnalyticsReturnsCache": {
+    "found": false,
+    "note": "Не проверялся."
+  },
+  "_вывод": {
+    "currentStatus": "Кэш говорит supplyId='' → на странице 'Ожидает на маркете'. Live API: supplyId='WB-GI-249158820' → заказ уже в поставке.",
+    "distinction": {
+      "waiting (ожидает)": "supplyId='', scanPrice=null",
+      "assembled (собран)": "supplyId='WB-GI-...', scanPrice=null",
+      "delivered (отгружен)": "supplyId='WB-GI-...', scanPrice!=null ИЛИ stickerInfo.isRealization=true"
+    }
+  },
+  "_примеры": {
+    "5230756067 (ждёт)": "supplyId='', scanPrice=null, rid=.0.1",
+    "5233195968 (собран)": "supplyId='WB-GI-249158820', scanPrice=null, rid=.0.1",
+    "5229944582 (отгружен)": "supplyId='WB-GI-248969082', scanPrice=1500, rid=.1.0, sticker.isRealization=true"
+  }
+}

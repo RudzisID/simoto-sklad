@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-06-24T11:53:54.8046749+07:00",
+  "importNote": "Изменение scanPrice с null на 1500 — это и есть приём в ПВЗ",
+  "changes": {
+    "supplyId": {
+      "before": "",
+      "after": "WB-GI-249158820"
+    },
+    "scanPrice": {
+      "before": null,
+      "after": 1500
+    }
+  },
+  "stateBefore": "pickup (собран, ожидает отправки)",
+  "orderId": 5233195968,
+  "stateAfter": "delivered (отгружен)",
+  "orderUid": "i112b6cfe35c20017b28d702e23180737",
+  "method": "live GET /api/v3/orders + force refresh cache"
+}
