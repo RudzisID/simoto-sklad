@@ -3988,7 +3988,8 @@ function saveSuppliesState() {
         marketplaceFound: o.marketplaceFound,
         marketplaceIsCancelled: o.marketplaceIsCancelled,
         marketplaceIsDelivered: o.marketplaceIsDelivered,
-        marketplaceIsReturn: o.marketplaceIsReturn
+        marketplaceIsReturn: o.marketplaceIsReturn,
+        marketplaceSupplyId: o.marketplaceSupplyId
       }
     })
     localStorage.setItem(SUPPLIES_STORAGE_KEY, JSON.stringify(light))
