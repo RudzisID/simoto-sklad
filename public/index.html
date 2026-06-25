@@ -365,6 +365,23 @@
       </div>
     </div>
 
+    <!-- Return Product Selection Modal -->
+    <div id="returnProductModal" class="modal-overlay">
+      <div class="modal-dialog" style="min-width: 480px; max-width: 520px;">
+        <div class="modal-header">
+          <h3>Выбор товаров для возврата</h3>
+        </div>
+        <div class="modal-body">
+          <p id="returnProductDesc">Выберите товары для возврата из заказа:</p>
+          <div id="returnProductList" style="max-height: 300px; overflow-y: auto; margin-bottom: 12px;"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="returnProductCancel" class="btn btn-cancel">Отмена</button>
+          <button id="returnProductOk" class="btn btn-return" disabled>Создать возврат</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Sticker Modal -->
     <div id="stickerModal" class="modal-overlay">
       <div class="modal-dialog" style="width: 340px; min-width: auto">

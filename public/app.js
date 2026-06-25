@@ -2603,9 +2603,182 @@ async function createDemandByNum(shipmentNum) {
  * @param {string} shipmentNum - Номер заказа
  * @returns {Promise<void>}
  */
-async function createReturnByNum(shipmentNum) {
+/**
+ * Создаёт возврат по номеру отгрузки.
+ * Если у заказа Ozon несколько товаров — показывает модалку выбора.
+ *
+ * @async
+ * @param {string} shipmentNum - Номер отправления
+ * @returns {Promise<void>}
+ */
+function createReturnByNum(shipmentNum) {
   const order = ordersData.find(o => o.shipmentNum === shipmentNum)
-  await createSingleAction(shipmentNum, 'return', order?.orderId)
+
+  // Для Ozon с несколькими товарами — показываем модалку выбора
+  if (order?.ozonProducts?.length > 1) {
+    showReturnProductModal(shipmentNum, order)
+    return
+  }
+
+  // Для остальных случаев — сразу создаём возврат
+  createSingleAction(shipmentNum, 'return', order?.orderId)
+}
+
+/**
+ * Показывает модальное окно выбора товаров для возврата Ozon.
+ * Если товар уже есть в возвратах — предотмечен.
+ *
+ * @param {string} shipmentNum - Номер отправления
+ * @param {Object} order - Объект заказа из ordersData
+ * @returns {void}
+ */
+function showReturnProductModal(shipmentNum, order) {
+  const modal = document.getElementById('returnProductModal')
+  const listEl = document.getElementById('returnProductList')
+  const okBtn = document.getElementById('returnProductOk')
+  const cancelBtn = document.getElementById('returnProductCancel')
+  const descEl = document.getElementById('returnProductDesc')
+
+  if (!modal || !listEl) return
+
+  // offer_id из возвратов (чтобы предотметить)
+  const returnedOfferIds = new Set(
+    (order.ozonReturns || []).map(function(r) { return String(r.offer_id) })
+  )
+
+  // Строим список товаров
+  listEl.innerHTML = ''
+  const products = order.ozonProducts || []
+  descEl.textContent = 'Заказ №' + (order.ozonOrderId || order.orderName || '') + ' — ' + products.length + ' товаров. Выберите, какие вернуть:'
+
+  var checkboxes = []
+  products.forEach(function(prod, idx) {
+    var offerId = prod.offer_id || ''
+    var isReturned = returnedOfferIds.has(String(offerId))
+    var row = document.createElement('label')
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid #333;cursor:pointer;'
+    row.title = isReturned ? 'Уже есть возврат (предотмечен)' : ''
+
+    var cb = document.createElement('input')
+    cb.type = 'checkbox'
+    cb.checked = isReturned
+    cb.dataset.offerId = offerId
+    cb.style.cssText = 'width:18px;height:18px;accent-color:#e74c3c;flex-shrink:0;'
+
+    var info = document.createElement('span')
+    info.style.cssText = 'flex:1;color:#e0e0e0;font-size:14px;'
+    info.textContent = (prod.name || 'Товар ' + (idx + 1)) +
+      (offerId ? ' (' + offerId + ')' : '') +
+      (prod.price ? ' — ' + Number(prod.price).toLocaleString() + ' ₽' : '')
+
+    row.appendChild(cb)
+    row.appendChild(info)
+    if (isReturned) {
+      var badge = document.createElement('span')
+      badge.textContent = '(возврат)'
+      badge.style.cssText = 'font-size:11px;color:#e67e22;background:rgba(230,126,34,0.15);padding:2px 8px;border-radius:4px;white-space:nowrap;'
+      row.appendChild(badge)
+    }
+    listEl.appendChild(row)
+    checkboxes.push(cb)
+  })
+
+  // Обновляем состояние кнопки
+  function updateOkButton() {
+    var checked = checkboxes.some(function(cb) { return cb.checked })
+    okBtn.disabled = !checked
+  }
+  checkboxes.forEach(function(cb) {
+    cb.addEventListener('change', updateOkButton)
+  })
+  updateOkButton()
+
+  // Отвязываем старые обработчики (чтобы не множились)
+  var newOk = okBtn.cloneNode(true)
+  okBtn.parentNode.replaceChild(newOk, okBtn)
+  var newCancel = cancelBtn.cloneNode(true)
+  cancelBtn.parentNode.replaceChild(newCancel, cancelBtn)
+
+  // Навешиваем новые
+  newOk.addEventListener('click', function() {
+    modal.classList.remove('show')
+    var selectedItems = checkboxes
+      .filter(function(cb) { return cb.checked })
+      .map(function(cb) { return cb.dataset.offerId })
+      .filter(function(id) { return id })
+    if (selectedItems.length > 0) {
+      createReturnWithItems(shipmentNum, order?.orderId, selectedItems)
+    }
+  })
+
+  newCancel.addEventListener('click', function() {
+    modal.classList.remove('show')
+  })
+
+  modal.addEventListener('click', function onOverlay(e) {
+    if (e.target === modal) {
+      modal.classList.remove('show')
+      modal.removeEventListener('click', onOverlay)
+    }
+  }, { once: true })
+
+  modal.classList.add('show')
+}
+
+/**
+ * Создаёт возврат с выбранными товарами через API.
+ *
+ * @async
+ * @param {string} shipmentNum - Номер отправления
+ * @param {string|null} orderId - ID заказа в МС
+ * @param {string[]} selectedItems - Список выбранных offer_id
+ * @returns {Promise<void>}
+ */
+async function createReturnWithItems(shipmentNum, orderId, selectedItems) {
+  const token = saveToken()
+  if (!token) {
+    alert('Введите токен API')
+    return
+  }
+
+  showProgress(true)
+
+  try {
+    const response = await fetch('/api/create-return', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Token': token },
+      body: JSON.stringify({ shipmentNum, orderId, selectedItems })
+    })
+
+    const data = await response.json()
+
+    if (data.error) {
+      hideProgress(false, 'Ошибка')
+      await saveOrderAction(shipmentNum, 'return_error', data.error)
+      alert('Ошибка: ' + data.error)
+    } else {
+      hideProgress(true, 'Возврат создан')
+      await saveOrderAction(shipmentNum, 'return_created', data.returnName)
+
+      // Обновляем статус заказа в таблице
+      const orderIndex = ordersData.findIndex(function(o) { return o.shipmentNum === shipmentNum })
+      if (orderIndex !== -1) {
+        ordersData[orderIndex].hasReturn = true
+        ordersData[orderIndex].statusName = 'Возврат'
+        ordersData[orderIndex].returnSum = data.returnSum || 0
+        ordersData[orderIndex].lastAction = 'return_created'
+        saveOrderAction(shipmentNum, 'return_created', data.returnName, {
+          returnSum: data.returnSum || 0
+        })
+        renderTable()
+        updateTotals()
+        renderCurrentStats()
+        renderFinalStats()
+      }
+    }
+  } catch (e) {
+    hideProgress(false, 'Ошибка: ' + e.message)
+  }
 }
 
 /**

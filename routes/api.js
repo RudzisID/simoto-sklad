@@ -422,7 +422,7 @@ module.exports = function(deps) {
    * @throws {{ error: string }}
    */
   router.post('/create-return', async (req, res) => {
-    const { shipmentNum, orderId: directOrderId } = req.body
+    const { shipmentNum, orderId: directOrderId, selectedItems } = req.body
     const token = req.headers['x-api-token']
 
     if (!token || !shipmentNum) {
@@ -430,7 +430,7 @@ module.exports = function(deps) {
     }
 
     initApi(token)
-    log(`Создание возврата: ${shipmentNum}${directOrderId ? ` (orderId: ${directOrderId})` : ''}`, { token: token.slice(0, 8) + '...' })
+    log(`Создание возврата: ${shipmentNum}${directOrderId ? ` (orderId: ${directOrderId})` : ''}${selectedItems?.length ? ` (выбрано ${selectedItems.length} товаров)` : ''}`, { token: token.slice(0, 8) + '...' })
 
     try {
       let orderId = directOrderId
@@ -447,7 +447,7 @@ module.exports = function(deps) {
       }
 
       log(`Создаю возврат: ${shipmentNum}`, { orderId })
-      const salesReturn = await createReturn(orderId)
+      const salesReturn = await createReturn(orderId, null, null, selectedItems)
       log(`Возврат создан: ${salesReturn.name}`, { shipmentNum, returnId: salesReturn.id })
 
       const orderFull = await getOrderFullForCreate(orderId)

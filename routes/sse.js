@@ -492,6 +492,10 @@ module.exports = function(deps) {
         ozonStatus: '',
         barcode: '',
         offerId: '',
+        ozonProducts: [],
+        ozonReturns: [],
+        ozonOrderId: null,
+        marketplaceSiblingReturnPrice: 0,
         wbReturnInfo: '',
         srid: '',
         wbTotalPrice: 0,
@@ -509,7 +513,7 @@ module.exports = function(deps) {
 
       if (marketplace === 'ozon' && marketplaceData) {
         // Информация о возврате — сначала из marketplaceData (если findInCache вернул возврат),
-        // затем из отдельного кэша возвратов по order_id (постинг и возврат имеют одинаковый order_id)
+        // затем из отдельного кэша возвратов с проверкой по posting_number
         let ozonReturn = null
         if (marketplaceData.return_reason_name) {
           orderData.ozonReturnInfo = `↳ Возврат: ${marketplaceData.return_reason_name} (Ozon)`
@@ -517,12 +521,24 @@ module.exports = function(deps) {
         } else {
           const returns = ozon.ozonReturnsCache?.byOrderId?.get(marketplaceData.order_id)
           if (returns?.length) {
-            ozonReturn = returns[0]
-            orderData.ozonReturnInfo = `↳ Возврат: ${ozonReturn.return_reason_name} (Ozon)`
-            // Propagate return data to block payment button and show correct sums
-            orderData.returnType = ozonReturn.type || orderData.returnType
-            orderData.reason = ozonReturn.return_reason_name || orderData.reason
-            orderData.marketplaceReturnPrice = ozonReturn.product_price || orderData.marketplaceReturnPrice
+            // Ищем возврат, относящийся именно к этому постингу (а не к соседнему в том же заказе)
+            const ownReturn = returns.find(
+              r => String(r.posting_number) === String(marketplaceData.posting_number)
+            )
+            if (ownReturn) {
+              // СВОЙ возврат — блокируем платёж
+              ozonReturn = ownReturn
+              orderData.ozonReturnInfo = `↳ Возврат: ${ownReturn.return_reason_name} (Ozon)`
+              orderData.returnType = ownReturn.type || orderData.returnType
+              orderData.reason = ownReturn.return_reason_name || orderData.reason
+              orderData.marketplaceReturnPrice = ownReturn.product_price || orderData.marketplaceReturnPrice
+              orderData.barcode = ownReturn.barcode || orderData.barcode
+            } else {
+              // Чужой возврат (другой товар в том же заказе) — информация, НЕ блокируем
+              const siblingReturn = returns[0]
+              orderData.ozonReturnInfo = `↳ В заказе есть возврат (другой товар): ${siblingReturn.return_reason_name}`
+              orderData.marketplaceSiblingReturnPrice = siblingReturn.product_price || 0
+            }
           }
         }
         if (marketplaceData.status) {
@@ -533,10 +549,16 @@ module.exports = function(deps) {
             orderData.ozonStatus = OZON_STATUS_MAP[marketplaceData.status] || marketplaceData.status
           }
         }
-        orderData.barcode = ozonReturn?.barcode || marketplaceData.barcode || ''
+        orderData.barcode ||= marketplaceData.barcode || ''
         orderData.offerId = marketplaceData.offer_id ||
           (marketplaceData.products?.[0]?.offer_id) || ''
-        orderData.marketplaceReturnPrice = (ozonReturn?.product_price) || marketplaceData.product_price || 0
+        if (!ozonReturn) {
+          orderData.marketplaceReturnPrice = marketplaceData.product_price || 0
+        }
+        // Передаём на фронтенд данные о товарах и возвратах для модалки выбора
+        orderData.ozonProducts = marketplaceData.products || []
+        orderData.ozonReturns = ozon.ozonReturnsCache?.byOrderId?.get(marketplaceData.order_id) || []
+        orderData.ozonOrderId = marketplaceData.order_id
       }
 
       if (marketplace === 'wb' && marketplaceData) {
@@ -996,7 +1018,7 @@ module.exports = function(deps) {
         const ozonReturnRecord = found.return_reason_name
           ? found
           : (found.order_id != null
-            ? ozon.ozonReturnsCache?.byOrderId?.get(found.order_id)?.[0]
+            ? ozon.ozonReturnsCache?.byPostingNumber?.get(String(found.posting_number)) ?? null
             : null)
         const ozonReturnInfo = ozonReturnRecord?.return_reason_name
           ? `↳ Возврат: ${ozonReturnRecord.return_reason_name} (Ozon)`
