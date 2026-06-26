@@ -1185,6 +1185,19 @@ module.exports = function(deps) {
       if (result.cachePromise) {
         sendSSE(res, { type: 'cache_refresh', status: 'started' })
         await result.cachePromise
+
+        // Обновляем кэш статусов через live API для всех WB-заказов
+        // (чтобы recheckOrder видел актуальный wbStatus: ready_for_pickup/sorted после ПВЗ)
+        const wbOrderIds = result.orders
+          .filter(o => o.marketplace === 'wb' && o.shipmentNum)
+          .map(o => parseInt(o.shipmentNum))
+          .filter(id => !isNaN(id))
+        if (wbToken && wbOrderIds.length > 0) {
+          await wb.getWBOrdersStatus(wbToken, wbOrderIds, log).catch(e => {
+            log(`Supplies: WB status refresh error: ${e.message}`)
+          })
+        }
+
         sendSSE(res, { type: 'cache_refresh', status: 'processing' })
         for (let i = 0; i < result.orders.length; i++) {
           const updated = supplies.recheckOrder(result.orders[i])
