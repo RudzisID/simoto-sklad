@@ -4630,7 +4630,136 @@ tr.day-separator td span {
   color: var(--text);
 }
 
-/* Стили для after-actions (Stage 3) */
+/* ── Детальный разбор по заказам (nested details) ── */
+.cmp-order-detail {
+  margin: 6px 0;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.02);
+  overflow: hidden;
+}
+
+.cmp-order-header {
+  cursor: pointer;
+  padding: 8px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  font-size: 0.85rem;
+  list-style: none; /* убираем треугольник details */
+  position: relative;
+}
+.cmp-order-header::-webkit-details-marker { display: none; }
+
+.cmp-order-header .order-key {
+  font-weight: 700;
+  font-size: 0.9rem;
+  font-family: monospace;
+  color: var(--text);
+}
+.cmp-order-header .order-note {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.8rem;
+}
+.cmp-order-header .order-sums {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--text-muted, #94a3b8);
+  white-space: nowrap;
+}
+.cmp-order-header .order-sums strong {
+  color: var(--text);
+}
+.cmp-order-header .order-name-small {
+  width: 100%;
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  opacity: 0.7;
+}
+
+/* Цветовые классы для заголовка */
+.cmp-order-header.order-cancelled {
+  border-left: 3px solid #ef4444;
+  background: rgba(239,68,68,0.04);
+}
+.cmp-order-header.order-partial {
+  border-left: 3px solid #eab308;
+  background: rgba(234,179,8,0.04);
+}
+.cmp-order-header.order-mismatch {
+  border-left: 3px solid #f97316;
+  background: rgba(249,115,22,0.04);
+}
+.cmp-order-header.order-missing {
+  border-left: 3px solid #8b5cf6;
+  background: rgba(139,92,246,0.04);
+}
+
+/* Таблица товаров внутри заказа */
+.cmp-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin: 0;
+}
+.cmp-items-table thead th {
+  text-align: left;
+  padding: 5px 8px;
+  color: var(--text-secondary, #94a3b8);
+  font-weight: 600;
+  font-size: 0.75rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.1);
+}
+.cmp-items-table tbody td {
+  padding: 4px 8px;
+  border-top: 1px solid rgba(255,255,255,0.04);
+}
+.cmp-items-table .item-status-icon {
+  width: 24px;
+  text-align: center;
+}
+
+/* Строки: отгружено — зеленый, не отгружено — красный */
+.cmp-items-table tr.item-shipped {
+  background: rgba(34,197,94,0.04);
+}
+.cmp-items-table tr.item-shipped td:first-child {
+  color: #22c55e;
+}
+.cmp-items-table tr.item-cancelled {
+  background: rgba(239,68,68,0.04);
+}
+.cmp-items-table tr.item-cancelled td {
+  text-decoration: line-through;
+  opacity: 0.85;
+}
+.cmp-items-table tr.item-cancelled td:first-child {
+  color: #ef4444;
+}
+
+/* Метки-подписи */
+.item-shipped-label { color: #22c55e; font-weight: 600; }
+.item-cancelled-label { color: #ef4444; font-weight: 600; }
+
+/* Дифф-классы для сумм */
+.diff-neg { color: #ef4444; font-weight: 600; }
+.diff-pos { color: #22c55e; font-weight: 600; }
+
+/* Нет данных */
+.cmp-no-items {
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  color: var(--text-muted, #94a3b8);
+  font-style: italic;
+}
+
+.cmp-detail-breakdown {
+  margin-top: 16px;
+}
+
+/* ── Стили для after-actions (Stage 3) ── */
 .cmp-before-after {
   display: flex;
   gap: 16px;

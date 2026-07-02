@@ -186,7 +186,10 @@ function startOperationTimer() {
     const elapsed = Math.floor((Date.now() - operationStartTime) / 1000)
     const mins = Math.floor(elapsed / 60)
     const secs = elapsed % 60
-    updateTimerDisplay(`${mins}:${secs.toString().padStart(2, '0')}`)
+    const str = `${mins}:${secs.toString().padStart(2, '0')}`
+    updateTimerDisplay(str)
+    const el2 = document.getElementById('operationTimerSupplies')
+    if (el2) el2.textContent = str
   }, 1000)
 }
 
@@ -338,7 +341,7 @@ function hideFinalStats(showTimer = true) {
   if (showTimer) {
     container.innerHTML = `
             <div class="terminal-line info">Выполняется...</div>
-            <div class="terminal-line time-line">Время: <span id="operationTimer">0:00</span></div>
+      <div class="terminal-line time-line">Время: <span id="operationTimerSupplies">0:00</span></div>
             <div class="terminal-status">
                 <div class="terminal-status-dot pulse"></div>
                 <span>Обработка</span>
@@ -718,6 +721,7 @@ async function checkNumbers() {
   const lines = text
     .split('\n')
     .map((l) => l.trim())
+    .map((l) => l.replace(/[\p{Z}\p{C}]+/gu, '').trim()) // дополнительная очистка от невидимых символов
     .filter((l) => l)
   currentDuplicates = lines.length - new Set(lines).size
 
@@ -820,6 +824,10 @@ async function checkNumbers() {
             const data = JSON.parse(line.slice(6))
 
             if (data.type === 'progress') {
+              // Пропускаем прогресс-события без данных заказа
+              // (первое событие — 'Поиск...' без поля order)
+              if (!data.order) continue
+
               // Получен промежуточный результат
               const order = data.order
 
@@ -5885,11 +5893,16 @@ function buildReportMap(rows) {
 
     const colE = String(row[4] || '').toLowerCase()
 
+    // Очищаем ключ: если row[2] = null/undefined → пустая строка.
+    // Удаляем ВСЕ невидимые Unicode-символы (разделители \p{Z}, управляющие/форматирующие \p{C})
+    const rawKey = (row[2] == null ? '' : String(row[2]))
+      .replace(/[\p{Z}\p{C}]+/gu, '')
+      .trim()
+
     // FBO: собираем номера заказов для списка техподдержки, не участвуют в сравнении
     if (colE === 'fbo') {
-      const fboKey = String(row[2]).trim()
-      if (fboKey && !fboOrderNumbers.includes(fboKey)) {
-        fboOrderNumbers.push(fboKey)
+      if (rawKey && !fboOrderNumbers.includes(rawKey)) {
+        fboOrderNumbers.push(rawKey)
       }
       continue
     }
@@ -5899,7 +5912,7 @@ function buildReportMap(rows) {
     const jVal = typeof row[9] === 'number' ? row[9] : parseFloat(String(row[9]).replace(',', '.')) || 0
     if (jVal === 0) continue
 
-    const orderKey = String(row[2]).trim()
+    const orderKey = rawKey
     if (!orderKey) continue
 
     if (!map[orderKey]) {
@@ -6123,7 +6136,12 @@ function compareWithReport(reportMap) {
       note,
       hasReturn: order.hasReturn,
       isCancelled: order.isCancelled,
-      statusName: order.statusName || ''
+      statusName: order.statusName || '',
+      orderName: order.orderName || '',
+      storeName: order.storeName || '',
+      // Данные о позициях для детального разбора
+      orderPositions: order.orderPositions || [],
+      demandPositions: order.demandPositions || []
     })
   }
 
@@ -6301,13 +6319,111 @@ function renderComparisonPanel(stats) {
     html += '</div>'
   }
 
+  // ── Детальный разбор по заказам с расхождениями ──
+  const problemDetails = details.filter(d => d.status !== 'ok')
+  if (problemDetails.length > 0) {
+    html += '<div class="cmp-section cmp-detail-breakdown">'
+    html += '<h4>🔍 Детальный разбор по заказам</h4>'
+    html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">'
+    html += 'Показаны заказы с расхождениями. '
+    html += '<span class="item-shipped-label">🟢 Отгружено</span> · '
+    html += '<span class="item-cancelled-label">🔴 Не отгружено / отменено</span>'
+    html += '</p>'
+
+    for (const d of problemDetails) {
+      // Определяем статусный класс для заголовка
+      let headerClass = 'cmp-order-header'
+      if (d.status === 'return' || d.isCancelled) headerClass += ' order-cancelled'
+      else if (d.status === 'partial') headerClass += ' order-partial'
+      else if (d.status === 'mismatch') headerClass += ' order-mismatch'
+      else if (d.status === 'missing-in-report') headerClass += ' order-missing'
+
+      // Собираем позиции: demandPositions — отгружено (зелёный),
+      // orderPositions без demandPositions — не отгружено (красный)
+      const shippedCodes = new Set(
+        (d.demandPositions || []).map(p => p.code).filter(Boolean)
+      )
+
+      html += '<details open class="cmp-order-detail">'
+      html += '<summary class="' + headerClass + '">'
+      html += '<span class="order-key">' + escapeHtml(d.orderKey) + '</span>'
+      html += '<span class="order-note">' + escapeHtml(d.note) + '</span>'
+      html += '<span class="order-sums">'
+      html += 'D: <strong>' + fmtSum(d.sumD) + '</strong> · '
+      html += 'J+: <strong>' + fmtSum(d.jPos) + '</strong> · '
+      html += '<span class="' + (d.diff < 0 ? 'diff-neg' : 'diff-pos') + '">Δ ' + fmtSum(d.diff) + '</span>'
+      html += '</span>'
+      if (d.orderName) html += '<span class="order-name-small">' + escapeHtml(d.orderName) + '</span>'
+      html += '</summary>'
+
+      // Отгруженные позиции (demandPositions) — зелёные
+      const shipped = d.demandPositions || []
+      // Неотгруженные позиции (orderPositions, которых нет в demand) — красные
+      const ordered = d.orderPositions || []
+      const notShipped = ordered.filter(p =>
+        !p.code || !shippedCodes.has(p.code)
+      )
+
+      const hasAnyItems = shipped.length > 0 || notShipped.length > 0
+
+      if (hasAnyItems) {
+        html += '<table class="cmp-items-table">'
+        html += '<thead><tr>'
+        html += '<th>Статус</th><th>Код</th><th>Наименование</th>'
+        html += '<th>Цена</th><th>Кол-во</th><th>Сумма</th>'
+        html += '</tr></thead><tbody>'
+
+        // Зелёные — отгружено
+        for (const p of shipped) {
+          const sum = (p.price || 0) * (p.quantity || 0)
+          html += '<tr class="item-shipped">'
+          html += '<td class="item-status-icon">🟢</td>'
+          html += '<td>' + escapeHtml(p.code || '—') + '</td>'
+          html += '<td>' + escapeHtml(p.name || '—') + '</td>'
+          html += '<td>' + fmt(p.price || 0) + ' ₽</td>'
+          html += '<td>' + (p.quantity || 0) + '</td>'
+          html += '<td><strong>' + fmt(sum) + ' ₽</strong></td>'
+          html += '</tr>'
+        }
+
+        // Красные — не отгружено (не найдено в demandPositions)
+        for (const p of notShipped) {
+          const sum = (p.price || 0) * (p.quantity || 0)
+          html += '<tr class="item-cancelled">'
+          html += '<td class="item-status-icon">🔴</td>'
+          html += '<td>' + escapeHtml(p.code || '—') + '</td>'
+          html += '<td>' + escapeHtml(p.name || '—') + '</td>'
+          html += '<td>' + fmt(p.price || 0) + ' ₽</td>'
+          html += '<td>' + (p.quantity || 0) + '</td>'
+          html += '<td><strong>' + fmt(sum) + ' ₽</strong></td>'
+          html += '</tr>'
+        }
+
+        html += '</tbody></table>'
+      } else {
+        // Если нет позиций — показываем развёрнутую информацию о заказе
+        html += '<div class="cmp-no-items">'
+        html += '<span>D = ' + fmtSum(d.sumD) + '</span> · '
+        html += '<span>Возврат: ' + fmtSum(d.retF) + '</span> · '
+        html += '<span>Оплата: ' + fmtSum(d.payG) + '</span> · '
+        html += '<span>J+ = ' + fmtSum(d.jPos) + '</span>'
+        if (d.statusName) html += ' · <span class="status-badge">' + escapeHtml(d.statusName) + '</span>'
+        html += '</div>'
+      }
+
+      html += '</details>'
+    }
+
+    html += '</div>'
+  }
+
   // ── FBO cписок ──
   const fboNumbers = window._fboOrderNumbers || []
   if (fboNumbers.length > 0) {
     html += '<div class="cmp-section">'
     html += '<h4>📋 FBO заказы</h4>'
     html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:6px;">По каким FBS отправлениям были проданы эти FBO заказы?</p>'
-    html += '<code style="font-size:0.8rem;word-break:break-all;color:#eab308;">' + esc(fboNumbers.join(', ')) + '</code>'
+    html += '<code style="font-size:0.8rem;word-break:break-all;color:#eab308;">' + escapeHtml(fboNumbers.join(', ')) + '</code>'
     html += '</div>'
   }
 
@@ -6320,9 +6436,9 @@ function renderComparisonPanel(stats) {
     html += '<table class="cmp-diff-table">'
     html += '<tr><th>Заказ</th><th>Изменения</th></tr>'
     for (const item of diffLog) {
-      html += '<tr><td>' + esc(item.orderKey) + '</td><td>'
+      html += '<tr><td>' + escapeHtml(item.orderKey) + '</td><td>'
       for (const change of item.changes) {
-        html += '<div>' + esc(change) + '</div>'
+        html += '<div>' + escapeHtml(change) + '</div>'
       }
       html += '</td></tr>'
     }

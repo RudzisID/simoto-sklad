@@ -1,7 +1,6 @@
 @echo off
 cd /d "%~dp0"
 set "_batfile=%~f0"
-setlocal enabledelayedexpansion
 title SiMOTO-Sklad
 
 :: Вспомогательная функция для цветного вывода через PowerShell
@@ -14,14 +13,52 @@ echo    SiMOTO-Sklad Launcher
 echo ===============================================
 echo.
 
-:: Check Node.js
-where node >nul 2>&1
+:: Check Node.js — portable (node/) or system
+if exist "node\node.exe" (
+    set "PATH=node;%PATH%"
+    %PSCMD% "Write-Host '[OK] Node.js (portable)' -ForegroundColor Green"
+) else (
+    where node >nul 2>&1
+    if errorlevel 1 goto :download_node
+    %PSCMD% "Write-Host '[OK] Node.js (system)' -ForegroundColor Green"
+)
+goto :node_ready
+
+:download_node
+%PSCMD% "Write-Host '[!] Node.js not found. Downloading portable version...' -ForegroundColor Yellow"
+if not exist "node" mkdir node
+
+%PSCMD% "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri 'https://nodejs.org/dist/v24.18.0/node-v24.18.0-win-x64.zip' -OutFile '%TEMP%\node-portable.zip' -UseBasicParsing -ErrorAction Stop } catch { Write-Host '[X] Download failed' -ForegroundColor Red; exit 1 }"
 if errorlevel 1 (
-    %PSCMD% "Write-Host '[X] Node.js not found!' -ForegroundColor Red"
+    %PSCMD% "Write-Host '[X] Failed to download Node.js!' -ForegroundColor Red"
+    %PSCMD% "Write-Host '  Download from https://nodejs.org' -ForegroundColor Yellow"
     pause
     exit /b 1
 )
-%PSCMD% "Write-Host '[OK] Node.js found' -ForegroundColor Green"
+
+%PSCMD% "$ProgressPreference='SilentlyContinue'; try { Expand-Archive -Path '%TEMP%\node-portable.zip' -DestinationPath 'node' -Force -ErrorAction Stop } catch { Write-Host '[X] Extract failed' -ForegroundColor Red; exit 1 }"
+if errorlevel 1 (
+    %PSCMD% "Write-Host '[X] Failed to extract Node.js!' -ForegroundColor Red"
+    pause
+    exit /b 1
+)
+
+:: Flatten version subfolder (node-v24.18.0-win-x64/)
+if exist "node\node-v24.18.0-win-x64" (
+    robocopy "node\node-v24.18.0-win-x64" "node" /E /MOVE >nul
+)
+del "%TEMP%\node-portable.zip" >nul 2>&1
+
+if not exist "node\node.exe" (
+    %PSCMD% "Write-Host '[X] node.exe not found after extraction!' -ForegroundColor Red"
+    pause
+    exit /b 1
+)
+
+set "PATH=node;%PATH%"
+%PSCMD% "Write-Host '[OK] Node.js (portable, downloaded)' -ForegroundColor Green"
+
+:node_ready
 
 :: Check dependencies
 if not exist "node_modules" (
@@ -72,17 +109,17 @@ set "update_choice="
 set /p "update_choice="
 
 :: Normalize: n/no → skip, anything else (including Enter) → update
-if /i "!update_choice!"=="n"   set "update_choice=n"
-if /i "!update_choice!"=="no"  set "update_choice=n"
+if /i "%update_choice%"=="n"   set "update_choice=n"
+if /i "%update_choice%"=="no"  set "update_choice=n"
 
-if "!update_choice!"=="n" goto skip_update
+if "%update_choice%"=="n" goto skip_update
 goto do_update
 
 :do_update
 del "%TEMP%\ver_check.txt" >nul 2>&1
 echo.
-%PSCMD% "Write-Host ('[i] Updating to version ' + '!NEW_TAG!' + '...') -ForegroundColor Cyan"
-node scripts/update.js !NEW_TAG!
+%PSCMD% "Write-Host ('[i] Updating to version ' + '%NEW_TAG%' + '...') -ForegroundColor Cyan"
+node scripts/update.js %NEW_TAG%
 if errorlevel 1 (
     %PSCMD% "Write-Host '[X] Update failed!' -ForegroundColor Red"
     pause
@@ -120,4 +157,3 @@ node server.js
 echo.
 %PSCMD% "Write-Host '[OK] Server stopped' -ForegroundColor Yellow"
 pause
-endlocal

@@ -538,6 +538,9 @@
           localStorage.setItem('ozon_client_id', ozonClientId);
           localStorage.setItem('ozon_api_key', ozonApiKey);
 
+          // Перезагрузить список складов для вкладки Поставки
+          if (typeof loadScanStores === 'function') loadScanStores();
+
           tokenModal.classList.remove('show');
         });
         // Close modal on overlay click

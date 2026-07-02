@@ -233,6 +233,7 @@ module.exports = function(deps) {
         foundBy: orderResult?.foundBy || null,
         extractedShipmentNum: orderResult?.extractedShipmentNum || null,
         orderPositions: orderResult?.orderPositions || [],
+        demandPositions: orderResult?.demandPositions || [],
         wbReturnInfo: record.returnType ? `↳ Возврат: ${record.reason || record.returnType} (WB)` : '',
         srid: record.srid || '',
         wbTotalPrice: record.totalPrice || 0,
@@ -406,12 +407,13 @@ module.exports = function(deps) {
       return res.status(400).json({ error: 'Требуется параметр numbers (через запятую)' })
     }
 
-    const numbers = numbersParam.split(',').map(n => n.trim()).filter(Boolean)
+    const numbers = numbersParam.split(',').map(n => n.replace(/[\p{Z}\p{C}]+/gu, '').trim()).filter(Boolean)
     if (numbers.length === 0) {
       return res.status(400).json({ error: 'Пустой массив numbers' })
     }
 
     setupSSE(res, sseConnections)
+    sendSSE(res, { type: 'progress', msg: 'Поиск...' })
 
     ulog(`=== Unified-Search SSE: start (${numbers.length} numbers) ===`)
 
@@ -488,6 +490,7 @@ module.exports = function(deps) {
         foundBy: orderResult?.foundBy || null,
         extractedShipmentNum: orderResult?.extractedShipmentNum || null,
         orderPositions: orderResult?.orderPositions || [],
+        demandPositions: orderResult?.demandPositions || [],
         ozonReturnInfo: '',
         ozonStatus: '',
         barcode: '',
