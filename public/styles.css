@@ -4696,6 +4696,32 @@ tr.day-separator td span {
   background: rgba(139,92,246,0.04);
 }
 
+/* Бейдж "Возвращён на площадке" в заголовке заказа */
+.order-mp-return-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #f97316;
+  background: rgba(249,115,22,0.12);
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* Блок информации о возврате на площадке */
+.cmp-mp-return-info {
+  padding: 8px 12px;
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  color: var(--text, #e0e0e0);
+  background: rgba(249,115,22,0.06);
+  border-left: 3px solid #f97316;
+  border-radius: 0 4px 4px 0;
+}
+.cmp-mp-return-icon {
+  font-size: 1rem;
+}
+
 /* Таблица товаров внутри заказа */
 .cmp-items-table {
   width: 100%;

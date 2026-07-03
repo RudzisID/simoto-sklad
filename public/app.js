@@ -6062,6 +6062,7 @@ function compareWithReport(reportMap) {
   let missingCount = 0
   let partialCount = 0
   let returnCount = 0
+  let marketplaceReturnNoMsCount = 0
 
   // Данные о частичных возвратах для детального анализа
   const partialDetails = []
@@ -6080,6 +6081,10 @@ function compareWithReport(reportMap) {
     let diff = sumD - jPos
     let status = ''
     let note = ''
+
+    // Есть ли возврат на площадке (даже если в МС он не создан)
+    const hasMarketplaceReturn = !!(order.returnType || order.ozonReturnInfo ||
+      (order.ozonReturns && order.ozonReturns.length > 0))
 
     if (!entry) {
       // Заказ есть в МС, но не найден в отчёте
@@ -6111,6 +6116,13 @@ function compareWithReport(reportMap) {
       totalJPos += jPos
       totalDiff += diff
       note = 'Полный возврат'
+    } else if (!order.hasReturn && hasMarketplaceReturn) {
+      // Возвращён на площадке (Ozon/WB), но в МС возврат не создан
+      status = 'marketplace-return'
+      marketplaceReturnNoMsCount++
+      totalJPos += jPos
+      totalDiff += diff
+      note = 'Возвращён на площадке — есть J+ в отчёте (оплачен), но возврат в МС не оформлен'
     } else if (diff === 0) {
       status = 'ok'
       okCount++
@@ -6141,7 +6153,16 @@ function compareWithReport(reportMap) {
       storeName: order.storeName || '',
       // Данные о позициях для детального разбора
       orderPositions: order.orderPositions || [],
-      demandPositions: order.demandPositions || []
+      demandPositions: order.demandPositions || [],
+      // Данные о возврате на площадке (Ozon — ClientReturn, WB — returnType и т.д.)
+      returnType: order.returnType || '',
+      ozonReturnInfo: order.ozonReturnInfo || '',
+      ozonReturns: order.ozonReturns || [],
+      ozonOrderId: order.ozonOrderId || '',
+      marketplaceReturnPrice: order.marketplaceReturnPrice || 0,
+      ozonStatus: order.ozonStatus || '',
+      wbReturnInfo: order.wbReturnInfo || '',
+      hasMarketplaceReturn: hasMarketplaceReturn
     })
   }
 
@@ -6169,6 +6190,7 @@ function compareWithReport(reportMap) {
     missingCount,
     partialCount,
     returnCount,
+    marketplaceReturnNoMsCount,
     total: details.length,
     narrative,
     partialDetails
@@ -6250,6 +6272,14 @@ function renderComparisonPanel(stats) {
   html += '<div class="value">' + summary.returnCount + '</div>'
   html += '</div>'
 
+  // Возвращено на площадке, нет в МС
+  if (summary.marketplaceReturnNoMsCount > 0) {
+    html += '<div class="comparison-summary-item">'
+    html += '<div class="label"><span class="comparison-status-partial"></span> 🔄 Возврат на площадке, нет в МС</div>'
+    html += '<div class="value diff">' + summary.marketplaceReturnNoMsCount + '</div>'
+    html += '</div>'
+  }
+
   // Всего заказов
   html += '<div class="comparison-summary-item">'
   html += '<div class="label">📦 Всего заказов в скане</div>'
@@ -6279,6 +6309,9 @@ function renderComparisonPanel(stats) {
   }
   if (summary.returnCount > 0) {
     html += '🔄 Полных возвратов (отмен): <strong>' + summary.returnCount + '</strong><br>'
+  }
+  if (summary.marketplaceReturnNoMsCount > 0) {
+    html += '🔄 Возвращён на площадке, нет в МС: <strong>' + summary.marketplaceReturnNoMsCount + '</strong><br>'
   }
   html += '</div>'
 
@@ -6337,6 +6370,7 @@ function renderComparisonPanel(stats) {
       else if (d.status === 'partial') headerClass += ' order-partial'
       else if (d.status === 'mismatch') headerClass += ' order-mismatch'
       else if (d.status === 'missing-in-report') headerClass += ' order-missing'
+      else if (d.status === 'marketplace-return') headerClass += ' order-mismatch'
 
       // Собираем позиции: demandPositions — отгружено (зелёный),
       // orderPositions без demandPositions — не отгружено (красный)
@@ -6347,6 +6381,10 @@ function renderComparisonPanel(stats) {
       html += '<details open class="cmp-order-detail">'
       html += '<summary class="' + headerClass + '">'
       html += '<span class="order-key">' + escapeHtml(d.orderKey) + '</span>'
+      // Бейдж возврата на площадке (если есть)
+      if (d.hasMarketplaceReturn && !d.hasReturn) {
+        html += '<span class="order-mp-return-badge">🔄 Возвращён на площадке</span>'
+      }
       html += '<span class="order-note">' + escapeHtml(d.note) + '</span>'
       html += '<span class="order-sums">'
       html += 'D: <strong>' + fmtSum(d.sumD) + '</strong> · '
@@ -6408,6 +6446,29 @@ function renderComparisonPanel(stats) {
         html += '<span>Оплата: ' + fmtSum(d.payG) + '</span> · '
         html += '<span>J+ = ' + fmtSum(d.jPos) + '</span>'
         if (d.statusName) html += ' · <span class="status-badge">' + escapeHtml(d.statusName) + '</span>'
+        html += '</div>'
+      }
+
+      // ── Блок информации о возврате на площадке ──
+      if (d.hasMarketplaceReturn && !d.hasReturn) {
+        html += '<div class="cmp-mp-return-info">'
+        html += '<span class="cmp-mp-return-icon">🔄</span> '
+        html += '<strong>Возврат на площадке:</strong> '
+        if (d.returnType === 'ClientReturn') html += 'возврат клиента Ozon'
+        else if (d.returnType) html += escapeHtml(d.returnType)
+        else html += 'зафиксирован'
+        if (d.ozonReturnInfo) html += ' · ' + escapeHtml(d.ozonReturnInfo)
+        if (d.ozonReturns && d.ozonReturns.length > 0) {
+          html += '<div style="margin-top:4px;font-size:0.8rem;color:var(--text-muted);">'
+          for (var ri = 0; ri < d.ozonReturns.length; ri++) {
+            var ret = d.ozonReturns[ri]
+            html += '📦 ' + escapeHtml(ret.product_name || '') +
+              ' — статус: ' + escapeHtml(ret.status_display || ret.status_sys || '?')
+            if (ret.product_price) html += ' · ' + Number(ret.product_price).toLocaleString('ru-RU') + ' ₽'
+            html += '<br>'
+          }
+          html += '</div>'
+        }
         html += '</div>'
       }
 
@@ -6523,14 +6584,14 @@ function closeComparisonModal() {
 }
 
 /**
- * Скачивает отчёт сравнения в формате XLSX с двумя листами:
- *   «Сравнение» — колонки A–K (данные по заказам),
- *   «Итоги»     — сводка, анализ, частичные возвраты, FBO, diffLog.
+ * Скачивает отчёт сравнения в формате XLSX с тремя листами:
+ *   «Сравнение»     — сводная таблица по заказам,
+ *   «Детальный разбор» — постатейная детализация с товарными позициями,
+ *   «Итоги»         — сводка, анализ, частичные возвраты, дисбаланс калькулятора.
  *
  * @returns {void}
  */
 function downloadComparisonReport() {
-  // Используем сохранённые данные последнего сравнения
   const lastResult = window._lastComparisonResult
   if (!lastResult || !lastResult.details || lastResult.details.length === 0) {
     showStatus('Нет данных для скачивания — выполните сравнение')
@@ -6545,144 +6606,417 @@ function downloadComparisonReport() {
     return fmtNum(Math.abs(n)) + ' ₽'
   }
 
-  // ─── Вспомогательная функция: применить стили ко всем ячейкам листа ───
-  function applySheetStyles(ws, headerStyle, cellStyle) {
+  // ─── Общие стили ───
+  var styleHeader = {
+    fill: { patternType: 'solid', fgColor: { rgb: '003366' } },
+    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: { top: { style: 'thin', color: { rgb: 'CCCCCC' } }, bottom: { style: 'thin', color: { rgb: 'CCCCCC' } }, left: { style: 'thin', color: { rgb: 'CCCCCC' } }, right: { style: 'thin', color: { rgb: 'CCCCCC' } } }
+  }
+  var styleCell = {
+    font: { name: 'Calibri', sz: 11, color: { rgb: '003366' } },
+    alignment: { vertical: 'center', wrapText: true },
+    border: { top: { style: 'thin', color: { rgb: 'CCCCCC' } }, bottom: { style: 'thin', color: { rgb: 'CCCCCC' } }, left: { style: 'thin', color: { rgb: 'CCCCCC' } }, right: { style: 'thin', color: { rgb: 'CCCCCC' } } }
+  }
+  var styleSectionTitle = {
+    fill: { patternType: 'solid', fgColor: { rgb: '1a3a6b' } },
+    font: { name: 'Calibri', sz: 12, bold: true, color: { rgb: 'FFFFFF' } },
+    alignment: { vertical: 'center' },
+    border: { top: { style: 'thin', color: { rgb: 'CCCCCC' } }, bottom: { style: 'thin', color: { rgb: 'CCCCCC' } }, left: { style: 'thin', color: { rgb: 'CCCCCC' } }, right: { style: 'thin', color: { rgb: 'CCCCCC' } } }
+  }
+  var styleGreen = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'C6EFCE' } },
+    font: { name: 'Calibri', sz: 11, color: { rgb: '006100' } },
+    alignment: { vertical: 'center' },
+    border: { top: { style: 'thin', color: { rgb: 'CCCCCC' } }, bottom: { style: 'thin', color: { rgb: 'CCCCCC' } }, left: { style: 'thin', color: { rgb: 'CCCCCC' } }, right: { style: 'thin', color: { rgb: 'CCCCCC' } } }
+  }
+  var styleRed = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFC7CE' } },
+    font: { name: 'Calibri', sz: 11, color: { rgb: '9C0006' } },
+    alignment: { vertical: 'center' },
+    border: { top: { style: 'thin', color: { rgb: 'CCCCCC' } }, bottom: { style: 'thin', color: { rgb: 'CCCCCC' } }, left: { style: 'thin', color: { rgb: 'CCCCCC' } }, right: { style: 'thin', color: { rgb: 'CCCCCC' } } }
+  }
+  var styleYellow = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFEB9C' } },
+    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '9C6500' } },
+    alignment: { vertical: 'center' },
+    border: { top: { style: 'thin', color: { rgb: 'CCCCCC' } }, bottom: { style: 'thin', color: { rgb: 'CCCCCC' } }, left: { style: 'thin', color: { rgb: 'CCCCCC' } }, right: { style: 'thin', color: { rgb: 'CCCCCC' } } }
+  }
+  var styleOrderHeader = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'E8EAF6' } },
+    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '1a237e' } },
+    alignment: { vertical: 'center' },
+    border: { top: { style: 'thin', color: { rgb: '999999' } }, bottom: { style: 'thin', color: { rgb: '999999' } }, left: { style: 'thin', color: { rgb: '999999' } }, right: { style: 'thin', color: { rgb: '999999' } } }
+  }
+
+  // ─── Вспомогательная: применить стиль к диапазону ───
+  function applyRangeStyle(ws, startRow, endRow, startCol, endCol, style) {
+    for (var R = startRow; R <= endRow; R++) {
+      for (var C = startCol; C <= endCol; C++) {
+        var addr = XLSX.utils.encode_cell({ r: R, c: C })
+        if (ws[addr]) ws[addr].s = JSON.parse(JSON.stringify(style))
+      }
+    }
+  }
+
+  // ─── Вспомогательная: применить стили к строкам по карте ───
+  function applyRowStyles(ws, rowStyles) {
     if (!ws['!ref']) return
     var range = XLSX.utils.decode_range(ws['!ref'])
     for (var R = range.s.r; R <= range.e.r; R++) {
+      var s = rowStyles[R]
+      if (!s) continue
       for (var C = range.s.c; C <= range.e.c; C++) {
         var addr = XLSX.utils.encode_cell({ r: R, c: C })
-        if (!ws[addr]) continue
-        if (R === 0 && headerStyle) {
-          ws[addr].s = JSON.parse(JSON.stringify(headerStyle))
-        } else if (cellStyle) {
-          ws[addr].s = JSON.parse(JSON.stringify(cellStyle))
+        if (ws[addr]) ws[addr].s = JSON.parse(JSON.stringify(s))
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Лист 1: «Сравнение» — сводная таблица по заказам
+  // ═══════════════════════════════════════════════════════════════
+  const rowsCompare = []
+  const compareRowStyles = {}
+  var cr = 0
+
+  // Заголовок
+  rowsCompare.push(['Номер заказа', 'D (МС)', 'F (возврат)', 'G (платёж)', 'J+ (отчёт)', 'Разница', 'Статус', 'Примечание', 'Позиций в заказе', 'Отгружено'])
+  compareRowStyles[cr] = styleHeader; cr++
+
+  // Данные
+  for (const d of details) {
+    var shippedCount = (d.demandPositions || []).length
+    var orderedCount = (d.orderPositions || []).length
+    rowsCompare.push([d.orderKey, d.sumD, d.retF, d.payG, d.jPos, d.diff, d.status, d.note, orderedCount, shippedCount])
+    // Выбираем стиль строки по статусу
+    var rs = styleCell
+    if (d.status === 'ok') {
+      rs = styleGreen
+    } else if (d.status === 'return' || d.isCancelled) {
+      rs = styleYellow
+    } else if (d.status === 'missing-in-report') {
+      rs = styleRed
+    }
+    compareRowStyles[cr] = rs; cr++
+  }
+
+  const wsCompare = XLSX.utils.aoa_to_sheet(rowsCompare)
+  wsCompare['!cols'] = [
+    { wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+    { wch: 14 }, { wch: 14 }, { wch: 20 }, { wch: 28 },
+    { wch: 16 }, { wch: 14 }
+  ]
+  applyRowStyles(wsCompare, compareRowStyles)
+
+  // ═══════════════════════════════════════════════════════════════
+  // Лист 2: «Детальный разбор» — постатейная детализация с товарами
+  // ═══════════════════════════════════════════════════════════════
+  const rowsDetail = []
+  const detailRowStyles = {}
+  var dr = 0
+
+  // Заголовок листа
+  rowsDetail.push(['ДЕТАЛЬНЫЙ РАЗБОР ПО ЗАКАЗАМ — товарные позиции'])
+  detailRowStyles[dr] = styleSectionTitle; dr++
+
+  rowsDetail.push(['Показаны заказы с расхождениями. Отгружено 🟢 / Не отгружено 🔴'])
+  detailRowStyles[dr] = {
+    font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '666666' } }
+  }; dr++
+
+  // Заголовки колонок для детального разбора
+  var detailCols = ['Статус', 'Код', 'Наименование', 'Цена', 'Кол-во', 'Сумма']
+  var numDetailCols = detailCols.length
+
+  // Фильтруем только проблемные заказы
+  const problemDetails = details.filter(d => d.status !== 'ok')
+
+  if (problemDetails.length === 0) {
+    rowsDetail.push(['Нет заказов с расхождениями — все совпадают.'])
+    detailRowStyles[dr] = styleGreen; dr++
+  }
+
+  for (const d of problemDetails) {
+    // Пустая строка-разделитель
+    rowsDetail.push([''])
+    dr++
+
+    // Заголовок заказа (объединённый стиль на всю ширину)
+    var diffSign = d.diff < 0 ? '' : '+'
+    var orderTitle = 'Заказ: ' + d.orderKey +
+      ' | D: ' + fmtSum(d.sumD) +
+      ' | J+: ' + fmtSum(d.jPos) +
+      ' | Δ: ' + diffSign + fmtSum(d.diff) +
+      ' | ' + d.note
+    if (d.orderName) orderTitle += ' | № ' + d.orderName
+    if (d.hasMarketplaceReturn && !d.hasReturn) {
+      orderTitle += ' | 🔄 Возвращён на площадке (нет в МС)'
+      if (d.ozonReturnInfo) orderTitle += ' | ' + d.ozonReturnInfo
+    }
+    var titleRow = [orderTitle]
+    // Заполняем до длины колонок
+    while (titleRow.length < numDetailCols) titleRow.push('')
+    rowsDetail.push(titleRow)
+    detailRowStyles[dr] = styleOrderHeader; dr++
+
+    // Заголовки таблицы товаров
+    rowsDetail.push(detailCols.slice())
+    detailRowStyles[dr] = {
+      fill: { patternType: 'solid', fgColor: { rgb: 'D5D8DC' } },
+      font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '333333' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: { top: { style: 'thin', color: { rgb: '999999' } }, bottom: { style: 'thin', color: { rgb: '999999' } }, left: { style: 'thin', color: { rgb: '999999' } }, right: { style: 'thin', color: { rgb: '999999' } } }
+    }; dr++
+
+    const shippedCodes = new Set(
+      (d.demandPositions || []).map(p => p.code).filter(Boolean)
+    )
+    var shipped = d.demandPositions || []
+    var ordered = d.orderPositions || []
+    var notShipped = ordered.filter(p => !p.code || !shippedCodes.has(p.code))
+
+    var hasAnyItems = shipped.length > 0 || notShipped.length > 0
+
+    if (!hasAnyItems) {
+      // Нет позиций — показываем суммы
+      var noItemsRow = ['D = ' + fmtSum(d.sumD) + ' · Возврат: ' + fmtSum(d.retF) + ' · Оплата: ' + fmtSum(d.payG) + ' · J+ = ' + fmtSum(d.jPos)]
+      while (noItemsRow.length < numDetailCols) noItemsRow.push('')
+      rowsDetail.push(noItemsRow)
+      detailRowStyles[dr] = {
+        font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '888888' } }
+      }; dr++
+    } else {
+      // Отгруженные — зелёные
+      for (const p of shipped) {
+        var itemSum = (p.price || 0) * (p.quantity || 0)
+        rowsDetail.push(['🟢 Отгружено', p.code || '—', p.name || '—', p.price || 0, p.quantity || 0, itemSum])
+        detailRowStyles[dr] = styleGreen; dr++
+      }
+      // Не отгруженные — красные
+      for (const p of notShipped) {
+        var itemSum2 = (p.price || 0) * (p.quantity || 0)
+        rowsDetail.push(['🔴 Не отгружено', p.code || '—', p.name || '—', p.price || 0, p.quantity || 0, itemSum2])
+        detailRowStyles[dr] = styleRed; dr++
+      }
+    }
+
+    // ── Информация о возврате на площадке (в XLSX) ──
+    if (d.hasMarketplaceReturn && !d.hasReturn) {
+      var mpReturnText = '🔄 Возврат на площадке'
+      if (d.returnType === 'ClientReturn') mpReturnText += ' (возврат клиента Ozon)'
+      else if (d.returnType) mpReturnText += ' (' + d.returnType + ')'
+      var mpRow = [mpReturnText]
+      while (mpRow.length < numDetailCols) mpRow.push('')
+      rowsDetail.push(mpRow)
+      detailRowStyles[dr] = styleYellow; dr++
+
+      if (d.ozonReturns && d.ozonReturns.length > 0) {
+        for (var ri = 0; ri < d.ozonReturns.length; ri++) {
+          var ret = d.ozonReturns[ri]
+          var retText = '📦 ' + (ret.product_name || '') +
+            ' — статус: ' + (ret.status_display || ret.status_sys || '?') +
+            (ret.product_price ? ' · ' + fmtNum(ret.product_price) + ' ₽' : '')
+          var retRow = [retText]
+          while (retRow.length < numDetailCols) retRow.push('')
+          rowsDetail.push(retRow)
+          detailRowStyles[dr] = {
+            font: { name: 'Calibri', sz: 10, color: { rgb: '9C6500' } },
+            alignment: { vertical: 'center' }
+          }; dr++
         }
       }
     }
   }
 
-  var sharedHeaderStyle = {
-    fill: { patternType: 'solid', fgColor: { rgb: '003366' } },
-    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
-    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
-    border: {
-      top: { style: 'thin', color: { rgb: 'CCCCCC' } },
-      bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
-      left: { style: 'thin', color: { rgb: 'CCCCCC' } },
-      right: { style: 'thin', color: { rgb: 'CCCCCC' } }
-    }
-  }
-  var sharedCellStyle = {
-    font: { name: 'Calibri', sz: 11, color: { rgb: '003366' } },
-    alignment: { vertical: 'center', wrapText: true },
-    border: {
-      top: { style: 'thin', color: { rgb: 'CCCCCC' } },
-      bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
-      left: { style: 'thin', color: { rgb: 'CCCCCC' } },
-      right: { style: 'thin', color: { rgb: 'CCCCCC' } }
-    }
-  }
-
-  // ═══════════════════════════════════════════
-  // Лист 1: «Сравнение» — только A–K
-  // ═══════════════════════════════════════════
-  const rowsCompare = []
-
-  // Заголовок (8 колонок)
-  const headerCompare = ['Номер заказа', 'D (МС)', 'F (возврат)', 'G (платёж)', 'J+ (отчёт)', 'Разница', 'Статус', 'Примечание']
-  rowsCompare.push(headerCompare)
-
-  // Данные
-  for (const d of details) {
-    rowsCompare.push([d.orderKey, d.sumD, d.retF, d.payG, d.jPos, d.diff, d.status, d.note])
-  }
-
-  const wsCompare = XLSX.utils.aoa_to_sheet(rowsCompare)
-  wsCompare['!cols'] = [
-    { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
-    { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 28 }
+  const wsDetail = XLSX.utils.aoa_to_sheet(rowsDetail)
+  wsDetail['!cols'] = [
+    { wch: 18 }, { wch: 22 }, { wch: 52 }, { wch: 14 }, { wch: 10 }, { wch: 16 }
   ]
-  applySheetStyles(wsCompare, sharedHeaderStyle, sharedCellStyle)
+  applyRowStyles(wsDetail, detailRowStyles)
 
-  // ═══════════════════════════════════════════
-  // Лист 2: «Итоги» — сводка, анализ, частичные, FBO, diffLog
-  // ═══════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════
+  // Лист 3: «Итоги» — сводка, анализ, частичные, дисбаланс, FBO
+  // ═══════════════════════════════════════════════════════════════
   const rowsSummary = []
+  const summaryRowStyles = {}
+  var sr = 0
+
+  function summarySectionTitle(text) {
+    rowsSummary.push([text, ''])
+    summaryRowStyles[sr] = styleSectionTitle; sr++
+  }
+  function summaryDataRow(label, value) {
+    rowsSummary.push([label, value])
+    summaryRowStyles[sr] = styleCell; sr++
+  }
+  function summaryBlankRow() {
+    rowsSummary.push([])
+    sr++
+  }
 
   // ── Итоги ──
-  rowsSummary.push(['ИТОГИ', ''])
-  const diffIcon = Math.abs(summary.totalDiff) < 1 ? '✅' : '⚠️'
-  rowsSummary.push(['Total D (МойСклад):', fmtNum(summary.totalD) + ' ₽'])
-  rowsSummary.push(['Total J+ (отчёт):', fmtNum(summary.totalJPos) + ' ₽'])
-  rowsSummary.push(['Разница (D − J+):', fmtNum(summary.totalDiff) + ' ₽ ' + diffIcon])
-  rowsSummary.push([])
+  summarySectionTitle('💰 ИТОГОВЫЕ СУММЫ')
+  summaryDataRow('Total D (МойСклад):', fmtNum(summary.totalD) + ' ₽')
+  summaryDataRow('Total J+ (отчёт Ozon):', fmtNum(summary.totalJPos) + ' ₽')
+  var diffIcon = Math.abs(summary.totalDiff) < 1 ? '✅' : '⚠️'
+  summaryDataRow('Разница (D − J+):', fmtNum(summary.totalDiff) + ' ₽ ' + diffIcon)
+  summaryBlankRow()
 
   // ── Анализ ──
-  rowsSummary.push(['АНАЛИЗ', ''])
-  rowsSummary.push(['✅ Совпало:', String(summary.okCount)])
+  summarySectionTitle('📊 АНАЛИЗ')
+  summaryDataRow('✅ Совпало:', String(summary.okCount))
   if (summary.mismatchCount + summary.partialCount > 0) {
-    rowsSummary.push(['⚠️ Расхождений / частичных:', String(summary.mismatchCount + summary.partialCount)])
+    summaryDataRow('⚠️ Расхождений / частичных:', String(summary.mismatchCount + summary.partialCount))
   }
   if (summary.missingCount > 0) {
-    rowsSummary.push(['❌ Не найдено в отчёте:', String(summary.missingCount)])
+    summaryDataRow('❌ Не найдено в отчёте:', String(summary.missingCount))
   }
   if (summary.returnCount > 0) {
-    rowsSummary.push(['🔄 Полных возвратов (отмен):', String(summary.returnCount)])
+    summaryDataRow('🔄 Полных возвратов (отмен):', String(summary.returnCount))
   }
-  rowsSummary.push([])
+  summaryBlankRow()
 
   // ── Частичные возвраты ──
   if (summary.partialDetails && summary.partialDetails.length > 0) {
-    rowsSummary.push(['ЧАСТИЧНЫЕ ВОЗВРАТЫ', '', '', '', '', ''])
+    summarySectionTitle('📋 ЧАСТИЧНЫЕ ВОЗВРАТЫ')
     rowsSummary.push(['Заказ', 'D (скан)', 'F (возврат)', 'G (платёж)', 'J+ (отчёт)', 'Разрыв'])
+    summaryRowStyles[sr] = {
+      fill: { patternType: 'solid', fgColor: { rgb: 'D5D8DC' } },
+      font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '333333' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: { top: { style: 'thin', color: { rgb: '999999' } }, bottom: { style: 'thin', color: { rgb: '999999' } }, left: { style: 'thin', color: { rgb: '999999' } }, right: { style: 'thin', color: { rgb: '999999' } } }
+    }; sr++
     for (const pd of summary.partialDetails) {
       rowsSummary.push([pd.orderKey, pd.sumD, pd.retF, pd.payG, pd.jPos, pd.diff])
+      summaryRowStyles[sr] = styleCell; sr++
     }
-    rowsSummary.push([
+    // Итоговая строка
+    var totalRow = [
       'Итого',
       summary.partialDetails.reduce((s, d) => s + d.sumD, 0),
       summary.partialDetails.reduce((s, d) => s + d.retF, 0),
       summary.partialDetails.reduce((s, d) => s + d.payG, 0),
       summary.partialDetails.reduce((s, d) => s + d.jPos, 0),
       summary.partialDetails.reduce((s, d) => s + d.diff, 0)
-    ])
-    rowsSummary.push([])
+    ]
+    rowsSummary.push(totalRow)
+    summaryRowStyles[sr] = {
+      fill: { patternType: 'solid', fgColor: { rgb: 'E8EAF6' } },
+      font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '1a237e' } },
+      alignment: { vertical: 'center' },
+      border: { top: { style: 'medium', color: { rgb: '003366' } }, bottom: { style: 'medium', color: { rgb: '003366' } }, left: { style: 'thin', color: { rgb: 'CCCCCC' } }, right: { style: 'thin', color: { rgb: 'CCCCCC' } } }
+    }; sr++
+    summaryBlankRow()
   }
 
-  // ── FBO список ──
-  const fboNumbers = window._fboOrderNumbers || []
-  if (fboNumbers.length > 0) {
-    rowsSummary.push(['FBO ЗАКАЗЫ', ''])
-    rowsSummary.push(['По каким FBS отправлениям были проданы эти FBO заказы?', ''])
-    rowsSummary.push([fboNumbers.join(', '), ''])
-  }
-
-  // ── After-actions diffLog ──
-  if (window._comparisonDiffLog && window._comparisonDiffLog.length > 0) {
-    rowsSummary.push([])
-    rowsSummary.push(['ПОСЛЕ МАССОВЫХ ДЕЙСТВИЙ', ''])
-    for (const item of window._comparisonDiffLog) {
-      for (const change of item.changes) {
-        rowsSummary.push([item.orderKey, change])
+  // ── ДИСБАЛАНС КАЛЬКУЛЯТОРА ──
+  // Заказы с отгрузкой (hasDemand), но без оплаты/возврата/отмены/ошибки
+  var calcGapOrders = []
+  if (typeof ordersData !== 'undefined' && ordersData.length > 0) {
+    for (var ci = 0; ci < ordersData.length; ci++) {
+      var co = ordersData[ci]
+      if (!co.enabled) continue
+      if (co.hasDemand && !co.hasPayment && !co.hasReturn && !co.isCancelled && !(co.lastAction && co.lastAction.includes('_error'))) {
+        calcGapOrders.push({
+          shipmentNum: String(co.shipmentNum).split('\n')[0].trim(),
+          sum: co.sum || 0,
+          statusName: co.statusName || '',
+          orderName: co.orderName || '',
+          // Позиции из сохранённого кэша
+          positions: co.orderPositions || []
+        })
       }
     }
   }
 
-  const wsSummary = XLSX.utils.aoa_to_sheet(rowsSummary)
+  if (calcGapOrders.length > 0) {
+    var gapTotalSum = calcGapOrders.reduce(function(s, o) { return s + o.sum }, 0)
+    summarySectionTitle('⚠️ ДИСБАЛАНС КАЛЬКУЛЯТОРА')
+    summaryDataRow('Найдено заказов с отгрузкой, но без оплаты/возврата/отмены:', String(calcGapOrders.length))
+    summaryDataRow('Общая сумма дисбаланса:', fmtNum(gapTotalSum) + ' ₽')
+    summaryBlankRow()
+
+    // Заголовки таблицы
+    rowsSummary.push(['Номер заказа', '№ заказа', 'Сумма', 'Статус', 'Товары'])
+    summaryRowStyles[sr] = {
+      fill: { patternType: 'solid', fgColor: { rgb: 'FFA500' } },
+      font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: { top: { style: 'thin', color: { rgb: 'CCCCCC' } }, bottom: { style: 'thin', color: { rgb: 'CCCCCC' } }, left: { style: 'thin', color: { rgb: 'CCCCCC' } }, right: { style: 'thin', color: { rgb: 'CCCCCC' } } }
+    }; sr++
+
+    for (var gi = 0; gi < calcGapOrders.length; gi++) {
+      var go = calcGapOrders[gi]
+      // Собираем строку с товарами
+      var itemsStr = ''
+      if (go.positions && go.positions.length > 0) {
+        itemsStr = go.positions.map(function(p) {
+          return (p.code || '') + ' — ' + (p.name || '') + ' × ' + (p.quantity || 0) + ' = ' + fmtNum((p.price || 0) * (p.quantity || 0)) + ' ₽'
+        }).join('\n')
+      }
+      rowsSummary.push([go.shipmentNum, go.orderName, go.sum, go.statusName, itemsStr])
+      summaryRowStyles[sr] = styleYellow; sr++
+    }
+
+    // Итог
+    rowsSummary.push(['Итого', '', gapTotalSum, calcGapOrders.length + ' заказов', ''])
+    summaryRowStyles[sr] = {
+      fill: { patternType: 'solid', fgColor: { rgb: 'FFA500' } },
+      font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+      alignment: { vertical: 'center' },
+      border: { top: { style: 'medium', color: { rgb: 'CC6600' } }, bottom: { style: 'medium', color: { rgb: 'CC6600' } }, left: { style: 'thin', color: { rgb: 'CCCCCC' } }, right: { style: 'thin', color: { rgb: 'CCCCCC' } } }
+    }; sr++
+    summaryBlankRow()
+  }
+
+  // ── FBO список ──
+  var fboNumbers = window._fboOrderNumbers || []
+  if (fboNumbers.length > 0) {
+    summarySectionTitle('📋 FBO ЗАКАЗЫ')
+    summaryDataRow('По каким FBS отправлениям были проданы эти FBO заказы?', '')
+    rowsSummary.push([fboNumbers.join(', '), ''])
+    summaryRowStyles[sr] = {
+      font: { name: 'Consolas', sz: 10, color: { rgb: 'eab308' } },
+      alignment: { wrapText: true }
+    }; sr++
+    summaryBlankRow()
+  }
+
+  // ── After-actions diffLog ──
+  if (window._comparisonDiffLog && window._comparisonDiffLog.length > 0) {
+    summarySectionTitle('📋 ПОСЛЕ МАССОВЫХ ДЕЙСТВИЙ')
+    rowsSummary.push(['Заказ', 'Изменения'])
+    summaryRowStyles[sr] = {
+      fill: { patternType: 'solid', fgColor: { rgb: 'D5D8DC' } },
+      font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '333333' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: { top: { style: 'thin', color: { rgb: '999999' } }, bottom: { style: 'thin', color: { rgb: '999999' } }, left: { style: 'thin', color: { rgb: '999999' } }, right: { style: 'thin', color: { rgb: '999999' } } }
+    }; sr++
+    for (var li = 0; li < window._comparisonDiffLog.length; li++) {
+      var item = window._comparisonDiffLog[li]
+      for (var ci2 = 0; ci2 < item.changes.length; ci2++) {
+        rowsSummary.push([item.orderKey, item.changes[ci2]])
+        summaryRowStyles[sr] = styleCell; sr++
+      }
+    }
+  }
+
+  var wsSummary = XLSX.utils.aoa_to_sheet(rowsSummary)
   wsSummary['!cols'] = [
     { wch: 36 }, { wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }
   ]
-  applySheetStyles(wsSummary, sharedHeaderStyle, sharedCellStyle)
+  applyRowStyles(wsSummary, summaryRowStyles)
 
-  // ═══════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════
   // Собираем книгу
-  // ═══════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, wsCompare, 'Сравнение')
+  XLSX.utils.book_append_sheet(wb, wsDetail, 'Детальный разбор')
   XLSX.utils.book_append_sheet(wb, wsSummary, 'Итоги')
   XLSX.writeFile(wb, 'comparison_ozon_report.xlsx')
-  showStatus('Отчёт сравнения сохранён: comparison_ozon_report.xlsx (' + details.length + ' строк, 2 листа)')
+  showStatus('Отчёт сравнения сохранён: comparison_ozon_report.xlsx (' + details.length + ' заказов, ' + calcGapOrders.length + ' в дисбалансе, 3 листа)')
 }
 
 /**
