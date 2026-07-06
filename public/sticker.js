@@ -92,6 +92,8 @@ function buildStickerHtml({ carrier, code, size, avito }) {
 
 /**
  * Генерирует наклейку и открывает её в новом окне браузера.
+ * Использует Blob URL для избежания race condition между document.write
+ * и навигацией браузера (окно больше не становится белым через несколько секунд).
  * Автоматическая печать НЕ запускается — пользователь нажимает Ctrl+P самостоятельно.
  *
  * @param {string} carrier - Название службы доставки
@@ -102,10 +104,10 @@ function buildStickerHtml({ carrier, code, size, avito }) {
  */
 function openStickerPrint(carrier, code, size, avito) {
   var html = buildStickerHtml({ carrier: carrier, code: code, size: size, avito: avito })
-  var w = window.open('', '_blank', 'width=600,height=450')
-  w.document.open()
-  w.document.write(html)
-  w.document.close()
+  var blob = new Blob([html], { type: 'text/html' })
+  var url = URL.createObjectURL(blob)
+  window.open(url, '_blank')
+  setTimeout(function() { URL.revokeObjectURL(url) }, 60000)
 }
 
 /**
