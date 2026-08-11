@@ -91,10 +91,12 @@
     📄 Выбрать отчёт Ozon
   </button>
   <span id="reportFilePath">файл не выбран</span>
+  <button class="btn btn-ozon btn-small" onclick="refreshOzonCache()" title="Обновляет кэш статусов Ozon (2ч TTL). Нажмите перед сравнением для актуальных статусов.">🔄 Обновить Ozon</button>
   <div class="compare-buttons">
     <button class="btn btn-accent btn-small" onclick="runComparison()">🔍 Сравнить</button>
     <button class="btn btn-ozon btn-small" id="btnViewComparison" onclick="openComparisonModal()" style="display:none">📊 Посмотреть сравнение</button>
   </div>
+  <button onclick="refreshNotFoundOrders()" class="btn btn-accent btn-small" style="width:100%;margin-top:4px" title="Повторно ищет в МС все заказы со статусом «Не найден»">⟳ Не найденные</button>
 </div>
           </div>
         </div>

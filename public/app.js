@@ -2097,7 +2097,7 @@ function updateTotals(skipRender = false) {
   const filtered = getFilteredData()
   const enabled = filtered.filter((o) => o.enabled)
   const toCreate = enabled.filter((o) => o.hasDemand && !o.hasPayment).length
-  const totalSum = enabled.reduce((sum, o) => sum + (Number(o.sum) || 0), 0)
+  const totalSum = enabled.reduce((sum, o) => sum + (Number(o && o.sum) || 0), 0)
 
   const totalCountEl = document.getElementById('totalCount')
   const toCreateCountEl = document.getElementById('toCreateCount')
@@ -2120,7 +2120,7 @@ function updateTotals(skipRender = false) {
  * @returns {Object} Объект со статистикой (demandCount, paymentSum, returnSum, ...)
  */
 function calculateStats(orderList) {
-  const list = (orderList || ordersData).filter((o) => o.enabled)
+  const list = (orderList || ordersData).filter((o) => o && o.enabled)
   // Не перерисовываем таблицу тут - только считаем статистику
   const stats = {
     total: list.length,
@@ -2242,7 +2242,7 @@ function calculateStats(orderList) {
  * @returns {Object} Объект с расхождениями (marketplaceReturnNoMs, msReturnNoMarketplace, ...)
  */
 function calculateMismatches(orderList) {
-  const list = (orderList || ordersData).filter(o => o.enabled)
+  const list = (orderList || ordersData).filter(o => o && o.enabled)
   
   const result = {
     wbCount: 0,
@@ -3149,9 +3149,10 @@ async function refreshOrderRow(shipmentNum) {
     const index = ordersData.findIndex(o => o.shipmentNum === shipmentNum)
     if (index !== -1) {
       ordersData[index] = { ...ordersData[index], ...freshOrder, enabled: true }
+      realtimeMode = false // снимаем SSE-блокировку для обновления статистики
       updateSingleRow(ordersData[index], index)
       updateTotals()
-      renderCurrentStats()
+      renderCurrentStats(true)
     }
   } catch (e) {
     console.error('Ошибка обновления:', e)
@@ -3842,7 +3843,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       const file = e.target.files && e.target.files[0]
       const label = document.getElementById('reportFilePath')
       if (label) {
-        label.textContent = file ? file.name : 'файл не выбран'
+        if (file) {
+          // Читаем первые строки для определения версии формата
+          detectReportVersionFromFile(file).then(function (ver) {
+            label.textContent = file.name + ' [' + (ver === 2 ? 'v2: с августа 2026' : 'v1: до августа 2026') + ']'
+          }).catch(function () {
+            label.textContent = file.name
+          })
+        } else {
+          label.textContent = 'файл не выбран'
+        }
       }
     })
   }
@@ -4827,9 +4837,72 @@ function createSuppliesRow(order) {
       'pickup': 'Собран, ожидает отправки'
     }
     return map[status.toLowerCase()] || status
+}
+
+/**
+ * Повторно ищет в МойСклад все заказы со статусом «Не найден».
+ * Обновляет строки в таблице и пересчитывает статистику.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
+async function refreshNotFoundOrders() {
+  const notFound = []
+  ordersData.forEach((o, i) => {
+    if (o.enabled && (o.statusName === 'Не найден' || o.status === 'not_found')) {
+      notFound.push({ shipmentNum: o.shipmentNum, index: i })
+    }
+  })
+
+  if (notFound.length === 0) {
+    showStatus('Нет заказов для обновления')
+    return
   }
 
-  /**
+  const token = loadToken()
+  if (!token) {
+    showStatus('Ошибка: не задан токен МойСклад')
+    return
+  }
+
+  let updated = 0
+  const total = notFound.length
+  showStatus(`Обновление 0/${total}...`)
+
+  for (const item of notFound) {
+    try {
+      const response = await fetch('/api/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-token': token
+        },
+        body: JSON.stringify({ numbers: [item.shipmentNum] })
+      })
+
+      const result = await response.json()
+      if (result.error) throw new Error(result.error)
+
+      const freshOrder = result.orders?.[0]
+      if (freshOrder) {
+        ordersData[item.index] = { ...ordersData[item.index], ...freshOrder, enabled: true }
+        updateSingleRow(ordersData[item.index], item.index)
+        updated++
+      }
+    } catch (_e) {
+      // Оставляем как «Не найден»
+    }
+
+    showStatus(`Обновление ${updated}/${total}...`)
+  }
+
+  realtimeMode = false
+  updateTotals()
+  renderCurrentStats(true)
+  showStatus(`✅ Обновлено ${updated} из ${total}`)
+}
+
+/**
    * Возвращает читаемый статус заказа поставки для отображения в таблице.
    *
    * Согласован с decision matrix в lib/supplies.js:
@@ -5628,6 +5701,7 @@ function exportTableToXLSX() {
   var merges = [] // массив { s: { r, c }, e: { r, c } }
 
   data.forEach(function(order) {
+    if (!order) return
     var orderVals = [
       order.extractedShipmentNum || order.shipmentNum || '—',
       order.orderName || '—',
@@ -5815,6 +5889,88 @@ function escapeHtml(str) {
 // ═══════════════════════════════════════════════════════════════
 
 /**
+ * Принудительно обновляет кэш Ozon (возвраты + постинги) через SSE.
+ * Показывает прогресс и результат пользователю.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
+async function refreshOzonCache() {
+  const ozonBtn = document.querySelector('.compare-row .btn-ozon[onclick="refreshOzonCache()"]')
+  if (ozonBtn) ozonBtn.disabled = true
+
+  showStatus('Обновление кэша Ozon...')
+
+  try {
+    const ozonClientId = localStorage.getItem('ozon_client_id')
+    const ozonApiKey = localStorage.getItem('ozon_api_key')
+    if (!ozonClientId || !ozonApiKey) {
+      await showAlert('Не заданы Ozon Client-Id и Api-Key. Добавьте их в «Токены».', 'Нет токенов Ozon')
+      showStatus('')
+      if (ozonBtn) ozonBtn.disabled = false
+      return
+    }
+
+    const msToken = localStorage.getItem('msToken') || ''
+    const wbToken = localStorage.getItem('wbToken') || ''
+
+    const response = await fetch(
+      '/sse/ozon-all/stream?token=' + encodeURIComponent(msToken) +
+      '&wbToken=' + encodeURIComponent(wbToken),
+      {
+        headers: {
+          'x-api-token': msToken,
+          'x-wb-token': wbToken,
+          'x-ozon-client-id': ozonClientId,
+          'x-ozon-api-key': ozonApiKey
+        }
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error('Сервер вернул ошибку: ' + response.status)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.type === 'progress') {
+              showStatus('Обновление Ozon: ' + (data.name || data.step || '...'))
+            } else if (data.type === 'done') {
+              showStatus('✅ Кэш Ozon обновлён')
+              if (ozonBtn) ozonBtn.disabled = false
+              return
+            } else if (data.type === 'error') {
+              showStatus('❌ Ошибка: ' + (data.message || 'неизвестно'))
+              if (ozonBtn) ozonBtn.disabled = false
+              return
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    showStatus('✅ Кэш Ozon обновлён')
+  } catch (err) {
+    showStatus('❌ Ошибка обновления Ozon: ' + err.message)
+  }
+  if (ozonBtn) ozonBtn.disabled = false
+}
+
+/**
  * Парсит загруженный XLSX-файл отчёта Ozon.
  * Читает лист 'Начисления' и возвращает массив строк.
  *
@@ -5845,6 +6001,46 @@ async function parseReportFile(file) {
 }
 
 /**
+ * Определяет версию формата отчёта Ozon по структуре строк.
+ *
+ * v1 (до августа 2026): строка 0 = заголовок (~25 колонок A–Y), данные со строки 1.
+ * v2 (с августа 2026):  строка 0 = период, строка 1 = заголовок (~16 колонок A–P), данные со строки 2.
+ *
+ * @param {Array<Array<string|number>>} rows - Массив строк из XLSX
+ * @returns {1|2} Версия формата
+ */
+function detectReportVersion(rows) {
+  // v2: первая строка — период (короткая), вторая — заголовок (~16 колонок)
+  // v1: первая строка — заголовок (~25 колонок), вторая — данные
+  // Определяем по числу колонок во второй строке (rows[1])
+  if (rows.length >= 2 && rows[1] && rows[1].length <= 18) {
+    return 2 // v2: вторая строка — заголовок из ≤18 колонок (A–P = 16)
+  }
+  return 1 // v1: вторая строка — данные из ~25 колонок
+}
+
+/**
+ * Определяет версию формата отчёта Ozon по объекту File (асинхронно).
+ * Читает только первые строки XLSX, не парсит весь файл.
+ *
+ * @async
+ * @param {File} file - XLSX-файл отчёта Ozon
+ * @returns {Promise<1|2>} Версия формата
+ */
+async function detectReportVersionFromFile(file) {
+  try {
+    const data = new Uint8Array(await file.arrayBuffer())
+    const wb = XLSX.read(data, { type: 'array' })
+    const ws = wb.Sheets['Начисления']
+    if (!ws) return 1
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+    return detectReportVersion(rows)
+  } catch (_e) {
+    return 1
+  }
+}
+
+/**
  * Исправляет кодировку кириллицы, повреждённую xlsx-библиотекой.
  *
  * Баг xlsx@0.18.5: при чтении inline-строк из XLSX теряется старший байт
@@ -5870,14 +6066,29 @@ function fixCyrillicEncoding(str) {
 }
 
 /**
+ * Очищает ключ заказа от невидимых Unicode-символов (разделители, управляющие).
+ *
+ * @param {*} rawKey - Сырой ключ (может быть null/undefined/числом)
+ * @returns {string} Очищенный ключ или пустая строка
+ */
+function cleanOrderKey(rawKey) {
+  return (rawKey == null ? '' : String(rawKey))
+    .replace(/[\p{Z}\p{C}]+/gu, '')
+    .trim()
+}
+
+/**
  * Строит map отчёта Ozon по номеру заказа.
- * Фильтрует только строки с операцией 'Доставка покупателю',
- * складом FBS и ненулевой суммой J.
+ * Поддерживает два формата:
+ *   v1 (до августа 2026):  B=операция, E=склад, C=№заказа, J=сумма
+ *   v2 (с августа 2026):   D=операция, C=группа, K=площадка, L=схема, A=№заказа, I=цена × H=кол-во = сумма
  *
  * @param {Array<Array<string|number>>} rows - Массив строк из XLSX (header: 1)
- * @returns {{ map: Object<string, {jTotal: number, jPos: number, rows: Array}>, orderNumbers: string[], totalJ: number, totalJPos: number, rowsCount: number }}
+ * @param {1|2} [version] - Версия формата. Если не указана — автоопределение.
+ * @returns {{ map: Object<string, {jTotal: number, jPos: number, rows: Array}>, orderNumbers: string[], fboOrderNumbers: string[], totalJ: number, totalJPos: number, rowsCount: number, version: number }}
  */
-function buildReportMap(rows) {
+function buildReportMap(rows, version) {
+  const ver = version || detectReportVersion(rows)
   const map = {}
   const orderNumbers = []
   const fboOrderNumbers = []
@@ -5885,49 +6096,95 @@ function buildReportMap(rows) {
   let totalJPos = 0
   let rowsCount = 0
 
-  for (let i = 1; i < rows.length; i++) {
+  let dataStart = 1 // индекс первой строки данных (v1: 1, v2: 2)
+  if (ver === 2) dataStart = 2
+
+  for (let i = dataStart; i < rows.length; i++) {
     const row = rows[i]
-    // Фильтр: 'Доставка покупателю'
-    // Используем fixCyrillicEncoding — xlsx может повредить кириллицу
-    if (fixCyrillicEncoding(row[1]) !== 'Доставка покупателю') continue
 
-    const colE = String(row[4] || '').toLowerCase()
+    if (ver === 1) {
+      // ── v1: B=операция "Доставка покупателю", E=склад FBS/FBO, C=номер заказа, J=сумма ──
+      if (fixCyrillicEncoding(row[1]) !== 'Доставка покупателю') continue
 
-    // Очищаем ключ: если row[2] = null/undefined → пустая строка.
-    // Удаляем ВСЕ невидимые Unicode-символы (разделители \p{Z}, управляющие/форматирующие \p{C})
-    const rawKey = (row[2] == null ? '' : String(row[2]))
-      .replace(/[\p{Z}\p{C}]+/gu, '')
-      .trim()
+      const colE = String(row[4] || '').toLowerCase()
+      const rawKey = cleanOrderKey(row[2])
 
-    // FBO: собираем номера заказов для списка техподдержки, не участвуют в сравнении
-    if (colE === 'fbo') {
-      if (rawKey && !fboOrderNumbers.includes(rawKey)) {
-        fboOrderNumbers.push(rawKey)
+      // FBO: собираем номера заказов для списка техподдержки, не участвуют в сравнении
+      if (colE === 'fbo') {
+        if (rawKey && !fboOrderNumbers.includes(rawKey)) {
+          fboOrderNumbers.push(rawKey)
+        }
+        continue
       }
-      continue
+
+      // FBS: участвует в сравнении
+      if (colE !== 'fbs') continue
+      const jVal = typeof row[9] === 'number' ? row[9] : parseFloat(String(row[9]).replace(',', '.')) || 0
+      if (jVal === 0) continue
+
+      const orderKey = rawKey
+      if (!orderKey) continue
+
+      if (!map[orderKey]) {
+        map[orderKey] = { jTotal: 0, jPos: 0, rows: [] }
+        orderNumbers.push(orderKey)
+      }
+      map[orderKey].jTotal += jVal
+      if (jVal > 0) map[orderKey].jPos += jVal
+      map[orderKey].rows.push(row)
+      totalJ += jVal
+      if (jVal > 0) totalJPos += jVal
+      rowsCount++
+    } else {
+      // ── v2: D=операция "Выручка", C=группа "Продажи", K=площадка "Ozon", L=схема, A=номер заказа, P=сумма ──
+      const operation = fixCyrillicEncoding(row[3]) // колонка D — Тип начисления
+      if (operation !== 'Выручка') continue
+
+      const group = fixCyrillicEncoding(row[2]) // колонка C — Группа услуг
+      if (group !== 'Продажи') continue
+
+      // Колонки K (платформа) и L (схема) — ASCII-коды, не применяем fixCyrillicEncoding
+      const platform = String(row[10] || '').toLowerCase()
+      if (!platform.includes('ozon')) continue
+
+      const scheme = String(row[11] || '').toLowerCase()
+      const rawKey = cleanOrderKey(row[0]) // колонка A — ID начисления (номер заказа)
+
+      // FBO: собираем отдельно
+      if (scheme === 'fbo') {
+        if (rawKey && !fboOrderNumbers.includes(rawKey)) {
+          fboOrderNumbers.push(rawKey)
+        }
+        continue
+      }
+
+      // FBS: участвует в сравнении
+      if (!scheme.includes('fbs')) continue
+
+      // Выручка: сумма = цена продажи (колонка I) × количество (колонка H)
+      // Колонка P — Сумма итого (net, после комиссий), не подходит для сверки с МС
+      const price = typeof row[8] === 'number' ? row[8] : parseFloat(String(row[8]).replace(',', '.')) || 0
+      const qty = typeof row[7] === 'number' ? row[7] : parseInt(String(row[7]), 10) || 1
+      const jVal = price * qty
+      if (jVal === 0) continue
+
+      const orderKey = rawKey
+      if (!orderKey) continue
+
+      if (!map[orderKey]) {
+        map[orderKey] = { jTotal: 0, jPos: 0, rows: [] }
+        orderNumbers.push(orderKey)
+      }
+      map[orderKey].jTotal += jVal
+      if (jVal > 0) map[orderKey].jPos += jVal
+      map[orderKey].rows.push(row)
+      totalJ += jVal
+      if (jVal > 0) totalJPos += jVal
+      rowsCount++
     }
-
-    // FBS: участвует в сравнении
-    if (colE !== 'fbs') continue
-    const jVal = typeof row[9] === 'number' ? row[9] : parseFloat(String(row[9]).replace(',', '.')) || 0
-    if (jVal === 0) continue
-
-    const orderKey = rawKey
-    if (!orderKey) continue
-
-    if (!map[orderKey]) {
-      map[orderKey] = { jTotal: 0, jPos: 0, rows: [] }
-      orderNumbers.push(orderKey)
-    }
-    map[orderKey].jTotal += jVal
-    if (jVal > 0) map[orderKey].jPos += jVal
-    map[orderKey].rows.push(row)
-    totalJ += jVal
-    if (jVal > 0) totalJPos += jVal
-    rowsCount++
   }
 
-  return { map, orderNumbers, fboOrderNumbers, totalJ, totalJPos, rowsCount }
+  return { map, orderNumbers, fboOrderNumbers, totalJ, totalJPos, rowsCount, version: ver }
 }
 
 /**
@@ -5968,49 +6225,59 @@ async function runComparison() {
 
   try {
     const rows = await parseReportFile(file)
-    console.debug('[OzonReport] rows count:', rows.length)
-    if (rows.length > 0) {
-      console.debug('[OzonReport] row[0] (header):', rows[0])
-      console.debug('[OzonReport] row[1][1] (B cell):', JSON.stringify(rows[1]?.[1]))
-      const sample = rows.slice(1, 5).map(r => ({
-        B: r[1], E: r[4], C: r[2], J: r[9],
-        Bcodes: r[1] ? [...String(r[1])].map(c => c.charCodeAt(0)) : []
-      }))
-      console.debug('[OzonReport] sample rows:', sample)
-    }
-    const reportResult = buildReportMap(rows)
+    const version = detectReportVersion(rows)
+    console.debug('[OzonReport] rows count:', rows.length, 'detected version:', 'v' + version)
+
+    const reportResult = buildReportMap(rows, version)
 
     if (reportResult.orderNumbers.length === 0) {
       // Собираем отладочную информацию
       const debugLines = []
       if (rows.length > 0) {
-        const header = rows[0]
-        debugLines.push('Колонок: ' + (header ? header.length : '?'))
+        debugLines.push('Формат: v' + version + ' (' + (version === 1 ? 'до августа 2026' : 'с августа 2026') + ')')
+        debugLines.push('Колонок в заголовке: ' + (rows[version === 1 ? 0 : 1] ? rows[version === 1 ? 0 : 1].length : '?'))
         debugLines.push('Всего строк: ' + rows.length)
-        // Показываем первые 3 строки (кроме заголовка)
-        for (let ri = 1; ri < Math.min(4, rows.length); ri++) {
+        // Показываем первые строки данных
+        const dataStart = version === 1 ? 1 : 2
+        const maxSample = Math.min(dataStart + 4, rows.length)
+        for (let ri = dataStart; ri < maxSample; ri++) {
           const r = rows[ri]
-          const bRaw = r[1]
-          const bStr = String(bRaw ?? '(пусто)')
-          const codes = [...bStr].map(c => 'U+' + c.charCodeAt(0).toString(16).toUpperCase())
-          debugLines.push(
-            'Строка ' + (ri + 1) + ': B=' + JSON.stringify(bStr) +
-            ' [' + codes.join(',') + ']' +
-            ' | E=' + JSON.stringify(r[4]) +
-            ' | C=' + JSON.stringify(r[2]) +
-            ' | J=' + JSON.stringify(r[9])
-          )
+          if (version === 1) {
+            const bRaw = r[1]
+            const bStr = fixCyrillicEncoding(String(bRaw ?? ''))
+            debugLines.push(
+              'Строка ' + (ri + 1) + ': B=' + JSON.stringify(bStr) +
+              ' | E=' + JSON.stringify(r[4]) +
+              ' | C=' + JSON.stringify(r[2]) +
+              ' | J=' + JSON.stringify(r[9])
+            )
+          } else {
+            debugLines.push(
+              'Строка ' + (ri + 1) + ': D=' + JSON.stringify(fixCyrillicEncoding(String(r[3] || ''))) +
+              ' | C=' + JSON.stringify(fixCyrillicEncoding(String(r[2] || ''))) +
+              ' | K=' + JSON.stringify(fixCyrillicEncoding(String(r[10] || ''))) +
+              ' | L=' + JSON.stringify(fixCyrillicEncoding(String(r[11] || ''))) +
+              ' | A=' + JSON.stringify(r[0]) +
+              ' | P=' + JSON.stringify(r[15])
+            )
+          }
         }
       } else {
         debugLines.push('Нет строк в отчёте')
       }
       await showAlert(
         'Не найдено заказов в отчёте. Проверьте формат файла.\n\n' +
-        'Ожидаемые колонки:\n' +
-        'B = "Доставка покупателю"\n' +
-        'E = "FBS"\n' +
-        'C = номер заказа\n' +
-        'J = сумма (не ноль)\n\n' +
+        'Ожидаемые колонки для v1 (до августа 2026):\n' +
+        '  B = "Доставка покупателю"\n' +
+        '  E = "FBS"\n' +
+        '  C = номер заказа\n' +
+        '  J = сумма (не ноль)\n\n' +
+        'Ожидаемые колонки для v2 (с августа 2026):\n' +
+        '  D = "Выручка"\n' +
+        '  C = "Продажи"\n' +
+        '  K = "Ozon"\n' +
+        '  L = "FBS"\n' +
+        '  P = сумма итого\n\n' +
         '--- Отладка ---\n' +
         debugLines.join('\n'),
         'Нет данных для сравнения'
@@ -6023,7 +6290,8 @@ async function runComparison() {
     window._reportMeta = {
       totalJ: reportResult.totalJ,
       totalJPos: reportResult.totalJPos,
-      rowsCount: reportResult.rowsCount
+      rowsCount: reportResult.rowsCount,
+      version: reportResult.version
     }
     // Сохраняем FBO номера для вывода в отчёте
     window._fboOrderNumbers = reportResult.fboOrderNumbers || []
@@ -6053,6 +6321,9 @@ async function runComparison() {
  * @returns {{ summary: Object, details: Array<Object> }} Результат сравнения
  */
 function compareWithReport(reportMap) {
+  // Допустимая погрешность для сравнения сумм (2 копейки — округление)
+  const TOLERANCE = 0.02
+
   const details = []
   let totalD = 0
   let totalJPos = 0
@@ -6070,8 +6341,8 @@ function compareWithReport(reportMap) {
   for (const order of ordersData) {
     if (!order.enabled) continue
 
-    // Номер заказа — первая строка shipmentNum
-    const orderKey = String(order.shipmentNum).split('\n')[0].trim()
+    // Номер заказа — очищаем так же как в buildReportMap (cleanOrderKey)
+    const orderKey = cleanOrderKey(String(order.shipmentNum).split('\n')[0])
     const entry = reportMap[orderKey]
 
     const sumD = order.sum || 0
@@ -6094,8 +6365,15 @@ function compareWithReport(reportMap) {
       totalDiff += sumD
       note = 'Нет в отчёте Ozon'
       diff = sumD
-    } else if (order.hasReturn && !order.isCancelled && (order.returnSum || 0) < (order.sum || 0)) {
-      // Действительно частичный возврат: сумма возврата меньше суммы заказа
+    } else if (order.isCancelled || (order.hasReturn && (order.returnSum || 0) >= (order.sum || 0) - TOLERANCE)) {
+      // Отменён ИЛИ полный возврат всей суммы (с tolerance)
+      status = 'return'
+      returnCount++
+      totalJPos += jPos
+      totalDiff += diff
+      note = order.isCancelled ? 'Отменён в МС' : 'Полный возврат'
+    } else if (order.hasReturn && !order.isCancelled && (order.returnSum || 0) > 0 && (order.returnSum || 0) < (order.sum || 0) - TOLERANCE) {
+      // Действительно частичный возврат: сумма возврата больше 0, но меньше суммы заказа
       status = 'partial'
       partialCount++
       totalJPos += jPos
@@ -6108,33 +6386,27 @@ function compareWithReport(reportMap) {
         jPos,
         diff
       })
-      note = 'Частичный возврат: J+ не включает G'
-    } else if (order.isCancelled || (order.hasReturn && (order.returnSum || 0) >= (order.sum || 0))) {
-      // Отменён ИЛИ полный возврат всей суммы
-      status = 'return'
-      returnCount++
-      totalJPos += jPos
-      totalDiff += diff
-      note = 'Полный возврат'
+      note = 'Частичный возврат: diff включает сумму возврата'
     } else if (!order.hasReturn && hasMarketplaceReturn) {
       // Возвращён на площадке (Ozon/WB), но в МС возврат не создан
       status = 'marketplace-return'
       marketplaceReturnNoMsCount++
       totalJPos += jPos
       totalDiff += diff
-      note = 'Возвращён на площадке — есть J+ в отчёте (оплачен), но возврат в МС не оформлен'
-    } else if (diff === 0) {
+      note = 'Возвращён на площадке — есть J+ в отчёте, но возврат в МС не оформлен'
+    } else if (Math.abs(diff) < TOLERANCE) {
+      // Разница в пределах 2 копеек — считаем совпадением (округление)
       status = 'ok'
       okCount++
       totalJPos += jPos
       note = 'Совпадает'
     } else {
-      // Расхождение без возврата — аномалия
+      // Реальное расхождение без возврата/отмены — аномалия
       status = 'mismatch'
       mismatchCount++
       totalJPos += jPos
       totalDiff += diff
-      note = 'Расхождение'
+      note = 'Расхождение на ' + (diff > 0 ? '+' : '') + Math.round(Math.abs(diff) * 100) / 100 + ' ₽'
     }
 
     details.push({
@@ -6564,10 +6836,9 @@ function renderComparisonPanel(stats) {
  * @returns {void}
  */
 function openComparisonModal() {
-  const content = document.getElementById('comparisonModalContent')
-  if (!content) return
-  // Если контент пуст — перерендериваем
-  if (content.innerHTML.trim() === '' && window._lastComparisonResult) {
+  // Всегда пересчитываем сравнение на текущем состоянии ordersData
+  if (window._reportMap) {
+    window._lastComparisonResult = compareWithReport(window._reportMap)
     renderComparisonPanel(window._lastComparisonResult)
   }
   const modal = document.getElementById('comparisonModal')
@@ -6931,7 +7202,7 @@ function downloadComparisonReport() {
   }
 
   if (calcGapOrders.length > 0) {
-    var gapTotalSum = calcGapOrders.reduce(function(s, o) { return s + o.sum }, 0)
+    var gapTotalSum = calcGapOrders.reduce(function(s, o) { return s + (o && o.sum || 0) }, 0)
     summarySectionTitle('⚠️ ДИСБАЛАНС КАЛЬКУЛЯТОРА')
     summaryDataRow('Найдено заказов с отгрузкой, но без оплаты/возврата/отмены:', String(calcGapOrders.length))
     summaryDataRow('Общая сумма дисбаланса:', fmtNum(gapTotalSum) + ' ₽')
