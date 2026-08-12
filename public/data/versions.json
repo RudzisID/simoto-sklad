@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.9.1",
+    "date": "2026-08-12",
+    "changes": [
+      "1 file changed, 5 insertions(+), 5 deletions(-)"
+    ]
+  },
+  {
     "version": "1.9.0",
     "date": "2026-08-11",
     "changes": [
