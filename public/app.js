@@ -6488,7 +6488,13 @@ function renderComparisonPanel(stats) {
   const fmt = (n) => (n || 0).toLocaleString('ru-RU')
   const fmtSum = (n) => {
     if (n == null || n === 0) return '—'
-    return (n > 0 ? '' : '') + fmt(Math.abs(n)) + ' ₽'
+    return fmt(Math.abs(n)) + ' ₽'
+  }
+  // Форматирует разницу со знаком (+ / −) — чтобы было видно направление расхождения
+  const fmtDiff = (n) => {
+    if (n == null) return '—'
+    const sign = n > 0 ? '+' : (n < 0 ? '-' : '')
+    return sign + fmt(Math.abs(n)) + ' ₽'
   }
 
   // Показываем кнопки
@@ -6520,10 +6526,10 @@ function renderComparisonPanel(stats) {
   html += '<div class="value ' + diffClass + '">' + fmt(summary.totalDiff) + ' ₽</div>'
   html += '</div>'
 
-  // Совпало
+  // Совпало (включая полные возвраты — с ними тоже всё ок)
   html += '<div class="comparison-summary-item">'
   html += '<div class="label"><span class="comparison-status-ok"></span> Совпало</div>'
-  html += '<div class="value ok">' + summary.okCount + '</div>'
+  html += '<div class="value ok">' + (summary.okCount + summary.returnCount) + '</div>'
   html += '</div>'
 
   // Расхождения / Частичные
@@ -6538,9 +6544,9 @@ function renderComparisonPanel(stats) {
   html += '<div class="value missing">' + summary.missingCount + '</div>'
   html += '</div>'
 
-  // Полные возвраты
+  // Полные возвраты (учтены в «Совпало» — с ними всё ок)
   html += '<div class="comparison-summary-item">'
-  html += '<div class="label"><span class="comparison-status-return"></span> Полных возвратов (отмены)</div>'
+  html += '<div class="label"><span class="comparison-status-return"></span> Полных возвратов (отмены) — ОК</div>'
   html += '<div class="value">' + summary.returnCount + '</div>'
   html += '</div>'
 
@@ -6560,6 +6566,28 @@ function renderComparisonPanel(stats) {
 
   html += '</div>' // .comparison-summary-grid
 
+  // ── Какие заказы образуют расхождение (разница D − J+ и № заказа) ──
+  const diffOrders = details.filter(d => d.status === 'mismatch' || d.status === 'partial')
+  if (diffOrders.length > 0) {
+    html += '<div class="cmp-block-diff">'
+    html += '<strong>⚠️ Расхождение</strong> — разница D − J+ = <strong>' + fmt(summary.totalDiff) + ' ₽</strong> · заказов: <strong>' + diffOrders.length + '</strong><br>'
+    html += '<span style="font-size:0.85rem;color:var(--text-muted);">Номер заказа покупателя — первая строка колонки B скана МойСклад:</span>'
+    html += '<table class="comparison-table">'
+    html += '<thead><tr>'
+    html += '<th>№ заказа покупателя</th><th>D (скан)</th><th>J+ (отчёт)</th><th>Δ (D − J+)</th>'
+    html += '</tr></thead><tbody>'
+    for (const d of diffOrders) {
+      html += '<tr>'
+      html += '<td>' + escapeHtml(d.orderKey) + '</td>'
+      html += '<td>' + fmtSum(d.sumD) + '</td>'
+      html += '<td>' + fmtSum(d.jPos) + '</td>'
+      html += '<td class="' + (d.diff < 0 ? 'diff-neg' : 'diff-pos') + '">' + fmtDiff(d.diff) + '</td>'
+      html += '</tr>'
+    }
+    html += '</tbody></table>'
+    html += '</div>'
+  }
+
   // ── Цветовые блоки ──
   // Блок итоговых сумм
   html += '<div class="cmp-block-total">'
@@ -6572,7 +6600,7 @@ function renderComparisonPanel(stats) {
 
   // Счётчики
   html += '<div class="cmp-block-ok">'
-  html += '✅ Совпало: <strong>' + summary.okCount + '</strong><br>'
+  html += '✅ Совпало: <strong>' + (summary.okCount + summary.returnCount) + '</strong><br>'
   if (summary.mismatchCount + summary.partialCount > 0) {
     html += '⚠️ Расхождений / частичных: <strong>' + (summary.mismatchCount + summary.partialCount) + '</strong><br>'
   }
@@ -6580,7 +6608,7 @@ function renderComparisonPanel(stats) {
     html += '❌ Не найдено в отчёте: <strong>' + summary.missingCount + '</strong><br>'
   }
   if (summary.returnCount > 0) {
-    html += '🔄 Полных возвратов (отмен): <strong>' + summary.returnCount + '</strong><br>'
+    html += '🔄 Полных возвратов (отмен): <strong>' + summary.returnCount + '</strong> (учтены в «Совпало»)<br>'
   }
   if (summary.marketplaceReturnNoMsCount > 0) {
     html += '🔄 Возвращён на площадке, нет в МС: <strong>' + summary.marketplaceReturnNoMsCount + '</strong><br>'
@@ -6625,7 +6653,7 @@ function renderComparisonPanel(stats) {
   }
 
   // ── Детальный разбор по заказам с расхождениями ──
-  const problemDetails = details.filter(d => d.status !== 'ok')
+  const problemDetails = details.filter(d => d.status !== 'ok' && d.status !== 'return')
   if (problemDetails.length > 0) {
     html += '<div class="cmp-section cmp-detail-breakdown">'
     html += '<h4>🔍 Детальный разбор по заказам</h4>'
@@ -6661,7 +6689,7 @@ function renderComparisonPanel(stats) {
       html += '<span class="order-sums">'
       html += 'D: <strong>' + fmtSum(d.sumD) + '</strong> · '
       html += 'J+: <strong>' + fmtSum(d.jPos) + '</strong> · '
-      html += '<span class="' + (d.diff < 0 ? 'diff-neg' : 'diff-pos') + '">Δ ' + fmtSum(d.diff) + '</span>'
+      html += '<span class="' + (d.diff < 0 ? 'diff-neg' : 'diff-pos') + '">Δ ' + fmtDiff(d.diff) + '</span>'
       html += '</span>'
       if (d.orderName) html += '<span class="order-name-small">' + escapeHtml(d.orderName) + '</span>'
       html += '</summary>'
@@ -7001,7 +7029,7 @@ function downloadComparisonReport() {
   var numDetailCols = detailCols.length
 
   // Фильтруем только проблемные заказы
-  const problemDetails = details.filter(d => d.status !== 'ok')
+  const problemDetails = details.filter(d => d.status !== 'ok' && d.status !== 'return')
 
   if (problemDetails.length === 0) {
     rowsDetail.push(['Нет заказов с расхождениями — все совпадают.'])
@@ -7014,7 +7042,7 @@ function downloadComparisonReport() {
     dr++
 
     // Заголовок заказа (объединённый стиль на всю ширину)
-    var diffSign = d.diff < 0 ? '' : '+'
+    var diffSign = d.diff > 0 ? '+' : (d.diff < 0 ? '-' : '')
     var orderTitle = 'Заказ: ' + d.orderKey +
       ' | D: ' + fmtSum(d.sumD) +
       ' | J+: ' + fmtSum(d.jPos) +
@@ -7136,7 +7164,7 @@ function downloadComparisonReport() {
 
   // ── Анализ ──
   summarySectionTitle('📊 АНАЛИЗ')
-  summaryDataRow('✅ Совпало:', String(summary.okCount))
+  summaryDataRow('✅ Совпало (включая полные возвраты):', String(summary.okCount + summary.returnCount))
   if (summary.mismatchCount + summary.partialCount > 0) {
     summaryDataRow('⚠️ Расхождений / частичных:', String(summary.mismatchCount + summary.partialCount))
   }
@@ -7144,7 +7172,7 @@ function downloadComparisonReport() {
     summaryDataRow('❌ Не найдено в отчёте:', String(summary.missingCount))
   }
   if (summary.returnCount > 0) {
-    summaryDataRow('🔄 Полных возвратов (отмен):', String(summary.returnCount))
+    summaryDataRow('🔄 Полных возвратов (отмен) — учтены в «Совпало»:', String(summary.returnCount))
   }
   summaryBlankRow()
 

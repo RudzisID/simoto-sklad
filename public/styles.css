@@ -4773,6 +4773,21 @@ tr.day-separator td span {
 .diff-neg { color: #ef4444; font-weight: 600; }
 .diff-pos { color: #22c55e; font-weight: 600; }
 
+/* ── Перенос длинных строк в модале сравнения ── */
+.comparison-modal-body .comparison-table td {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.comparison-modal-body .cmp-order-header .order-key {
+  word-break: break-all;
+}
+.comparison-modal-body .cmp-order-header .order-note {
+  overflow-wrap: anywhere;
+}
+.comparison-modal-body .cmp-order-header .order-sums {
+  white-space: normal;
+}
+
 /* Нет данных */
 .cmp-no-items {
   padding: 8px 12px;
