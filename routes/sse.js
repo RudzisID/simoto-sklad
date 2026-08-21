@@ -413,8 +413,6 @@ module.exports = function(deps) {
     }
 
     setupSSE(res, sseConnections)
-    sendSSE(res, { type: 'progress', msg: 'Поиск...' })
-
     ulog(`=== Unified-Search SSE: start (${numbers.length} numbers) ===`)
 
     if (msToken) {
@@ -609,6 +607,9 @@ module.exports = function(deps) {
         let marketplaceData = null
         try {
           if (msToken) {
+            sendSSE(res, { type: 'search-ms', code, msg: 'Поиск в МС...' })
+          }
+          if (msToken) {
             orderResult = await checkOrder(code, ulog)
             if (orderResult && orderResult.orderId) {
               marketplace = orderResult.marketplace || null
@@ -670,10 +671,27 @@ module.exports = function(deps) {
 
           const orderData = buildOrderData({ orderResult, marketplace, marketplaceData, code })
 
+          if (marketplace && marketplaceData) {
+            sendSSE(res, {
+              type: 'search-marketplace',
+              code,
+              msg: `Поиск данных ${marketplace === 'ozon' ? 'Ozon' : 'WB'}...`
+            })
+          }
+
           sendSSE(res, {
             type: 'progress',
             order: orderData,
             index: processed + 1,
+            total
+          })
+          // Legacy result event retained for clients that consume the pre-progress protocol.
+          sendSSE(res, {
+            type: 'result',
+            code,
+            order: orderData,
+            notFound: !orderResult && !marketplaceData,
+            processed: processed + 1,
             total
           })
         } catch (e) {
@@ -700,6 +718,14 @@ module.exports = function(deps) {
             type: 'progress',
             order: orderData,
             index: processed + 1,
+            total
+          })
+          sendSSE(res, {
+            type: 'result',
+            code,
+            order: orderData,
+            notFound: !orderResult,
+            processed: processed + 1,
             total
           })
           errors++

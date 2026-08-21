@@ -4333,6 +4333,69 @@ tr.day-separator td span {
   font-size: 0.85rem;
 }
 
+/* Выпадающее меню выбора файлов/папки отчёта */
+.report-picker {
+  position: relative;
+}
+
+/* Ряд из двух кнопок выбора отчётов (Ozon/WB) на всю ширину */
+.report-pickers-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.report-pickers-row .report-picker {
+  flex: 1;
+}
+
+.report-pickers-row .report-picker-btn {
+  width: 100%;
+}
+
+/* Кнопка на всю ширину блока массовых действий */
+.bulk-actions .bulk-wide {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.report-picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 60;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 170px;
+  padding: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+
+.report-picker-menu.show {
+  display: flex;
+}
+
+.report-picker-menu button {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.report-picker-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .compare-buttons {
   display: flex;
   gap: 8px;
@@ -4773,7 +4836,7 @@ tr.day-separator td span {
 .diff-neg { color: #ef4444; font-weight: 600; }
 .diff-pos { color: #22c55e; font-weight: 600; }
 
-/* ── Перенос длинных строк в модале сравнения ── */
+/* Перенос длинных строк в модале сравнения. */
 .comparison-modal-body .comparison-table td {
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -4900,4 +4963,3 @@ tr.day-separator td span {
   font-size: 14px;
   font-weight: bold;
 }
-

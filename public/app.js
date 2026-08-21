@@ -1745,12 +1745,7 @@ function renderTable() {
     const status = order.status || ''
 
     // Просто показываем статус из API
-    let cssClass = 'status-no'
-    if (status === 'return' || statusName.includes('Возврат')) cssClass = 'status-return'
-    else if (status === 'cancelled' || statusName.includes('Отмен')) cssClass = 'status-error'
-    else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж') || statusName.includes('Доставлен'))
-      cssClass = 'status-shipped'
-    else if (status === 'delayed' || statusName.includes('отсрочк')) cssClass = 'status-delayed'
+    let cssClass = getOrderStatusClass(order)
 
     // Подсвечивать строку красным при ошибке
     if (order.lastAction && order.lastAction.includes('_error')) {
@@ -1787,32 +1782,6 @@ function renderTable() {
     const storeDisplay = order.storeName
       ? `<span>${esc(order.storeName)}</span>`
       : '<span class="status-no">—</span>'
-
-    // Статус заказа
-    let statusClass = 'status-other'
-    let statusText = order.statusName || 'Новый'
-    if (order.status === 'shipped') {
-      statusClass = 'status-shipped'
-      statusText = 'Отгружен'
-    } else if (order.status === 'delayed') {
-      statusClass = 'status-delayed'
-      statusText = 'С отсрочкой'
-    } else if (order.hasReturn) {
-      statusClass = 'status-return'
-      statusText = 'Возврат'
-    } else if (order.isCancelled) {
-      statusClass = 'status-error'
-      statusText = 'Отменён'
-    } else if (order.status === 'cancelled') {
-      statusClass = 'status-error'
-      statusText = 'Отменён'
-    } else if (order.statusName && order.statusName.includes('Отмен')) {
-      statusClass = 'status-error'
-      statusText = 'Отменён'
-    } else if (order.statusName && order.statusName.includes('Возврат')) {
-      statusClass = 'status-return'
-      statusText = 'Возврат'
-    }
 
     // Sub-elements for № column
     let numSub = ''
@@ -1883,6 +1852,22 @@ function renderTable() {
 }
 
 /**
+ * Определяет CSS-класс статуса строки по свежим флагам заказа.
+ * Флаги МС имеют приоритет над устаревшим текстом или производным status.
+ *
+ * @param {Object} order - Данные заказа
+ * @returns {string} CSS-класс статуса
+ */
+function getOrderStatusClass(order) {
+  const statusName = (order.statusName || '').toLowerCase()
+  if (order.isCancelled || order.status === 'cancelled' || statusName.includes('отмен')) return 'status-error'
+  if (order.hasReturn || order.status === 'return' || statusName.includes('возврат')) return 'status-return'
+  if (order.status === 'delayed' || statusName.includes('отсрочк')) return 'status-delayed'
+  if (order.hasDemand || order.status === 'shipped' || statusName.includes('оплач') || statusName.includes('отгруж') || statusName.includes('доставлен')) return 'status-shipped'
+  return 'status-no'
+}
+
+/**
  * Добавляет одну строку в таблицу (append mode для realtime/SSE).
  * Создаёт DOM-элемент tr с анимацией fadeInDown и вставляет в #tableBody.
  *
@@ -1906,13 +1891,7 @@ function appendOrderRow(order) {
 
   // Статус
   const statusName = order.statusName || ''
-  const status = order.status || ''
-  let cssClass = 'status-no'
-  if (status === 'return' || statusName.includes('Возврат')) cssClass = 'status-return'
-  else if (status === 'cancelled' || statusName.includes('Отмен')) cssClass = 'status-error'
-  else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж') || statusName.includes('Доставлен'))
-    cssClass = 'status-shipped'
-  else if (status === 'delayed' || statusName.includes('отсрочк')) cssClass = 'status-delayed'
+  let cssClass = getOrderStatusClass(order)
 
   const demandDisplay = order.demandName
     ? `<span class="demand-code">${order.demandName}</span>`
@@ -3148,11 +3127,27 @@ async function refreshOrderRow(shipmentNum) {
     // Обновляем данные в ordersData
     const index = ordersData.findIndex(o => o.shipmentNum === shipmentNum)
     if (index !== -1) {
-      ordersData[index] = { ...ordersData[index], ...freshOrder, enabled: true }
+      const refreshedOrder = { ...ordersData[index], ...freshOrder, enabled: true }
+      // Успешный ответ подтверждает актуальное состояние; старую ошибку
+      // нельзя переносить в новую строку, если сервер её больше не вернул.
+      if (!freshOrder.lastAction || !freshOrder.lastAction.includes('_error')) {
+        if (refreshedOrder.lastAction && refreshedOrder.lastAction.includes('_error')) {
+          delete refreshedOrder.lastAction
+        }
+      }
+      ordersData[index] = refreshedOrder
       realtimeMode = false // снимаем SSE-блокировку для обновления статистики
       updateSingleRow(ordersData[index], index)
       updateTotals()
       renderCurrentStats(true)
+      renderFinalStats()
+
+      // Пересчитываем сохранённое сравнение: повторное открытие модала
+      // должно использовать обновлённую строку, а не старый результат.
+      if (window._reportMap) {
+        window._lastComparisonResult = compareWithReport(window._reportMap)
+        renderComparisonPanel(window._lastComparisonResult)
+      }
     }
   } catch (e) {
     console.error('Ошибка обновления:', e)
@@ -3195,13 +3190,7 @@ function buildSingleRow(order, index) {
   if (order.lastChangeDate) tr.dataset.lastChangeDate = order.lastChangeDate
 
   const statusName = order.statusName || ''
-  const status = order.status || ''
-  let cssClass = 'status-no'
-  if (status === 'return' || statusName.includes('Возврат')) cssClass = 'status-return'
-  else if (status === 'cancelled' || statusName.includes('Отмен')) cssClass = 'status-error'
-  else if (status === 'shipped' || statusName.includes('Оплач') || statusName.includes('Отгруж') || statusName.includes('Доставлен'))
-    cssClass = 'status-shipped'
-  else if (status === 'delayed' || statusName.includes('отсрочк')) cssClass = 'status-delayed'
+  let cssClass = getOrderStatusClass(order)
 
   if (order.lastAction && order.lastAction.includes('_error')) {
     cssClass = 'status-error'
@@ -3836,26 +3825,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     })
   }
 
-  // Обработчик выбора файла отчёта Ozon
-  const reportFileInput = document.getElementById('reportFile')
-  if (reportFileInput) {
-    reportFileInput.addEventListener('change', function (e) {
-      const file = e.target.files && e.target.files[0]
+  // Сохраняет один выбранный пакет XLSX и его площадку.
+  ;['reportFile', 'reportFolder', 'wbReportFiles', 'wbReportFolder'].forEach(function (id) {
+    const input = document.getElementById(id)
+    if (!input) return
+    input.addEventListener('change', function (e) {
+      const files = Array.from(e.target.files || []).filter(file => /\.xlsx$/i.test(file.name))
+      const marketplace = id.startsWith('wb') ? 'wb' : 'ozon'
+      window._selectedReportFiles = files
+      window._selectedMarketplace = marketplace
       const label = document.getElementById('reportFilePath')
-      if (label) {
-        if (file) {
-          // Читаем первые строки для определения версии формата
-          detectReportVersionFromFile(file).then(function (ver) {
-            label.textContent = file.name + ' [' + (ver === 2 ? 'v2: с августа 2026' : 'v1: до августа 2026') + ']'
-          }).catch(function () {
-            label.textContent = file.name
-          })
-        } else {
-          label.textContent = 'файл не выбран'
-        }
-      }
+      if (label) label.textContent = files.length ? marketplaceName(marketplace) + ': ' + files.map(file => file.name).join(', ') : 'файлы не выбраны'
     })
-  }
+  })
 
   // Инициализация переменных для механизма ре-компаризона
   window._pendingRecompare = false
@@ -3863,6 +3845,53 @@ document.addEventListener('DOMContentLoaded', async () => {
   window._comparisonBaseline = null
   window._comparisonBaselineStats = null
   window._comparisonDiffLog = []
+})
+
+/**
+ * Переключает выпадающее меню выбора файлов/папки отчёта площадки.
+ * Закрывает остальные открытые меню.
+ *
+ * @param {'ozon'|'wb'} marketplace - Площадка отчёта
+ * @param {Event} event - Событие клика по кнопке
+ * @returns {void}
+ */
+function toggleReportPicker(marketplace, event) {
+  if (event) event.stopPropagation()
+  const menuId = marketplace === 'wb' ? 'reportPickerWb' : 'reportPickerOzon'
+  const menu = document.getElementById(menuId)
+  if (!menu) return
+  const willShow = !menu.classList.contains('show')
+  document.querySelectorAll('.report-picker-menu').forEach((m) => m.classList.remove('show'))
+  if (willShow) menu.classList.add('show')
+}
+
+/**
+ * Открывает диалог выбора нескольких XLSX-файлов отчёта площадки.
+ *
+ * @param {'ozon'|'wb'} marketplace - Площадка отчёта
+ * @returns {void}
+ */
+function pickReportFiles(marketplace) {
+  const id = marketplace === 'wb' ? 'wbReportFiles' : 'reportFile'
+  const input = document.getElementById(id)
+  if (input) input.click()
+}
+
+/**
+ * Открывает диалог выбора папки с XLSX-отчётами площадки.
+ *
+ * @param {'ozon'|'wb'} marketplace - Площадка отчёта
+ * @returns {void}
+ */
+function pickReportFolder(marketplace) {
+  const id = marketplace === 'wb' ? 'wbReportFolder' : 'reportFolder'
+  const input = document.getElementById(id)
+  if (input) input.click()
+}
+
+// Закрытие выпадающих меню выбора отчётов по клику вне
+document.addEventListener('click', function () {
+  document.querySelectorAll('.report-picker-menu').forEach((m) => m.classList.remove('show'))
 })
 
 // Глобальный обработчик закрытия попапа фильтра по дате (Склад)
@@ -6001,6 +6030,23 @@ async function parseReportFile(file) {
 }
 
 /**
+ * Парсит XLSX-отчёт выбранной площадки.
+ * @param {File} file - XLSX-файл отчёта
+ * @param {'ozon'|'wb'} marketplace - Площадка отчёта
+ * @returns {Promise<Array<Array<string|number>>>} Строки рабочего листа
+ * @throws {Error} Если файл не удалось прочитать или лист отсутствует
+ */
+async function parseMarketplaceReportFile(file, marketplace) {
+  if (marketplace === 'ozon') return parseReportFile(file)
+  if (typeof XLSX === 'undefined') throw new Error('Библиотека XLSX не загружена. Проверьте lib/xlsx.full.min.js')
+  const data = new Uint8Array(await file.arrayBuffer())
+  const wb = XLSX.read(data, { type: 'array' })
+  const ws = wb.Sheets.Sheet1
+  if (!ws) throw new Error('Лист "Sheet1" не найден в отчёте Wildberries')
+  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+}
+
+/**
  * Определяет версию формата отчёта Ozon по структуре строк.
  *
  * v1 (до августа 2026): строка 0 = заголовок (~25 колонок A–Y), данные со строки 1.
@@ -6075,6 +6121,93 @@ function cleanOrderKey(rawKey) {
   return (rawKey == null ? '' : String(rawKey))
     .replace(/[\p{Z}\p{C}]+/gu, '')
     .trim()
+}
+
+/**
+ * Возвращает отображаемое название площадки.
+ * @param {'ozon'|'wb'} marketplace - Код площадки
+ * @returns {string} Название площадки
+ */
+function marketplaceName(marketplace) {
+  return marketplace === 'wb' ? 'Wildberries' : 'Ozon'
+}
+
+/**
+ * Преобразует денежную ячейку XLSX в число.
+ * @param {*} value - Значение ячейки
+ * @returns {number} Числовое значение или ноль
+ */
+function parseReportSum(value) {
+  if (typeof value === 'number') return value
+  return parseFloat(String(value || '').replace(/\s/g, '').replace(',', '.')) || 0
+}
+
+/**
+ * Строит карту WB: K=«Продажа», BB=номер сборочного задания, P=сумма реализации.
+ * @param {Array<Array<string|number>>} rows - Строки листа Sheet1
+ * @returns {{ map: Object, orderNumbers: string[], fboOrderNumbers: string[], totalJ: number, totalJPos: number, rowsCount: number }} Карта отчёта WB
+ */
+function buildWbReportMap(rows) {
+  const map = {}
+  const orderNumbers = []
+  let totalJ = 0
+  let totalRealized = 0
+  let rowsCount = 0
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i]
+    if (String(row[10] || '').trim() !== 'Продажа') continue
+    const orderKey = cleanOrderKey(row[53])
+    // O — цена розничная: именно её сверяем с суммой заказа МС.
+    const sum = parseReportSum(row[14])
+    // P — фактическая сумма «Вайлдберриз реализовал Товар (Пр)» для отчёта.
+    const realizedSum = parseReportSum(row[15])
+    if (!orderKey || sum === 0) continue
+    if (!map[orderKey]) {
+      map[orderKey] = { jTotal: 0, jPos: 0, realizedTotal: 0, rows: [] }
+      orderNumbers.push(orderKey)
+    }
+    map[orderKey].jTotal += sum
+    map[orderKey].jPos += sum
+    map[orderKey].realizedTotal += realizedSum
+    map[orderKey].rows.push(row)
+    totalJ += sum
+    totalRealized += realizedSum
+    rowsCount++
+  }
+  return { map, orderNumbers, fboOrderNumbers: [], totalJ, totalJPos: totalJ, totalRealized, rowsCount }
+}
+
+/**
+ * Объединяет карты файлов, дедуплицируя одинаковые суммы и выявляя конфликты.
+ * @param {Array<{name: string, result: Object}>} reports - Карты отдельных файлов
+ * @returns {{ map: Object, orderNumbers: string[], fboOrderNumbers: string[], totalJ: number, totalJPos: number, rowsCount: number, conflicts: Array<Object>, sourceFiles: string[] }} Объединённый результат
+ */
+function mergeReportMaps(reports) {
+  const map = {}
+  const orderNumbers = []
+  const fboOrderNumbers = []
+  const conflicts = []
+  let totalJ = 0
+  let totalRealized = 0
+  let rowsCount = 0
+  for (const report of reports) {
+    for (const fboOrderNumber of report.result.fboOrderNumbers || []) {
+      if (!fboOrderNumbers.includes(fboOrderNumber)) fboOrderNumbers.push(fboOrderNumber)
+    }
+    for (const orderKey of report.result.orderNumbers) {
+      const entry = report.result.map[orderKey]
+      if (map[orderKey]) {
+        if (Math.abs(map[orderKey].jPos - entry.jPos) > 0.02) conflicts.push({ orderKey, firstSource: map[orderKey].source, secondSource: report.name, firstSum: map[orderKey].jPos, secondSum: entry.jPos })
+        continue
+      }
+      map[orderKey] = { ...entry, source: report.name }
+      orderNumbers.push(orderKey)
+      totalJ += entry.jTotal
+      totalRealized += entry.realizedTotal || 0
+      rowsCount += entry.rows.length
+    }
+  }
+  return { map, orderNumbers, fboOrderNumbers, totalJ, totalJPos: totalJ, totalRealized, rowsCount, conflicts, sourceFiles: reports.map(report => report.name) }
 }
 
 /**
@@ -6206,9 +6339,10 @@ async function runComparison() {
     return
   }
 
-  const fileInput = document.getElementById('reportFile')
-  if (!fileInput || !fileInput.files || !fileInput.files[0]) {
-    await showAlert('Сначала выберите файл отчёта Ozon (.xlsx)', 'Файл не выбран')
+  const files = window._selectedReportFiles || []
+  const marketplace = window._selectedMarketplace || 'ozon'
+  if (files.length === 0) {
+    await showAlert('Сначала выберите XLSX-отчёт Ozon или Wildberries', 'Файлы не выбраны')
     return
   }
 
@@ -6221,14 +6355,26 @@ async function runComparison() {
     if (!confirmed) return
   }
 
-  const file = fileInput.files[0]
-
   try {
-    const rows = await parseReportFile(file)
-    const version = detectReportVersion(rows)
-    console.debug('[OzonReport] rows count:', rows.length, 'detected version:', 'v' + version)
-
-    const reportResult = buildReportMap(rows, version)
+    const reports = []
+    let rows = []
+    let version = marketplace === 'ozon' ? 1 : 0
+    for (const file of files) {
+      const fileRows = await parseMarketplaceReportFile(file, marketplace)
+      const fileVersion = marketplace === 'ozon' ? detectReportVersion(fileRows) : 0
+      const result = marketplace === 'ozon' ? buildReportMap(fileRows, fileVersion) : buildWbReportMap(fileRows)
+      if (reports.length === 0) {
+        rows = fileRows
+        version = fileVersion
+      }
+      reports.push({ name: file.name, result, version: fileVersion })
+    }
+    const reportResult = mergeReportMaps(reports)
+    if (reportResult.conflicts.length > 0) {
+      const conflict = reportResult.conflicts[0]
+      await showAlert('Заказ ' + conflict.orderKey + ' имеет разные суммы в файлах «' + conflict.firstSource + '» и «' + conflict.secondSource + '». Сверка не запущена.', 'Конфликт отчётов')
+      return
+    }
 
     if (reportResult.orderNumbers.length === 0) {
       // Собираем отладочную информацию
@@ -6290,8 +6436,11 @@ async function runComparison() {
     window._reportMeta = {
       totalJ: reportResult.totalJ,
       totalJPos: reportResult.totalJPos,
+      totalRealized: reportResult.totalRealized || 0,
       rowsCount: reportResult.rowsCount,
-      version: reportResult.version
+      version: marketplace === 'ozon' ? reports[0].version : 0,
+      marketplace,
+      sourceFiles: reportResult.sourceFiles
     }
     // Сохраняем FBO номера для вывода в отчёте
     window._fboOrderNumbers = reportResult.fboOrderNumbers || []
@@ -6338,6 +6487,28 @@ function compareWithReport(reportMap) {
   // Данные о частичных возвратах для детального анализа
   const partialDetails = []
 
+  // Полный возврат определяется не только суммой: API может вернуть неполную
+  // или округлённую returnSum. Частичный возврат сохраняем, если есть сумма
+  // возврата, но нет явного признака полного возврата.
+  const isFullReturn = (order, sum) => {
+    if (order.isCancelled) return true
+    const statusName = [
+      order.statusName,
+      order.ozonStatus,
+      order.returnName
+    ].filter(Boolean).join(' ').toLowerCase()
+    const explicitFullReturn = Boolean(
+      order.isFullReturn || order.fullReturn || order.status === 'full-return' ||
+      /полный возврат|возврат всей|100\s*%/.test(statusName)
+    )
+    const returnSum = Number(order.returnSum) || 0
+    return Boolean(order.hasReturn && (
+      explicitFullReturn ||
+      returnSum <= TOLERANCE ||
+      returnSum >= sum - TOLERANCE
+    ))
+  }
+
   for (const order of ordersData) {
     if (!order.enabled) continue
 
@@ -6349,6 +6520,7 @@ function compareWithReport(reportMap) {
     totalD += sumD
 
     let jPos = entry ? entry.jPos : 0
+    const realizedTotal = entry ? entry.realizedTotal || 0 : 0
     let diff = sumD - jPos
     let status = ''
     let note = ''
@@ -6357,21 +6529,24 @@ function compareWithReport(reportMap) {
     const hasMarketplaceReturn = !!(order.returnType || order.ozonReturnInfo ||
       (order.ozonReturns && order.ozonReturns.length > 0))
 
-    if (!entry) {
+    const fullReturn = isFullReturn(order, sumD) || (
+      entry && hasMarketplaceReturn && !order.hasReturn && jPos <= TOLERANCE
+    )
+
+    if (fullReturn) {
+      // Полные отмены/возвраты уже обработаны и не являются расхождениями.
+      status = 'return'
+      returnCount++
+      totalJPos += jPos
+      note = order.isCancelled ? 'Отменён в МС' : 'Полный возврат'
+    } else if (!entry) {
       // Заказ есть в МС, но не найден в отчёте
       status = 'missing-in-report'
       missingCount++
       totalJPos += 0
       totalDiff += sumD
-      note = 'Нет в отчёте Ozon'
+      note = 'Нет в отчёте ' + marketplaceName(window._reportMeta?.marketplace || 'ozon')
       diff = sumD
-    } else if (order.isCancelled || (order.hasReturn && (order.returnSum || 0) >= (order.sum || 0) - TOLERANCE)) {
-      // Отменён ИЛИ полный возврат всей суммы (с tolerance)
-      status = 'return'
-      returnCount++
-      totalJPos += jPos
-      totalDiff += diff
-      note = order.isCancelled ? 'Отменён в МС' : 'Полный возврат'
     } else if (order.hasReturn && !order.isCancelled && (order.returnSum || 0) > 0 && (order.returnSum || 0) < (order.sum || 0) - TOLERANCE) {
       // Действительно частичный возврат: сумма возврата больше 0, но меньше суммы заказа
       status = 'partial'
@@ -6415,6 +6590,7 @@ function compareWithReport(reportMap) {
       retF: order.returnSum || 0,
       payG: order.paid || 0,
       jPos,
+      realizedTotal,
       diff,
       status,
       note,
@@ -6488,14 +6664,22 @@ function renderComparisonPanel(stats) {
   const fmt = (n) => (n || 0).toLocaleString('ru-RU')
   const fmtSum = (n) => {
     if (n == null || n === 0) return '—'
-    return fmt(Math.abs(n)) + ' ₽'
+    return (n > 0 ? '' : '') + fmt(Math.abs(n)) + ' ₽'
   }
-  // Форматирует разницу со знаком (+ / −) — чтобы было видно направление расхождения
+  // Форматирует разницу со знаком, чтобы направление расхождения было видно.
   const fmtDiff = (n) => {
     if (n == null) return '—'
     const sign = n > 0 ? '+' : (n < 0 ? '-' : '')
     return sign + fmt(Math.abs(n)) + ' ₽'
   }
+  const marketplace = window._reportMeta?.marketplace || 'ozon'
+  const marketplaceTitle = marketplaceName(marketplace)
+  const sources = window._reportMeta?.sourceFiles || []
+  const reportRealizedTotal = window._reportMeta?.totalRealized || 0
+  const panelTitle = document.getElementById('comparisonPanelTitle')
+  const modalTitle = document.getElementById('comparisonModalTitle')
+  if (panelTitle) panelTitle.textContent = 'Сравнение с отчётом ' + marketplaceTitle
+  if (modalTitle) modalTitle.textContent = '📊 Сравнение с отчётом ' + marketplaceTitle
 
   // Показываем кнопки
   const btnView = document.getElementById('btnViewComparison')
@@ -6506,6 +6690,8 @@ function renderComparisonPanel(stats) {
 
   // ── Сводка (2 колонки) ──
   let html = '<div class="comparison-summary-grid">'
+  html += '<div class="comparison-summary-item"><div class="label">Площадка</div><div class="value">' + escapeHtml(marketplaceTitle) + '</div></div>'
+  html += '<div class="comparison-summary-item"><div class="label">Файлы-источники</div><div class="value">' + escapeHtml(sources.join(', ')) + '</div></div>'
 
   // Total D
   html += '<div class="comparison-summary-item">'
@@ -6515,9 +6701,12 @@ function renderComparisonPanel(stats) {
 
   // Total J+
   html += '<div class="comparison-summary-item">'
-  html += '<div class="label">📄 Total J+ (отчёт Ozon)</div>'
+  html += '<div class="label">📄 Сумма отчёта для сверки (O)</div>'
   html += '<div class="value">' + fmt(summary.totalJPos) + ' ₽</div>'
   html += '</div>'
+  if (marketplace === 'wb') {
+    html += '<div class="comparison-summary-item"><div class="label">💳 WB реализовано (P)</div><div class="value">' + fmt(reportRealizedTotal) + ' ₽</div></div>'
+  }
 
   // Разница
   const diffClass = Math.abs(summary.totalDiff) < 1 ? 'ok' : 'diff'
@@ -6526,7 +6715,7 @@ function renderComparisonPanel(stats) {
   html += '<div class="value ' + diffClass + '">' + fmt(summary.totalDiff) + ' ₽</div>'
   html += '</div>'
 
-  // Совпало (включая полные возвраты — с ними тоже всё ок)
+  // Совпало: полные отмены и возвраты считаются обработанными.
   html += '<div class="comparison-summary-item">'
   html += '<div class="label"><span class="comparison-status-ok"></span> Совпало</div>'
   html += '<div class="value ok">' + (summary.okCount + summary.returnCount) + '</div>'
@@ -6544,7 +6733,7 @@ function renderComparisonPanel(stats) {
   html += '<div class="value missing">' + summary.missingCount + '</div>'
   html += '</div>'
 
-  // Полные возвраты (учтены в «Совпало» — с ними всё ок)
+  // Полные возвраты и отмены — отдельная информационная категория, не расхождение.
   html += '<div class="comparison-summary-item">'
   html += '<div class="label"><span class="comparison-status-return"></span> Полных возвратов (отмены) — ОК</div>'
   html += '<div class="value">' + summary.returnCount + '</div>'
@@ -6566,14 +6755,13 @@ function renderComparisonPanel(stats) {
 
   html += '</div>' // .comparison-summary-grid
 
-  // ── Какие заказы образуют расхождение (разница D − J+ и № заказа) ──
+  // ── Заказы, образующие реальное расхождение ──
   const diffOrders = details.filter(d => d.status === 'mismatch' || d.status === 'partial')
   if (diffOrders.length > 0) {
     html += '<div class="cmp-block-diff">'
-    html += '<strong>⚠️ Расхождение</strong> — разница D − J+ = <strong>' + fmt(summary.totalDiff) + ' ₽</strong> · заказов: <strong>' + diffOrders.length + '</strong><br>'
-    html += '<span style="font-size:0.85rem;color:var(--text-muted);">Номер заказа покупателя — первая строка колонки B скана МойСклад:</span>'
-    html += '<table class="comparison-table">'
-    html += '<thead><tr>'
+    html += '<strong>⚠️ Расхождение</strong> — D − J+ = <strong>' + fmtDiff(summary.totalDiff) + '</strong> · заказов: <strong>' + diffOrders.length + '</strong><br>'
+    html += '<span class="comparison-diff-caption">Полные отмены и полные возвраты в список не включены.</span>'
+    html += '<table class="comparison-table"><thead><tr>'
     html += '<th>№ заказа покупателя</th><th>D (скан)</th><th>J+ (отчёт)</th><th>Δ (D − J+)</th>'
     html += '</tr></thead><tbody>'
     for (const d of diffOrders) {
@@ -6584,8 +6772,7 @@ function renderComparisonPanel(stats) {
       html += '<td class="' + (d.diff < 0 ? 'diff-neg' : 'diff-pos') + '">' + fmtDiff(d.diff) + '</td>'
       html += '</tr>'
     }
-    html += '</tbody></table>'
-    html += '</div>'
+    html += '</tbody></table></div>'
   }
 
   // ── Цветовые блоки ──
@@ -6593,7 +6780,10 @@ function renderComparisonPanel(stats) {
   html += '<div class="cmp-block-total">'
   html += '<strong>💰 Итоговые суммы</strong><br>'
   html += 'Total D (МойСклад): <strong>' + fmt(summary.totalD) + ' ₽</strong><br>'
-  html += 'Total J+ (отчёт): <strong>' + fmt(summary.totalJPos) + ' ₽</strong><br>'
+  html += 'Сумма отчёта для сверки (O): <strong>' + fmt(summary.totalJPos) + ' ₽</strong><br>'
+  if (marketplace === 'wb') {
+      html += 'WB реализовано (P): <strong>' + fmt(reportRealizedTotal) + ' ₽</strong><br>'
+  }
   const diffIcon = Math.abs(summary.totalDiff) < 1 ? '✅' : '⚠️'
   html += 'Разница: <strong>' + fmt(summary.totalDiff) + ' ₽</strong> ' + diffIcon + '<br>'
   html += '</div>'
@@ -6608,7 +6798,7 @@ function renderComparisonPanel(stats) {
     html += '❌ Не найдено в отчёте: <strong>' + summary.missingCount + '</strong><br>'
   }
   if (summary.returnCount > 0) {
-    html += '🔄 Полных возвратов (отмен): <strong>' + summary.returnCount + '</strong> (учтены в «Совпало»)<br>'
+    html += '🔄 Полных возвратов (отмен): <strong>' + summary.returnCount + '</strong> (учтены как ОК)<br>'
   }
   if (summary.marketplaceReturnNoMsCount > 0) {
     html += '🔄 Возвращён на площадке, нет в МС: <strong>' + summary.marketplaceReturnNoMsCount + '</strong><br>'
@@ -6653,7 +6843,9 @@ function renderComparisonPanel(stats) {
   }
 
   // ── Детальный разбор по заказам с расхождениями ──
-  const problemDetails = details.filter(d => d.status !== 'ok' && d.status !== 'return')
+  const problemDetails = details.filter(d =>
+    d.status === 'mismatch' || d.status === 'partial' || d.status === 'missing-in-report' || d.status === 'marketplace-return'
+  )
   if (problemDetails.length > 0) {
     html += '<div class="cmp-section cmp-detail-breakdown">'
     html += '<h4>🔍 Детальный разбор по заказам</h4>'
@@ -6689,7 +6881,7 @@ function renderComparisonPanel(stats) {
       html += '<span class="order-sums">'
       html += 'D: <strong>' + fmtSum(d.sumD) + '</strong> · '
       html += 'J+: <strong>' + fmtSum(d.jPos) + '</strong> · '
-      html += '<span class="' + (d.diff < 0 ? 'diff-neg' : 'diff-pos') + '">Δ ' + fmtDiff(d.diff) + '</span>'
+      html += '<span class="' + (d.diff < 0 ? 'diff-neg' : 'diff-pos') + '">Δ ' + fmtSum(d.diff) + '</span>'
       html += '</span>'
       if (d.orderName) html += '<span class="order-name-small">' + escapeHtml(d.orderName) + '</span>'
       html += '</summary>'
@@ -6980,14 +7172,21 @@ function downloadComparisonReport() {
   var cr = 0
 
   // Заголовок
-  rowsCompare.push(['Номер заказа', 'D (МС)', 'F (возврат)', 'G (платёж)', 'J+ (отчёт)', 'Разница', 'Статус', 'Примечание', 'Позиций в заказе', 'Отгружено'])
+  const marketplace = window._reportMeta?.marketplace || 'ozon'
+  const sources = window._reportMeta?.sourceFiles || []
+  const reportRealizedTotal = window._reportMeta?.totalRealized || 0
+  rowsCompare.push(['Площадка', marketplaceName(marketplace)])
+  rowsCompare.push(['Файлы-источники', sources.join(', ')])
+  rowsCompare.push([])
+  rowsCompare.push(['Номер заказа', 'D (МС)', 'F (возврат)', 'G (платёж)', marketplace === 'wb' ? 'O (цена розничная)' : 'Сумма отчёта', marketplace === 'wb' ? 'P (реализовано WB)' : '', 'Разница', 'Статус', 'Примечание', 'Позиций в заказе', 'Отгружено'])
+  cr = 3
   compareRowStyles[cr] = styleHeader; cr++
 
   // Данные
   for (const d of details) {
     var shippedCount = (d.demandPositions || []).length
     var orderedCount = (d.orderPositions || []).length
-    rowsCompare.push([d.orderKey, d.sumD, d.retF, d.payG, d.jPos, d.diff, d.status, d.note, orderedCount, shippedCount])
+    rowsCompare.push([d.orderKey, d.sumD, d.retF, d.payG, d.jPos, marketplace === 'wb' ? d.realizedTotal : '', d.diff, d.status, d.note, orderedCount, shippedCount])
     // Выбираем стиль строки по статусу
     var rs = styleCell
     if (d.status === 'ok') {
@@ -7029,7 +7228,9 @@ function downloadComparisonReport() {
   var numDetailCols = detailCols.length
 
   // Фильтруем только проблемные заказы
-  const problemDetails = details.filter(d => d.status !== 'ok' && d.status !== 'return')
+  const problemDetails = details.filter(d =>
+    d.status === 'mismatch' || d.status === 'partial' || d.status === 'missing-in-report' || d.status === 'marketplace-return'
+  )
 
   if (problemDetails.length === 0) {
     rowsDetail.push(['Нет заказов с расхождениями — все совпадают.'])
@@ -7156,15 +7357,20 @@ function downloadComparisonReport() {
 
   // ── Итоги ──
   summarySectionTitle('💰 ИТОГОВЫЕ СУММЫ')
+  summaryDataRow('Площадка:', marketplaceName(marketplace))
+  summaryDataRow('Файлы-источники:', sources.join(', '))
   summaryDataRow('Total D (МойСклад):', fmtNum(summary.totalD) + ' ₽')
-  summaryDataRow('Total J+ (отчёт Ozon):', fmtNum(summary.totalJPos) + ' ₽')
+  summaryDataRow('Сумма отчёта для сверки (O):', fmtNum(summary.totalJPos) + ' ₽')
+  if (marketplace === 'wb') {
+  summaryDataRow('WB реализовано (P):', fmtNum(reportRealizedTotal) + ' ₽')
+  }
   var diffIcon = Math.abs(summary.totalDiff) < 1 ? '✅' : '⚠️'
   summaryDataRow('Разница (D − J+):', fmtNum(summary.totalDiff) + ' ₽ ' + diffIcon)
   summaryBlankRow()
 
   // ── Анализ ──
   summarySectionTitle('📊 АНАЛИЗ')
-  summaryDataRow('✅ Совпало (включая полные возвраты):', String(summary.okCount + summary.returnCount))
+   summaryDataRow('✅ Совпало (включая полные возвраты):', String(summary.okCount + summary.returnCount))
   if (summary.mismatchCount + summary.partialCount > 0) {
     summaryDataRow('⚠️ Расхождений / частичных:', String(summary.mismatchCount + summary.partialCount))
   }
@@ -7172,7 +7378,7 @@ function downloadComparisonReport() {
     summaryDataRow('❌ Не найдено в отчёте:', String(summary.missingCount))
   }
   if (summary.returnCount > 0) {
-    summaryDataRow('🔄 Полных возвратов (отмен) — учтены в «Совпало»:', String(summary.returnCount))
+     summaryDataRow('🔄 Полных возвратов (отмен) — учтены как ОК:', String(summary.returnCount))
   }
   summaryBlankRow()
 
@@ -7429,4 +7635,3 @@ async function recompareAfterActions() {
   // Рендерим обновлённый модал
   renderComparisonPanel(updatedResult)
 }
-

@@ -84,19 +84,34 @@
     <button class="btn btn-ms" onclick="checkNumbers()"><img class="btn-icon" src="images/marketplace/ms-favicon.svg"> Поиск</button>
     <button onclick="abortCheck()" id="abortBtn" class="abort-btn" style="display:none">✕ Отмена</button>
 </div>
-<!-- Ozon report comparison row -->
+<!-- Выбор отчётов маркетплейсов для сверки -->
 <div class="compare-row">
-  <input type="file" id="reportFile" accept=".xlsx" hidden>
-  <button class="btn btn-ozon btn-small" onclick="document.getElementById('reportFile').click()">
-    📄 Выбрать отчёт Ozon
-  </button>
-  <span id="reportFilePath">файл не выбран</span>
-  <button class="btn btn-ozon btn-small" onclick="refreshOzonCache()" title="Обновляет кэш статусов Ozon (2ч TTL). Нажмите перед сравнением для актуальных статусов.">🔄 Обновить Ozon</button>
+   <input type="file" id="reportFile" accept=".xlsx" multiple hidden>
+   <input type="file" id="reportFolder" accept=".xlsx" webkitdirectory multiple hidden>
+   <input type="file" id="wbReportFiles" accept=".xlsx" multiple hidden>
+   <input type="file" id="wbReportFolder" accept=".xlsx" webkitdirectory multiple hidden>
+   <div class="report-pickers-row">
+     <div class="report-picker">
+       <button class="btn btn-ozon btn-small report-picker-btn" onclick="toggleReportPicker('ozon', event)">📄 Отчёты Ozon ▾</button>
+       <div class="report-picker-menu" id="reportPickerOzon">
+         <button type="button" onclick="pickReportFiles('ozon')">📄 Выбрать файлы</button>
+         <button type="button" onclick="pickReportFolder('ozon')">📁 Выбрать папку</button>
+       </div>
+     </div>
+     <div class="report-picker">
+       <button class="btn btn-wb btn-small report-picker-btn" onclick="toggleReportPicker('wb', event)">📄 Отчёты WB ▾</button>
+       <div class="report-picker-menu" id="reportPickerWb">
+         <button type="button" onclick="pickReportFiles('wb')">📄 Выбрать файлы</button>
+         <button type="button" onclick="pickReportFolder('wb')">📁 Выбрать папку</button>
+       </div>
+     </div>
+   </div>
+   <span id="reportFilePath">файлы не выбраны</span>
   <div class="compare-buttons">
-    <button class="btn btn-accent btn-small" onclick="runComparison()">🔍 Сравнить</button>
+    <button class="btn btn-accent btn-small" onclick="runComparison()">🔍 Сканировать отчёт</button>
+    <button class="btn btn-ozon btn-small" onclick="refreshOzonCache()" title="Обновляет кэш статусов Ozon (2ч TTL). Нажмите перед сравнением для актуальных статусов.">🔄 Обновить Ozon</button>
     <button class="btn btn-ozon btn-small" id="btnViewComparison" onclick="openComparisonModal()" style="display:none">📊 Посмотреть сравнение</button>
   </div>
-  <button onclick="refreshNotFoundOrders()" class="btn btn-accent btn-small" style="width:100%;margin-top:4px" title="Повторно ищет в МС все заказы со статусом «Не найден»">⟳ Не найденные</button>
 </div>
           </div>
         </div>
@@ -147,6 +162,7 @@
           <button onclick="createAllPayments()" class="btn btn-payment">Платёж</button>
           <button onclick="batchAction('return')" class="btn btn-return">Возврат</button>
           <button onclick="batchAction('cancel')" class="btn btn-cancel">Отмена</button>
+          <button onclick="refreshNotFoundOrders()" class="btn btn-accent btn-small bulk-wide" title="Повторно ищет в МС все заказы со статусом «Не найден»">⟳ Не найденные</button>
         </div>
 
         <!-- After action stats — отдельно: на планшете под bulk-actions, на десктопе между ними -->
@@ -171,7 +187,7 @@
           </div>
           <!-- Ozon report comparison results -->
           <div class="stats-panel stats-comparison" id="comparisonPanel" style="display:none">
-            <div class="stats-header">Сравнение с отчётом Ozon</div>
+            <div class="stats-header" id="comparisonPanelTitle">Сравнение с отчётом</div>
             <div id="comparisonOutput" class="stats-output"></div>
           </div>
         </div>
@@ -471,7 +487,7 @@
     <div id="comparisonModal" class="modal-overlay">
       <div class="modal-dialog comparison-modal-dialog">
         <div class="modal-header">
-          <h3>📊 Сравнение с отчётом Ozon</h3>
+          <h3 id="comparisonModalTitle">📊 Сравнение с отчётом</h3>
         </div>
         <div class="modal-body comparison-modal-body">
           <div id="comparisonModalContent"></div>
@@ -489,7 +505,7 @@
 
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="sticker.js"></script>
-    <script src="app.js?v=1.0.8"></script>
+    <script src="app.js?v=1.0.7"></script>
     <!-- Inline Script: Tab Switching, Modal Handlers, Image Sync -->
     <script>
       // Tab switching logic

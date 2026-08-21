@@ -1,9 +1,9 @@
 [
   {
-    "version": "1.9.2",
-    "date": "2026-08-13",
+    "version": "1.10.0",
+    "date": "2026-08-21",
     "changes": [
-      "3 files changed, 57 insertions(+), 14 deletions(-)"
+      "9 files changed, 490 insertions(+), 137 deletions(-)"
     ]
   },
   {
