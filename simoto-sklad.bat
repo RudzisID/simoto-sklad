@@ -3,6 +3,12 @@ cd /d "%~dp0"
 set "_batfile=%~f0"
 title SiMOTO-Sklad
 
+:: Лог запуска — диагностика внезапного закрытия окна
+if not exist "logs" mkdir logs
+set "LOG=logs\launcher.log"
+>> "%LOG%" echo ===============================================
+>> "%LOG%" echo [%date% %time%] Launcher started
+
 :: Вспомогательная функция для цветного вывода через PowerShell
 set "PSCMD=powershell -NoProfile -Command"
 
@@ -30,6 +36,7 @@ if not exist "node" mkdir node
 
 %PSCMD% "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri 'https://nodejs.org/dist/v24.18.0/node-v24.18.0-win-x64.zip' -OutFile '%TEMP%\node-portable.zip' -UseBasicParsing -ErrorAction Stop } catch { Write-Host '[X] Download failed' -ForegroundColor Red; exit 1 }"
 if errorlevel 1 (
+    >> "%LOG%" echo [%date% %time%] ERROR: Node.js download failed
     %PSCMD% "Write-Host '[X] Failed to download Node.js!' -ForegroundColor Red"
     %PSCMD% "Write-Host '  Download from https://nodejs.org' -ForegroundColor Yellow"
     pause
@@ -38,6 +45,7 @@ if errorlevel 1 (
 
 %PSCMD% "$ProgressPreference='SilentlyContinue'; try { Expand-Archive -Path '%TEMP%\node-portable.zip' -DestinationPath 'node' -Force -ErrorAction Stop } catch { Write-Host '[X] Extract failed' -ForegroundColor Red; exit 1 }"
 if errorlevel 1 (
+    >> "%LOG%" echo [%date% %time%] ERROR: Node.js extract failed
     %PSCMD% "Write-Host '[X] Failed to extract Node.js!' -ForegroundColor Red"
     pause
     exit /b 1
@@ -50,6 +58,7 @@ if exist "node\node-v24.18.0-win-x64" (
 del "%TEMP%\node-portable.zip" >nul 2>&1
 
 if not exist "node\node.exe" (
+    >> "%LOG%" echo [%date% %time%] ERROR: node.exe not found after extraction
     %PSCMD% "Write-Host '[X] node.exe not found after extraction!' -ForegroundColor Red"
     pause
     exit /b 1
@@ -65,6 +74,7 @@ if not exist "node_modules" (
     %PSCMD% "Write-Host '[!] Installing dependencies...' -ForegroundColor Yellow"
     call npm install
     if errorlevel 1 (
+        >> "%LOG%" echo [%date% %time%] ERROR: npm install failed
         %PSCMD% "Write-Host '[X] npm install failed!' -ForegroundColor Red"
         pause
         exit /b 1
@@ -121,6 +131,7 @@ echo.
 %PSCMD% "Write-Host ('[i] Updating to version ' + '%NEW_TAG%' + '...') -ForegroundColor Cyan"
 node scripts/update.js %NEW_TAG%
 if errorlevel 1 (
+    >> "%LOG%" echo [%date% %time%] ERROR: update to %NEW_TAG% failed
     %PSCMD% "Write-Host '[X] Update failed!' -ForegroundColor Red"
     pause
     exit /b 1
@@ -136,7 +147,7 @@ del "%TEMP%\ver_check.txt" >nul 2>&1
 :start_server
 :: Generate HTTPS certificate if missing
 if not exist "cert\key.pem" (
-    %PSCMD% "Write-Host '[i] Generating HTTPS certificate for camera...' -ForegroundColor Cyan
+    %PSCMD% "Write-Host '[i] Generating HTTPS certificate for camera...' -ForegroundColor Cyan"
     powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\generate-cert.ps1" >nul 2>&1
 )
 :: Show HTTPS info
@@ -150,9 +161,11 @@ set "ip=%ip: =%"
 
 :: Start server
 echo.
-%PSCMD% "Write-Host '[i] Starting server...' -ForegroundColor Cyan
+%PSCMD% "Write-Host '[i] Starting server...' -ForegroundColor Cyan"
+>> "%LOG%" echo [%date% %time%] Starting server
 start http://localhost:3000
 node server.js
+>> "%LOG%" echo [%date% %time%] Server exited
 
 echo.
 %PSCMD% "Write-Host '[OK] Server stopped' -ForegroundColor Yellow"

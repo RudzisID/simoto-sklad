@@ -6755,6 +6755,19 @@ function renderComparisonPanel(stats) {
 
   html += '</div>' // .comparison-summary-grid
 
+  // ── Разбивка по статусам (как в калькуляторе) ──
+  const calc = calculateStats(ordersData)
+  html += '<div class="cmp-block-total">'
+  html += '<strong>📊 Разбивка по статусам (калькулятор)</strong><br>'
+  html += 'Отгрузок: <strong>' + calc.demandCount + '</strong> · ' + fmt(calc.demandSum) + ' ₽<br>'
+  html += 'Оплачено: <strong>' + calc.paymentCount + '</strong> · ' + fmt(calc.paymentSum) + ' ₽<br>'
+  if (calc.returnCount > 0) html += 'Возвраты: <strong>' + calc.returnCount + '</strong> · ' + fmt(calc.returnSum) + ' ₽<br>'
+  if (calc.cancelledCount > 0) html += 'Отмены: <strong>' + calc.cancelledCount + '</strong> · ' + fmt(calc.cancelledSum) + ' ₽<br>'
+  if (calc.errorCount > 0) html += 'Ошибки: <strong>' + calc.errorCount + '</strong> · ' + fmt(calc.errorSum) + ' ₽<br>'
+  if (calc.notFoundCount > 0) html += 'Не найдено: <strong>' + calc.notFoundCount + '</strong><br>'
+  html += '<span style="font-size:0.8rem;color:var(--text-muted);">Отгрузки = Оплачено + Возвраты + Отмены. Возвраты и отмены уже обработаны и не создают расхождение.</span>'
+  html += '</div>'
+
   // ── Заказы, образующие реальное расхождение ──
   const diffOrders = details.filter(d => d.status === 'mismatch' || d.status === 'partial')
   if (diffOrders.length > 0) {
@@ -7380,6 +7393,18 @@ function downloadComparisonReport() {
   if (summary.returnCount > 0) {
      summaryDataRow('🔄 Полных возвратов (отмен) — учтены как ОК:', String(summary.returnCount))
   }
+  summaryBlankRow()
+
+  // ── Разбивка по статусам (как в калькуляторе) ──
+  const calcStats = calculateStats(ordersData)
+  summarySectionTitle('📊 РАЗБИВКА ПО СТАТУСАМ (КАЛЬКУЛЯТОР)')
+  summaryDataRow('Отгрузок:', String(calcStats.demandCount) + ' · ' + fmtNum(calcStats.demandSum) + ' ₽')
+  summaryDataRow('Оплачено:', String(calcStats.paymentCount) + ' · ' + fmtNum(calcStats.paymentSum) + ' ₽')
+  if (calcStats.returnCount > 0) summaryDataRow('Возвраты:', String(calcStats.returnCount) + ' · ' + fmtNum(calcStats.returnSum) + ' ₽')
+  if (calcStats.cancelledCount > 0) summaryDataRow('Отмены:', String(calcStats.cancelledCount) + ' · ' + fmtNum(calcStats.cancelledSum) + ' ₽')
+  if (calcStats.errorCount > 0) summaryDataRow('Ошибки:', String(calcStats.errorCount) + ' · ' + fmtNum(calcStats.errorSum) + ' ₽')
+  if (calcStats.notFoundCount > 0) summaryDataRow('Не найдено:', String(calcStats.notFoundCount))
+  summaryDataRow('Пояснение:', 'Отгрузки = Оплачено + Возвраты + Отмены. Возвраты и отмены уже обработаны и не создают расхождение.')
   summaryBlankRow()
 
   // ── Частичные возвраты ──
