@@ -434,6 +434,23 @@ module.exports = function(deps) {
       ? ozon.refreshIfStale(ozonClientId, ozonApiKey, ulog).catch(e => ulog(`Ozon cache refresh error: ${e.message}`))
       : Promise.resolve()
 
+    // Ленивое ожидание фонового обновления кэшей WB/Ozon.
+    // Без него поиск по холодному кэшу проигрывает гонку с refreshIfStale:
+    // findInCache вызывается до заполнения кэша и возвращает null
+    // (отсюда пропавшие wbTotalPrice/srid в fallback-результатах).
+    // Идемпотентно — фактическое ожидание происходит один раз на запрос.
+    let cachesAwaited = false
+    /**
+     * Дождаться завершения фонового обновления кэшей WB и Ozon (один раз).
+     * @returns {Promise<void>}
+     */
+    async function ensureCachesReady() {
+      if (cachesAwaited) return
+      await wbRefreshPromise
+      await ozonRefreshPromise
+      cachesAwaited = true
+    }
+
     req.on('close', () => {
       ulog('Unified-Search SSE: client disconnected')
       if (abortId) abortSignals.set(abortId, true)
@@ -630,6 +647,7 @@ module.exports = function(deps) {
           }
 
           if (orderResult && orderResult.orderId && !marketplaceData) {
+            await ensureCachesReady()
             if (marketplace === 'wb') {
               marketplaceData = wb.findInCache(code)
               if (!marketplaceData && orderResult.extractedShipmentNum && orderResult.extractedShipmentNum !== code) {
@@ -647,6 +665,9 @@ module.exports = function(deps) {
           }
 
           if (!orderResult || !orderResult.foundBy) {
+            // Fallback-поиск по кэшу WB/Ozon требует актуального кэша —
+            // ждём завершения фонового refreshIfStale (иначе гонка при холодном кэше)
+            await ensureCachesReady()
             const ozonData = ozon.findInCache(code)
             if (ozonData) {
               marketplace = 'ozon'

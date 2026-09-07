@@ -5422,6 +5422,9 @@ async function supplyBatchAction(action) {
     if (row) row.classList.add('processing')
   })
 
+  // Успешно обработанные поставки — удаляются из списка после завершения операции
+  var processedShipments = new Set()
+
   try {
     const response = await fetch('/api/batch/stream', {
       method: 'POST',
@@ -5470,6 +5473,7 @@ async function supplyBatchAction(action) {
                 if (idx !== -1) {
                   // --- Обновить поля suppliesData по статусу результата ---
                   if (result.status === 'created') {
+                    processedShipments.add(result.shipmentNum)
                     if (action === 'demand') {
                       suppliesData[idx].hasDemand = true
                       suppliesData[idx].demandName = result.demandName || null
@@ -5553,6 +5557,18 @@ async function supplyBatchAction(action) {
               }
               // Обновить статистику поставок после массовой операции
               renderSuppliesStats()
+              // Удалить успешно обработанные строки из списка поставок
+              // (как при одиночных действиях supplySingleAction): отменённые и
+              // отгруженные больше не требуют действий и не должны засорять список.
+              // Строки с ошибками остаются с пометкой ❌ для повторной обработки.
+              if (processedShipments.size > 0) {
+                suppliesData = suppliesData.filter(function(o) {
+                  return !processedShipments.has(o.shipmentNum)
+                })
+                saveSuppliesState()
+                renderSuppliesTable()
+                renderSuppliesStats()
+              }
             } else if (data.type === 'aborted') {
               document.querySelectorAll('#suppliesTableBody tr.processing').forEach(function(el) { el.classList.remove('processing') })
               const elapsed = stopOperationTimer()
