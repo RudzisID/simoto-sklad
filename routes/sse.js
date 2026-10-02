@@ -2,7 +2,7 @@
 
 const express = require('express')
 
-const { setupSSE, checkAbort, sendSSE, endSSE, makeOnProgress } = require('../lib/sse-helper')
+const { setupSSE, checkAbort, sendSSE, waitDrain, startHeartbeat, endSSE, makeOnProgress } = require('../lib/sse-helper')
 const { processBatch } = require('../lib/batch')
 const { checkOrder, parsePositions } = require('../lib/check')
 const {
@@ -374,24 +374,25 @@ module.exports = function(deps) {
 
   // ─── SSE: Unified search ───
   /**
-   * GET /sse/unified-search/stream — Универсальный SSE-поиск заказов по МС + WB + Ozon
+   * GET/POST /sse/unified-search/stream — Универсальный SSE-поиск заказов по МС + WB + Ozon
    * 
    * @header {string} [x-api-token] - Токен API МойСклад
    * @header {string} [x-wb-token] - Токен API Wildberries
    * @header {string} [x-ozon-client-id] - Client-ID Ozon
    * @header {string} [x-ozon-api-key] - API-Key Ozon
-   * @query {string} numbers - Коды для поиска через запятую
-   * @query {string} [abortId] - ID для отмены
+   * @query {string} numbers - Коды для поиска через запятую (совместимость с GET)
+   * @body {string[]} numbers - Коды для поиска (POST)
+   * @body {string} [abortId] - ID для отмены (POST)
    * 
    * События: progress, done, error, aborted
    */
-  router.get('/unified-search/stream', async (req, res) => {
+  const unifiedSearchHandler = async (req, res) => {
     const msToken = req.headers['x-api-token']
     const wbToken = req.headers['x-wb-token']
     const ozonClientId = req.headers['x-ozon-client-id']
     const ozonApiKey = req.headers['x-ozon-api-key']
-    const numbersParam = req.query.numbers
-    const abortId = req.query.abortId
+    const numbersParam = req.method === 'POST' ? req.body?.numbers : req.query.numbers
+    const abortId = req.method === 'POST' ? req.body?.abortId : req.query.abortId
 
     /**
      * Локальный логгер для unified-search с префиксом [Unified-Search]
@@ -403,11 +404,20 @@ module.exports = function(deps) {
       ulog('No tokens — returning 401')
       return res.status(401).json({ error: 'Требуется хотя бы один токен: МС (x-api-token), WB (x-wb-token) или Ozon (x-ozon-client-id + x-ozon-api-key)' })
     }
-    if (!numbersParam) {
+    if (numbersParam == null || numbersParam === '') {
       return res.status(400).json({ error: 'Требуется параметр numbers (через запятую)' })
     }
 
-    const numbers = numbersParam.split(',').map(n => n.replace(/[\p{Z}\p{C}]+/gu, '').trim()).filter(Boolean)
+    const numberValues = Array.isArray(numbersParam)
+      ? numbersParam
+      : typeof numbersParam === 'string'
+        ? numbersParam.split(',')
+        : null
+    if (!numberValues || numberValues.some(n => typeof n !== 'string' && typeof n !== 'number')) {
+      return res.status(400).json({ error: 'Параметр numbers должен быть строкой или массивом строк' })
+    }
+
+    const numbers = numberValues.map(n => String(n).replace(/[\p{Z}\p{C}]+/gu, '').trim()).filter(Boolean)
     if (numbers.length === 0) {
       return res.status(400).json({ error: 'Пустой массив numbers' })
     }
@@ -425,6 +435,10 @@ module.exports = function(deps) {
       ulog('=== Unified-Search SSE: aborted before start ===')
       return
     }
+
+    // Heartbeat запускается ВНУТРИ основного try (см. ниже): синхронный throw
+    // до try не должен оставлять висеть интервал; stopHeartbeat гарантирован в finally.
+    let stopHeartbeat = null
 
     // Запускаем обновление кэша WB/Ozon фоном — не блокирует sequential search
     const wbRefreshPromise = wbToken
@@ -451,7 +465,8 @@ module.exports = function(deps) {
       cachesAwaited = true
     }
 
-    req.on('close', () => {
+    res.on('close', () => {
+      if (res.writableEnded) return
       ulog('Unified-Search SSE: client disconnected')
       if (abortId) abortSignals.set(abortId, true)
     })
@@ -608,6 +623,9 @@ module.exports = function(deps) {
     const total = numbers.length
 
     try {
+      // Heartbeat `: ping` держит idle-соединение живым (клиент игнорирует строки без 'data: ')
+      stopHeartbeat = startHeartbeat(res)
+
       for (let i = 0; i < numbers.length; i++) {
         const code = numbers[i]
 
@@ -700,21 +718,26 @@ module.exports = function(deps) {
             })
           }
 
-          sendSSE(res, {
+          // Backpressure: при переполнении буфера ждём 'drain' до следующего числа
+          if (!sendSSE(res, {
             type: 'progress',
             order: orderData,
             index: processed + 1,
             total
-          })
+          })) {
+            await waitDrain(res)
+          }
           // Legacy result event retained for clients that consume the pre-progress protocol.
-          sendSSE(res, {
+          if (!sendSSE(res, {
             type: 'result',
             code,
             order: orderData,
             notFound: !orderResult && !marketplaceData,
             processed: processed + 1,
             total
-          })
+          })) {
+            await waitDrain(res)
+          }
         } catch (e) {
           ulog(`Error processing ${code}: ${e.stack}`)
           let orderData
@@ -735,20 +758,25 @@ module.exports = function(deps) {
               wbCompletedDt: '', wbOrderDt: '', wbSubjectName: '', wbStatus: ''
             }
           }
-          sendSSE(res, {
+          // Backpressure: при переполнении буфера ждём 'drain' до следующего числа
+          if (!sendSSE(res, {
             type: 'progress',
             order: orderData,
             index: processed + 1,
             total
-          })
-          sendSSE(res, {
+          })) {
+            await waitDrain(res)
+          }
+          if (!sendSSE(res, {
             type: 'result',
             code,
             order: orderData,
             notFound: !orderResult,
             processed: processed + 1,
             total
-          })
+          })) {
+            await waitDrain(res)
+          }
           errors++
         }
 
@@ -762,9 +790,14 @@ module.exports = function(deps) {
       ulog(`Unified-Search fatal error: ${e.message}`)
       sendSSE(res, { type: 'error', error: e.message })
     } finally {
-      res.end()
+      if (stopHeartbeat) stopHeartbeat()
+      // Guard: на abort-пути endSSE уже завершил ответ — повторный end недопустим
+      if (!res.writableEnded) res.end()
     }
-  })
+  }
+
+  router.get('/unified-search/stream', unifiedSearchHandler)
+  router.post('/unified-search/stream', unifiedSearchHandler)
 
   // ─── SSE: Batch operations ───
   /**
@@ -1005,7 +1038,7 @@ module.exports = function(deps) {
         .then(() => ozonLog('Ozon-Return: cache refresh completed'))
         .catch(e => ozonLog(`Ozon-Return: cache refresh error: ${e.message}`))
 
-      let processed = 0
+      let processed = 0, errors = 0
       const total = returnCodes.length
       let missed = []
 
@@ -1149,6 +1182,7 @@ module.exports = function(deps) {
 
           const found = ozon.findInCache(code)
           if (!found) {
+            errors++
             sendSSE(res, {
               type: 'error', code,
               error: 'Возврат не найден в кэше Ozon',

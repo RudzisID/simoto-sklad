@@ -212,6 +212,59 @@ function stopOperationTimer() {
 }
 
 /**
+ * Создаёт helper батчинга тяжёлых UI-обновлений через requestAnimationFrame.
+ * Разделяет приём SSE-событий и отрисовку: enqueue() накапливает запрос на
+ * обновление, а renderFn выполняется не чаще одного раза за кадр.
+ * flushPending() синхронно применяет накопленное (для done/aborted/finally),
+ * ожидание кадра при этом не требуется. Внутреннее состояние батчера
+ * (scheduled/pending/rafId) сбрасывается ДО вызова renderFn, поэтому исключение
+ * в рендере не ломает планировщик; очередь вызывающего (pendingRows) он обязан
+ * очищать сам через try/finally.
+ *
+ * @param {Function} renderFn - Функция обновления UI, вызываемая не чаще кадра
+ * @returns {{ enqueue: function(): void, flushPending: function(): void }} Интерфейс батчера
+ */
+function createBatchedUi(renderFn) {
+  const hasRaf =
+    typeof requestAnimationFrame === 'function' && typeof cancelAnimationFrame === 'function'
+  let scheduled = false
+  let pending = false
+  let rafId = null
+
+  /** Применяет накопленное обновление и сбрасывает планировщик */
+  const applyPending = () => {
+    scheduled = false
+    rafId = null
+    if (!pending) return
+    pending = false
+    renderFn()
+  }
+
+  return {
+    /** Ставит в очередь запрос на обновление UI (не раньше следующего кадра) */
+    enqueue() {
+      pending = true
+      if (scheduled) return
+      scheduled = true
+      rafId = hasRaf ? requestAnimationFrame(applyPending) : setTimeout(applyPending, 16)
+    },
+    /** Синхронно применяет pending-обновление без ожидания кадра */
+    flushPending() {
+      if (rafId !== null) {
+        if (hasRaf) cancelAnimationFrame(rafId)
+        else clearTimeout(rafId)
+        rafId = null
+      }
+      scheduled = false
+      if (pending) {
+        pending = false
+        renderFn()
+      }
+    }
+  }
+}
+
+/**
  * Обновляет отображение таймера в DOM-элементе #operationTimer.
  *
  * @param {string} timeStr - Строка времени в формате "М:СС"
@@ -411,17 +464,20 @@ async function loadOrdersState() {
  * @param {string} action - Тип действия (payment_created, demand_created, etc.)
  * @param {string} result - Результат (имя документа или ошибка)
  * @param {Object} [extraData={}] - Дополнительные данные (returnSum, cancelledSum)
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} true если сервер подтвердил сохранение
  */
 async function saveOrderAction(shipmentNum, action, result, extraData = {}) {
   try {
-    await fetch('/api/orders-state', {
+    const response = await fetch('/api/orders-state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ shipmentNum, action, result, ...extraData })
     })
+    if (!response.ok) return false
+    return (await response.json()).success === true
   } catch (e) {
     console.error('Error saving order action:', e)
+    return false
   }
 }
 
@@ -546,7 +602,6 @@ async function loadSavedOrders() {
 function loadSavedOrdersAndRender() {
   currentPage = 0
   loadSavedOrders().then(function (orders) {
-    mismatchFilterOrders = null
     ordersData = orders
     renderTable()
     updateTotals()
@@ -765,19 +820,28 @@ async function checkNumbers() {
   let fetchTimeout = null
   window.__fetchTimeout = false
 
+  // ── Состояние SSE-цикла, доступное в finally ──
+  // Приём событий отделён от отрисовки: тяжёлые DOM-операции идут через
+  // rAF-батчинг (scanUi), watchdog сигнализирует о тишине сервера,
+  // doneReceived фиксирует штатное завершение потока терминальным событием,
+  // catchReported — что catch уже показал финальный статус (не перезаписывать).
+  let scanUi = null
+  let sseWatchdog = null
+  let doneReceived = false
+  let catchReported = false
+
   try {
     // Создаём AbortController и AbortId для сервера
     currentController = new AbortController()
     const abortId = Math.random().toString(36).substring(2, 15)
     window.__currentAbortId = abortId // Сохраняем для abortCheck()
 
-    // SSE URL с параметрами
+    // Передаём список в JSON, чтобы длинные отчёты не упирались в лимит длины URL.
     const msToken = loadToken() || ''
     const wbToken = localStorage.getItem('wb_token') || ''
     const ozonClientId = localStorage.getItem('ozon_client_id') || ''
     const ozonApiKey = localStorage.getItem('ozon_api_key') || ''
-    const numbersParam = encodeURIComponent(numbers.join(','))
-    const url = `/api/unified-search/stream?numbers=${numbersParam}&abortId=${abortId}`
+    const url = '/api/unified-search/stream'
 
     // Таймаут 10с — если сервер не ответил, прерываем
     fetchTimeout = setTimeout(() => {
@@ -786,13 +850,16 @@ async function checkNumbers() {
     }, 10000)
 
     const response = await fetch(url, {
+      method: 'POST',
       signal: currentController.signal,
       headers: {
+        'Content-Type': 'application/json',
         'x-api-token': msToken,
         'x-wb-token': wbToken,
         'x-ozon-client-id': ozonClientId,
         'x-ozon-api-key': ozonApiKey
-      }
+      },
+      body: JSON.stringify({ numbers, abortId })
     })
     clearTimeout(fetchTimeout)
     fetchTimeout = null
@@ -808,9 +875,49 @@ async function checkNumbers() {
     const decoder = new TextDecoder()
     let buffer = ''
 
+    // Очередь pending-строк + последний index прогресса: отрисовка не чаще кадра
+    let pendingRows = []
+    let lastProgress = null
+    scanUi = createBatchedUi(() => {
+      try {
+        if (lastProgress) {
+          document.getElementById('statusText').textContent =
+            `Загружено ${lastProgress.index}/${lastProgress.total}`
+        }
+        for (const row of pendingRows) appendOrderRow(row)
+        updateTotals()
+        renderCurrentStats(true)
+      } finally {
+        // Очередь очищается даже при исключении в рендере — иначе
+        // строки задублируются на следующем кадре/flush
+        pendingRows = []
+      }
+    })
+
+    // Watchdog: нет событий >30 с при активной работе — явный сигнал вместо тихого зависания.
+    // Компромисс: lastEventAt сбрасывается на ЛЮБОМ чанке, включая heartbeat-комментарии
+    // сервера (`: ping`). Поэтому сигнал ловит гибель соединения/остановку потока,
+    // но не «зависший» серверный цикл: пока event loop жив, ping'и идут и watchdog молчит.
+    let lastEventAt = Date.now()
+    let stallNotified = false
+    sseWatchdog = setInterval(() => {
+      if (Date.now() - lastEventAt > 30000) {
+        if (!stallNotified) {
+          showStatus('Сервер не отвечает…')
+          stallNotified = true
+        }
+      } else {
+        stallNotified = false
+      }
+    }, 5000)
+
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+
+      // Каждый чанк — признак живости сервера: сбрасываем watchdog
+      lastEventAt = Date.now()
+      stallNotified = false
 
       buffer += decoder.decode(value, { stream: true })
 
@@ -828,7 +935,7 @@ async function checkNumbers() {
               // (первое событие — 'Поиск...' без поля order)
               if (!data.order) continue
 
-              // Получен промежуточный результат
+              // Промежуточный результат: приём в данные — сразу, без ожидания кадра
               const order = data.order
 
               const orderData = {
@@ -838,21 +945,21 @@ async function checkNumbers() {
 
               ordersData.push(orderData)
 
-              // Обновляем статус
-              document.getElementById('statusText').textContent =
-                `Загружено ${data.index}/${data.total}`
-
-              // Добавляем строку в таблицу
-              appendOrderRow(orderData)
-
-              // Обновляем статистику после каждой строки (с force=true для realtime)
-              updateTotals()
-              renderCurrentStats(true)
+              // Статус, строки таблицы и статистика — батчем через rAF (не чаще кадра).
+              // Счётчик обновляется по последнему index из pending-очереди.
+              pendingRows.push(orderData)
+              lastProgress = { index: data.index, total: data.total }
+              scanUi.enqueue()
 
               // Небольшая задержка для визуализации (30ms) — закомментировано для скорости
               // await new Promise(r => setTimeout(r, 30))
             } else if (data.type === 'done') {
               // Завершено
+              doneReceived = true
+
+              // Принудительно применяем pending-отрисовку до финальной логики
+              scanUi.flushPending()
+
               console.log('SSE done, total:', data.orders?.length)
 
               // Останавливаем секундомер
@@ -904,6 +1011,11 @@ async function checkNumbers() {
               document.querySelector('.stats-final').classList.remove('scanning')
             } else if (data.type === 'aborted') {
               // Прервано пользователем
+              doneReceived = true
+
+              // Принудительно применяем pending-отрисовку до финальной логики
+              scanUi.flushPending()
+
               console.log('SSE aborted, processed:', data.processed)
 
               // Останавливаем секундомер
@@ -925,6 +1037,8 @@ async function checkNumbers() {
               // Убираем анимацию сканирования
               document.querySelector('.stats-final').classList.remove('scanning')
             } else if (data.type === 'error') {
+              doneReceived = true
+              scanUi.flushPending()
               hideProgress(false, data.error)
               document.querySelector('.stats-final')?.classList.remove('scanning')
               return
@@ -937,6 +1051,8 @@ async function checkNumbers() {
     }
   } catch (e) {
     clearTimeout(fetchTimeout)
+    // catch уже отчитался финальным статусом — recovery в finally не должен его перезаписывать
+    catchReported = true
     if (e.name === 'AbortError') {
       hideProgress(false, window.__fetchTimeout ? 'Таймаут: сервер не отвечает (30с)' : 'Прервано')
       stopOperationTimer()
@@ -948,9 +1064,27 @@ async function checkNumbers() {
     clearTimeout(fetchTimeout)
     stopOperationTimer()
 
+    // Останавливаем watchdog и гарантированно применяем pending-отрисовку
+    if (sseWatchdog) {
+      clearInterval(sseWatchdog)
+      sseWatchdog = null
+    }
+    if (scanUi) scanUi.flushPending()
+
     // Отключаем realtime режим
     realtimeMode = false
     renderTable()
+
+    // Поток оборвался без терминального события (done/aborted/error):
+    // промежуточные результаты не должны теряться — сохраняем и сигнализируем.
+    // Если catch уже показал финальный статус ('Прервано'/'Таймаут…'/'Ошибка…'),
+    // его сообщение не перезаписываем, но сохранение и рендер выполняем.
+    if (!doneReceived && ordersData.length > 0) {
+      saveScanStateSilent()
+      if (!catchReported) {
+        hideProgress(false, `Прервано на ${ordersData.length}/${numbers.length}`)
+      }
+    }
 
     if (checkBtn) checkBtn.style.display = 'inline-flex'
     abortBtn.style.display = 'none'
@@ -1401,9 +1535,19 @@ function getRowActions(order, index) {
   // Payment - создать платёж
   // Если есть частичный возврат (returnSum < sum) → предлагаем частичный платёж
   let paymentBtn
-  if (hasReturn && order.returnSum && order.returnSum < order.sum) {
-    // Partial return → partial payment (not disabled)
-    paymentBtn = `<button class="btn btn-payment action-btn" onclick="createPartialPaymentByNum('${order.shipmentNum}')" title="Создать платёж (частичный, без возврата)">💰</button>`
+  const returnSum = Number(order.returnSum)
+  const sum = Number(order.sum)
+  const partialPaymentTarget = sum - returnSum
+  if (hasMSReturn && returnSum > 0 && returnSum < sum) {
+    const partialPaymentComplete = hasPayment ||
+      Number(order.paid ?? 0) >= partialPaymentTarget - 0.01
+    const disabled = partialPaymentComplete || isCancelled || !hasD
+    const partialPaymentTitle = partialPaymentComplete
+      ? 'Частичный платёж уже внесён'
+      : 'Создать платёж (частичный, без возврата)'
+    paymentBtn =
+      `<button class="btn btn-payment action-btn" onclick="createPartialPaymentByNum('${order.shipmentNum}')" ` +
+      `title="${partialPaymentTitle}" ${disabled ? 'disabled' : ''}>💰</button>`
   } else {
     paymentBtn = `<button class="btn btn-payment action-btn" onclick="createPaymentByNum('${order.shipmentNum}')" title="${hasPayment ? 'Оплачено' : 'Создать платёж'}" ${hasPayment || isCancelled || !hasD || hasReturn ? 'disabled' : ''}>💰</button>`
   }
@@ -1448,8 +1592,9 @@ function formatDate(isoStr) {
 // ─── Date filter functions ────────────────────────────────────────────────────
 
 /**
- * Возвращает отфильтрованные данные заказов на основе dateFilter и mismatchFilterOrders.
- * Применяет фильтр по дате (from/to) и фильтр расхождений.
+ * Возвращает отфильтрованные данные заказов на основе dateFilter.
+ * Применяет только фильтр по дате (from/to); расхождения таблицу не фильтруют —
+ * они дают переход к строке (jumpToOrderRow), калькулятор остаётся общим.
  *
  * @returns {Array<Object>} Отфильтрованный массив заказов
  */
@@ -1464,12 +1609,7 @@ function getFilteredData() {
       return true
     })
   }
-  
-  // ── Mismatch filter ──
-  if (mismatchFilterOrders && mismatchFilterOrders.length > 0) {
-    data = data.filter(o => mismatchFilterOrders.includes(o.shipmentNum))
-  }
-  
+
   return data
 }
 
@@ -1686,9 +1826,6 @@ function renderTable() {
   if (!tbody) return
   tbody.innerHTML = ''
 
-  // Очищаем старый баннер фильтра расхождений, если он висел вне tbody
-  document.querySelectorAll('#tableContainer > .mismatch-filter-banner').forEach(el => el.remove())
-
   const filtered = getFilteredData()
   const sorted = getSortedOrders(filtered)
   console.log('Rendering table, orders count:', sorted.length, '(filtered from', filtered.length, ')')
@@ -1696,16 +1833,6 @@ function renderTable() {
   const end = start + PAGE_SIZE
   const pageOrders = sorted.slice(start, end)
   updateFilterIndicator()
-
-  // mismatch filter banner
-  if (mismatchFilterOrders) {
-    const banner = document.createElement('div')
-    banner.className = 'mismatch-filter-banner'
-    banner.innerHTML = '<span>Показано <strong>' + filtered.length + '</strong> заказов по фильтру расхождений</span>' +
-      '<button onclick="clearMismatchFilter()" class="btn-small">✕ Сбросить</button>'
-    const tableContainer = document.getElementById('tableContainer')
-    if (tableContainer) tableContainer.insertBefore(banner, tableContainer.firstChild)
-  }
 
   if (pageOrders.length === 0) {
     tbody.innerHTML = '<tr><td colspan="11" class="empty">Нет данных для текущей страницы</td></tr>'
@@ -2275,23 +2402,49 @@ function calculateMismatches(orderList) {
   return result
 }
 
+// Максимум чипов-кодов на одну строку расхождения (кап для компактности панели)
+const MISMATCH_CHIPS_MAX = 20
+
+/**
+ * Формирует HTML компактного списка чипов с кодами спорных заказов.
+ * Пустой список возвращает пустую строку (только строка расхождения без чипов).
+ * Кап: не более MISMATCH_CHIPS_MAX чипов; при большем количестве добавляется
+ * информационный чип «+N ещё» без data-jump-shipment (не кликабельный).
+ * Коды экранируются для безопасной вставки в атрибут data-jump-shipment.
+ *
+ * @param {Array<string>} orderNums - Массив кодов заказов (shipmentNum)
+ * @returns {string} HTML-блок с чипами или пустая строка
+ */
+function buildMismatchChipsHtml(orderNums) {
+  if (!orderNums || orderNums.length === 0) return ''
+  const shown = orderNums.slice(0, MISMATCH_CHIPS_MAX)
+  const rest = orderNums.length - shown.length
+  let chips = shown.map((num) =>
+    `<span class="mismatch-chip" data-jump-shipment="${escapeHtml(num)}" title="Перейти к строке заказа">${escapeHtml(num)}</span>`
+  ).join('')
+  if (rest > 0) {
+    chips += `<span class="mismatch-chip mismatch-chip-more" title="Показаны не все спорные заказы">+${rest} ещё</span>`
+  }
+  return `<div class="mismatch-chips">${chips}</div>`
+}
+
 /**
  * Отображает блок контроля статусов (расхождения) в правой колонке.
- * Показывает количество заказов WB/Ozon, расхождения возвратов.
- * Кликабельные строки фильтруют таблицу по выбранному расхождению.
+ * Показывает количество заказов WB/Ozon, расхождения возвратов и компактные
+ * чипы с кодами спорных заказов. Клик по чипу — переход к строке заказа,
+ * клик по строке расхождения — переход к первому коду (таблица не фильтруется).
  *
  * @returns {void}
  */
 function renderMismatchStats() {
   const el = document.getElementById('mismatchOutput')
   if (!el) return
-  
-  mismatchData = calculateMismatches()
-  const s = mismatchData
+
+  const s = calculateMismatches()
   const hasMismatches = s.totalMismatches > 0
-  
+
   let html = '<div class="mismatch-body">'
-  
+
   html += `<div class="stat-row">
     <span class="stat-label">Заказы WB:</span>
     <span class="stat-value">${s.wbCount}</span>
@@ -2300,27 +2453,33 @@ function renderMismatchStats() {
     <span class="stat-label">Заказы Ozon:</span>
     <span class="stat-value">${s.ozonCount}</span>
   </div>`
-  
+
   html += '<div class="mismatch-separator"></div>'
-  
+
   if (hasMismatches) {
-    const mpOrdersAttr = encodeURIComponent(JSON.stringify(s.marketplaceReturnNoMsOrders))
-    html += `<div class="stat-row mismatch-error" data-mismatch-type="mp-return-no-ms" data-orders="${mpOrdersAttr}">
-      <span class="stat-label">↳ Возврат на площадке, нет в МС:</span>
-      <span class="stat-value">${s.marketplaceReturnNoMs}</span>
+    html += `<div class="mismatch-item" data-mismatch-type="mp-return-no-ms">
+      <div class="stat-row mismatch-error">
+        <span class="stat-label">↳ Возврат на площадке, нет в МС:</span>
+        <span class="stat-value">${s.marketplaceReturnNoMs}</span>
+      </div>
+      ${buildMismatchChipsHtml(s.marketplaceReturnNoMsOrders)}
     </div>`
-    
-    const msOrdersAttr = encodeURIComponent(JSON.stringify(s.msReturnNoMarketplaceOrders))
-    html += `<div class="stat-row mismatch-warn" data-mismatch-type="ms-return-no-mp" data-orders="${msOrdersAttr}">
-      <span class="stat-label">↳ Возврат в МС, нет на площадке:</span>
-      <span class="stat-value">${s.msReturnNoMarketplace}</span>
+
+    html += `<div class="mismatch-item" data-mismatch-type="ms-return-no-mp">
+      <div class="stat-row mismatch-warn">
+        <span class="stat-label">↳ Возврат в МС, нет на площадке:</span>
+        <span class="stat-value">${s.msReturnNoMarketplace}</span>
+      </div>
+      ${buildMismatchChipsHtml(s.msReturnNoMarketplaceOrders)}
     </div>`
-    
+
     if (s.financialMismatchCount > 0) {
-      const finOrdersAttr = encodeURIComponent(JSON.stringify(s.financialMismatchOrders))
-      html += `<div class="stat-row mismatch-error" data-mismatch-type="financial" data-orders="${finOrdersAttr}">
-        <span class="stat-label">↳ Сумма возврата не совпадает:</span>
-        <span class="stat-value">${s.financialMismatchCount}</span>
+      html += `<div class="mismatch-item" data-mismatch-type="financial">
+        <div class="stat-row mismatch-error">
+          <span class="stat-label">↳ Сумма возврата не совпадает:</span>
+          <span class="stat-value">${s.financialMismatchCount}</span>
+        </div>
+        ${buildMismatchChipsHtml(s.financialMismatchOrders)}
       </div>`
     }
   } else {
@@ -2328,7 +2487,7 @@ function renderMismatchStats() {
       <span class="stat-value mismatch-ok-text">✓ Нет расхождений</span>
     </div>`
   }
-  
+
   // Информация о частичных возвратах (не является расхождением)
   if (s.partialReturnCount > 0) {
     html += `<div class="stat-row" style="margin-top:6px">
@@ -2336,77 +2495,86 @@ function renderMismatchStats() {
       <span class="stat-value">${s.partialReturnCount}</span>
     </div>`
   }
-  
+
   html += '</div>'
   el.innerHTML = html
 }
 
 /**
- * Инициализирует обработчик кликов по строкам блока расхождений.
- * При клике на строку расхождения — фильтрует таблицу по связанным заказам.
+ * Инициализирует делегированный обработчик кликов по блоку расхождений.
+ * Клик по чипу кода — переход к строке этого заказа; клик по строке
+ * расхождения (мимо чипов) — переход к первому коду в списке.
+ * Таблица при этом НЕ фильтруется — калькулятор остаётся общим.
  *
  * @returns {void}
  */
 function initMismatchClickHandler() {
   const container = document.getElementById('mismatchOutput')
   if (!container) return
-  
-  container.addEventListener('click', function(e) {
+
+  container.addEventListener('click', function (e) {
+    // Сначала проверяем чип: у него собственный код заказа
+    const chip = e.target.closest('[data-jump-shipment]')
+    if (chip) {
+      jumpToOrderRow(chip.dataset.jumpShipment)
+      return
+    }
+    // Клик по строке расхождения — переходим к первому чипу этой строки
     const row = e.target.closest('[data-mismatch-type]')
     if (!row) return
-    
-    const type = row.dataset.mismatchType
-    const ordersAttr = row.dataset.orders
-    let orders = []
-    
-    if (ordersAttr) {
-      try {
-        orders = JSON.parse(decodeURIComponent(ordersAttr))
-      } catch (err) {
-        console.warn('mismatch: failed to parse orders attr', err)
-      }
+    const firstChip = row.querySelector('.mismatch-chip[data-jump-shipment]')
+    if (firstChip) {
+      jumpToOrderRow(firstChip.dataset.jumpShipment)
     }
-    
-    if (orders.length === 0) return
-    
-    const sameFilter = mismatchFilterOrders &&
-      mismatchFilterOrders.length === orders.length &&
-      mismatchFilterOrders.every((v, i) => v === orders[i])
-    
-    if (sameFilter) {
-      mismatchFilterOrders = null
-    } else {
-      mismatchFilterOrders = orders
-    }
-    
-    renderTable()
-    highlightMismatchFilter(type)
   })
 }
 
 /**
- * Подсвечивает активный фильтр расхождений (обводка).
+ * Прокручивает таблицу к строке заказа и временно подсвечивает её.
+ * Переключает currentPage на страницу с заказом, перерисовывает таблицу,
+ * затем scrollIntoView + подсветка классом .row-jump-highlight (снимается ~через 2с).
+ * Если заказ не виден в отфильтрованном наборе (фильтр по дате) или строка
+ * не найдена в DOM после перерисовки (realtime) — сообщение в статус, без срыва перехода.
+ * Поиск строки идёт через сравнение dataset.shipment (без CSS-селектора),
+ * чтобы коды с кавычками/спецсимволами не ломали запрос.
  *
- * @param {string|null} activeType - Тип активного расхождения или null
+ * @param {string} shipmentNum - Код заказа (shipmentNum)
  * @returns {void}
  */
-function highlightMismatchFilter(activeType) {
-  document.querySelectorAll('#mismatchOutput [data-mismatch-type]').forEach(el => {
-    el.style.outline = el.dataset.mismatchType === activeType && mismatchFilterOrders
-      ? '1px solid var(--accent)'
-      : 'none'
-  })
-}
+function jumpToOrderRow(shipmentNum) {
+  if (!shipmentNum) return
 
-/**
- * Сбрасывает фильтр расхождений и перерисовывает таблицу.
- *
- * @returns {void}
- */
-function clearMismatchFilter() {
-  mismatchFilterOrders = null
-  highlightMismatchFilter(null)
+  const visible = getSortedOrders(getFilteredData())
+  const idx = visible.findIndex(o => o.shipmentNum === shipmentNum)
+  if (idx === -1) {
+    showStatus(`Заказ ${shipmentNum} не виден в таблице (проверьте фильтр по дате)`)
+    return
+  }
+
+  // Переходим на страницу, где лежит заказ, и перерисовываем таблицу
+  currentPage = Math.floor(idx / PAGE_SIZE)
   renderTable()
+
+  // Ищем уже отрисованную строку по data-shipment (сравнение значений — безопасно)
+  const rows = document.querySelectorAll('#tableBody tr[data-shipment]')
+  let tr = null
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].dataset && rows[i].dataset.shipment === shipmentNum) {
+      tr = rows[i]
+      break
+    }
+  }
+  // В realtime-режиме renderTable пропускает перерисовку — строки может не быть
+  if (!tr) {
+    showStatus(`Заказ ${shipmentNum} не найден в таблице после перерисовки (возможно, идёт realtime-сканирование)`)
+    return
+  }
+
+  if (typeof tr.scrollIntoView === 'function') {
+    tr.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+  tr.classList.add('row-jump-highlight')
+  setTimeout(() => tr.classList.remove('row-jump-highlight'), 2000)
 }
 
 /**
@@ -2493,10 +2661,6 @@ function renderCurrentStats(force = false) {
 
 // Last action stats for comparison
 let lastActionStats = null
-
-// ─── Mismatch Control ─────────────────────────────────────────────
-let mismatchData = null
-let mismatchFilterOrders = null // null = no filter, array = shipmentNums to show
 
 /**
  * Сохраняет текущую статистику как "до действия" для последующего сравнения.
@@ -2978,7 +3142,8 @@ async function createSingleAction(shipmentNum, actionType, orderId) {
         payment: 'Платёж',
         demand: 'Отгрузка',
         return: 'Возврат',
-        cancel: 'Заказ'
+        cancel: 'Заказ',
+        partial_payment: 'Частичный платёж'
       }
       const resultName = data.paymentName || data.demandName || data.returnName || 'успешно'
       hideProgress(true, `${successNames[actionType]} создан`)
@@ -3012,12 +3177,16 @@ async function createSingleAction(shipmentNum, actionType, orderId) {
           })
         } else if (actionType === 'partial_payment') {
           ordersData[orderIndex].hasPayment = true
-          ordersData[orderIndex].statusName = 'Частично оплачен'
+          ordersData[orderIndex].statusName = 'Частичная отмена'
           ordersData[orderIndex].paid =
             data.paymentSum || ordersData[orderIndex].sum - (ordersData[orderIndex].returnSum || 0)
           ordersData[orderIndex].paymentName = data.paymentName || null
           saveOrderAction(data.shipmentNum, 'partial_payment_created', data.paymentName, {
-            returnSum: ordersData[orderIndex].returnSum || 0
+            returnSum: ordersData[orderIndex].returnSum || 0,
+            paymentSum: ordersData[orderIndex].paid,
+            paid: ordersData[orderIndex].paid,
+            hasPayment: true,
+            statusName: 'Частичная отмена'
           })
         }
         ordersData[orderIndex].lastAction = `${actionType}_created`
@@ -3027,6 +3196,7 @@ async function createSingleAction(shipmentNum, actionType, orderId) {
         renderCurrentStats()
         renderFinalStats()
       }
+      if (data.statusWarning) showStatus('Предупреждение: ' + data.statusWarning)
     }
   } catch (e) {
     hideProgress(false, 'Ошибка: ' + e.message)
@@ -3128,16 +3298,42 @@ async function refreshOrderRow(shipmentNum) {
     const index = ordersData.findIndex(o => o.shipmentNum === shipmentNum)
     if (index !== -1) {
       const refreshedOrder = { ...ordersData[index], ...freshOrder, enabled: true }
-      // Успешный ответ подтверждает актуальное состояние; старую ошибку
-      // нельзя переносить в новую строку, если сервер её больше не вернул.
-      if (!freshOrder.lastAction || !freshOrder.lastAction.includes('_error')) {
-        if (refreshedOrder.lastAction && refreshedOrder.lastAction.includes('_error')) {
-          delete refreshedOrder.lastAction
+      const previousAction = ordersData[index].lastAction
+      const resolvedAction = previousAction?.endsWith('_error')
+        ? getResolvedAction(previousAction, freshOrder)
+        : null
+      if (resolvedAction && (!freshOrder.lastAction || freshOrder.lastAction === previousAction)) {
+        const paymentResolved = resolvedAction === 'payment_created' ||
+          resolvedAction === 'partial_payment_created'
+        const resolvedState = {
+          sum: freshOrder.sum,
+          paid: freshOrder.paid,
+          hasPayment: paymentResolved ? true : freshOrder.hasPayment,
+          hasDemand: freshOrder.hasDemand,
+          hasReturn: freshOrder.hasReturn,
+          isCancelled: freshOrder.isCancelled,
+          statusName: freshOrder.statusName,
+          returnSum: freshOrder.returnSum,
+          ...(paymentResolved ? { paymentSum: freshOrder.paid } : {})
+        }
+        const saved = await saveOrderAction(
+          shipmentNum,
+          resolvedAction,
+          freshOrder.paymentName || freshOrder.demandName || freshOrder.returnName || '',
+          resolvedState
+        )
+        if (saved) {
+          refreshedOrder.lastAction = resolvedAction
+          delete refreshedOrder.lastResult
         }
       }
       ordersData[index] = refreshedOrder
       realtimeMode = false // снимаем SSE-блокировку для обновления статистики
-      updateSingleRow(ordersData[index], index)
+
+      // Полный render повторно сортирует и фильтрует строки; переводим страницу к заказу.
+      const sortedVisibleOrders = getSortedOrders(getFilteredData())
+      const visibleIndex = sortedVisibleOrders.findIndex(order => order.shipmentNum === shipmentNum)
+      if (visibleIndex !== -1) currentPage = Math.floor(visibleIndex / PAGE_SIZE)
       updateTotals()
       renderCurrentStats(true)
       renderFinalStats()
@@ -3157,6 +3353,54 @@ async function refreshOrderRow(shipmentNum) {
       btn.disabled = false
     }
   }
+}
+
+/**
+ * Возвращает успешное действие, если свежие данные подтверждают устранение ошибки.
+ * @param {string} action - Последнее действие с суффиксом _error
+ * @param {Object} order - Свежий результат проверки заказа
+ * @returns {string|null} Подтверждённое действие либо null
+ */
+function getResolvedAction(action, order) {
+  switch (action) {
+  case 'payment_error': {
+    const sum = Number(order.sum)
+    const paid = Number(order.paid)
+    return Number.isFinite(sum) && Number.isFinite(paid) && sum > 0 && paid >= sum - 0.01
+      ? 'payment_created'
+      : null
+  }
+  case 'partial_payment_error': {
+    const sum = Number(order.sum)
+    const returnSum = Number(order.returnSum)
+    const paid = Number(order.paid)
+    const target = sum - returnSum
+    return Number.isFinite(sum) && Number.isFinite(returnSum) && Number.isFinite(paid) &&
+      target > 0 && paid >= target - 0.01
+      ? 'partial_payment_created'
+      : null
+  }
+  case 'demand_error':
+    return order.hasDemand ? 'demand_created' : null
+  case 'return_error':
+    return order.hasReturn ? 'return_created' : null
+  case 'cancel_error':
+    return order.isCancelled ? 'order_cancelled' : null
+  default:
+    return null
+  }
+}
+
+/**
+ * Отличает ошибку частичного платежа в batch от ошибки полного платежа.
+ * @param {string} action - Тип batch-действия
+ * @param {Object} order - Заказ со скана
+ * @returns {string} Имя действия для сохранения ошибки
+ */
+function getActionErrorName(action, order) {
+  const partialPayment = action === 'payment' &&
+    Number(order.returnSum) > 0 && Number(order.returnSum) < Number(order.sum)
+  return partialPayment ? 'partial_payment_error' : `${action}_error`
 }
 
 /**
@@ -3314,6 +3558,9 @@ async function batchAction(actionType) {
   // Включаем realtime режим
   realtimeMode = true
 
+  // Батчер UI-обновлений прогресса (см. checkNumbers) — доступен в finally
+  let batchUi = null
+
   try {
     // Создаём AbortController и AbortId для сервера
     currentController = new AbortController()
@@ -3369,6 +3616,25 @@ async function batchAction(actionType) {
     let skipped = 0
     let errors = 0
 
+    // Отрисовка прогресса батчем через rAF (не чаще кадра), как в checkNumbers.
+    // Мутации ordersData/saveOrderAction остаются синхронными на каждом событии.
+    let pendingRows = []
+    let lastProgress = null
+    batchUi = createBatchedUi(() => {
+      try {
+        if (lastProgress) {
+          const stats = lastProgress.stats || { created, skipped, errors }
+          document.getElementById('statusText').textContent =
+            `Обработано ${lastProgress.index}/${lastProgress.total} (${stats.created} создано)`
+        }
+        for (const row of pendingRows) appendOrderRow(row)
+        renderCurrentStats(true)
+      } finally {
+        // Очередь очищается даже при исключении в рендере (см. checkNumbers)
+        pendingRows = []
+      }
+    })
+
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
@@ -3398,11 +3664,22 @@ async function batchAction(actionType) {
                   saveOrderAction(result.shipmentNum, 'demand_created', result.demandName)
                 } else if (actionType === 'payment') {
                   ordersData[orderIndex].hasPayment = true
-                  ordersData[orderIndex].statusName = 'Оплачен'
-                  ordersData[orderIndex].paid = ordersData[orderIndex].sum
-                  ordersData[orderIndex].lastAction = 'payment_created'
+                  const paymentSum = result.paymentSum ?? ordersData[orderIndex].sum
+                  const isPartialPayment = Number(paymentSum) < Number(ordersData[orderIndex].sum)
+                  ordersData[orderIndex].statusName = isPartialPayment ? 'Частичная отмена' : 'Оплачен'
+                  ordersData[orderIndex].paid = paymentSum
+                  const paymentAction = isPartialPayment ? 'partial_payment_created' : 'payment_created'
+                  ordersData[orderIndex].lastAction = paymentAction
                   ordersData[orderIndex].paymentName = result.paymentName || null
-                  saveOrderAction(result.shipmentNum, 'payment_created', result.paymentName)
+                  saveOrderAction(result.shipmentNum, paymentAction, result.paymentName, {
+                    paymentSum,
+                    paid: paymentSum,
+                    hasPayment: true,
+                    statusName: ordersData[orderIndex].statusName
+                  })
+                  if (result.statusWarning) {
+                    showStatus('Предупреждение: ' + result.statusWarning)
+                  }
                 } else if (actionType === 'return') {
                   ordersData[orderIndex].hasReturn = true
                   ordersData[orderIndex].statusName = 'Возврат'
@@ -3422,38 +3699,41 @@ async function batchAction(actionType) {
                   })
                 } else if (actionType === 'partial_payment') {
                   ordersData[orderIndex].hasPayment = true
-                  ordersData[orderIndex].statusName = 'Частично оплачен'
+                  ordersData[orderIndex].statusName = 'Частичная отмена'
                   ordersData[orderIndex].paid =
                     result.paymentSum ||
                     ordersData[orderIndex].sum - (ordersData[orderIndex].returnSum || 0)
                   ordersData[orderIndex].lastAction = 'partial_payment_created'
                   ordersData[orderIndex].paymentName = result.paymentName || null
-                  saveOrderAction(
-                    result.shipmentNum,
-                    'partial_payment_created',
-                    result.paymentName
-                  )
+                  if (result.statusWarning) {
+                    showStatus('Предупреждение: ' + result.statusWarning)
+                  }
+                  saveOrderAction(result.shipmentNum, 'partial_payment_created', result.paymentName, {
+                    paymentSum: ordersData[orderIndex].paid,
+                    paid: ordersData[orderIndex].paid,
+                    hasPayment: true,
+                    statusName: 'Частичная отмена',
+                    returnSum: ordersData[orderIndex].returnSum || 0
+                  })
                 }
               } else if (result.status === 'skipped') {
                 skipped++
               } else if (result.status === 'error') {
                 errors++
-                ordersData[orderIndex].lastAction = actionType + '_error'
+                const errorAction = getActionErrorName(actionType, ordersData[orderIndex])
+                ordersData[orderIndex].lastAction = errorAction
                 ordersData[orderIndex].statusName = 'Ошибка'
-                saveOrderAction(result.shipmentNum, actionType + '_error', result.error)
+                saveOrderAction(result.shipmentNum, errorAction, result.error)
               }
 
-              // Обновляем статус
-              const stats = data.stats || { created, skipped, errors }
-              document.getElementById('statusText').textContent =
-                `Обработано ${data.index}/${data.total} (${stats.created} создано)`
-
-              // Добавляем строку в таблицу
-              appendOrderRow(ordersData[orderIndex])
-
-              // Обновляем статистику после каждой строки (с force=true для realtime)
-              renderCurrentStats(true)
+              // Обновление статуса/строк/статистики — батчем через rAF (не чаще кадра)
+              pendingRows.push(ordersData[orderIndex])
+              lastProgress = { index: data.index, total: data.total, stats: data.stats || null }
+              batchUi.enqueue()
             } else if (data.type === 'done') {
+              // Принудительно применяем pending-отрисовку до финальной логики
+              batchUi.flushPending()
+
               const stats = data.stats || { created, skipped, errors }
 
               // Останавливаем секундомер
@@ -3490,6 +3770,9 @@ async function batchAction(actionType) {
                 window._pendingRecompare = true
               }
             } else if (data.type === 'aborted') {
+              // Принудительно применяем pending-отрисовку до финальной логики
+              batchUi.flushPending()
+
               const stats = data.stats || { created, skipped, errors }
 
               // Останавливаем секундомер
@@ -3525,6 +3808,9 @@ async function batchAction(actionType) {
     hideProgress(false, 'Ошибка: ' + e.message)
     stopOperationTimer()
   } finally {
+    // Гарантированно применяем pending-отрисовку (в т.ч. при обрыве потока)
+    if (batchUi) batchUi.flushPending()
+
     realtimeMode = false
     stopOperationTimer()
     renderTable()
@@ -3829,13 +4115,40 @@ document.addEventListener('DOMContentLoaded', async () => {
   ;['reportFile', 'reportFolder', 'wbReportFiles', 'wbReportFolder'].forEach(function (id) {
     const input = document.getElementById(id)
     if (!input) return
-    input.addEventListener('change', function (e) {
+    input.addEventListener('change', async function (e) {
       const files = Array.from(e.target.files || []).filter(file => /\.xlsx$/i.test(file.name))
       const marketplace = id.startsWith('wb') ? 'wb' : 'ozon'
       window._selectedReportFiles = files
       window._selectedMarketplace = marketplace
       const label = document.getElementById('reportFilePath')
       if (label) label.textContent = files.length ? marketplaceName(marketplace) + ': ' + files.map(file => file.name).join(', ') : 'файлы не выбраны'
+
+      // Если список заказов уже загружен — без повторного рескана сразу строим
+      // отчёт по текущему списку и показываем сравнение (кнопка + содержимое модалки).
+      // ordersData и numbersInput не трогаем: сравнение идёт по уже найденным заказам.
+      if (files.length > 0 && ordersData.length > 0) {
+        try {
+          const reportMap = await loadSelectedReport()
+          if (reportMap) {
+            const cmp = compareWithReport(reportMap)
+            window._lastComparisonResult = cmp
+            renderComparisonPanel(cmp)
+            // Снапшот для ре-компаризона после массовых действий — тот же контракт, что в SSE-пути
+            window._comparisonBaseline = JSON.parse(JSON.stringify(ordersData))
+            window._comparisonBaselineStats = {
+              totalD: cmp.summary.totalD,
+              totalJPos: cmp.summary.totalJPos,
+              totalDiff: cmp.summary.totalDiff
+            }
+            window._comparisonDiffLog = []
+            const diffCount = cmp.summary.mismatchCount + cmp.summary.partialCount +
+              cmp.summary.missingCount + cmp.summary.marketplaceReturnNoMsCount
+            showStatus('Сравнение с отчётом: ' + diffCount + ' расхождений')
+          }
+        } catch (err) {
+          showStatus('Ошибка при построении отчёта: ' + err.message)
+        }
+      }
     })
   })
 
@@ -6337,9 +6650,120 @@ function buildReportMap(rows, version) {
 }
 
 /**
+ * Загружает и парсит выбранные файлы отчёта площадки, строит карту заказов.
+ * Сохраняет результат в window._reportMap / _reportMeta / _fboOrderNumbers
+ * и возвращает построенную карту (reportMap). Переиспользуется при полном
+ * рескане (runComparison) и при автосравнении по уже загруженному списку
+ * заказов (change-хэндлер file-инпутов). При отсутствии файлов, конфликте
+ * сумм между файлами или пустом отчёте показывает showAlert и возвращает null.
+ *
+ * @async
+ * @returns {Promise<Object|null>} Карта отчёта reportMap либо null при ошибке/пустоте
+ */
+async function loadSelectedReport() {
+  const files = window._selectedReportFiles || []
+  const marketplace = window._selectedMarketplace || 'ozon'
+  if (files.length === 0) {
+    await showAlert('Сначала выберите XLSX-отчёт Ozon или Wildberries', 'Файлы не выбраны')
+    return null
+  }
+
+  const reports = []
+  let rows = []
+  let version = marketplace === 'ozon' ? 1 : 0
+  for (const file of files) {
+    const fileRows = await parseMarketplaceReportFile(file, marketplace)
+    const fileVersion = marketplace === 'ozon' ? detectReportVersion(fileRows) : 0
+    const result = marketplace === 'ozon' ? buildReportMap(fileRows, fileVersion) : buildWbReportMap(fileRows)
+    if (reports.length === 0) {
+      rows = fileRows
+      version = fileVersion
+    }
+    reports.push({ name: file.name, result, version: fileVersion })
+  }
+  const reportResult = mergeReportMaps(reports)
+  if (reportResult.conflicts.length > 0) {
+    const conflict = reportResult.conflicts[0]
+    await showAlert('Заказ ' + conflict.orderKey + ' имеет разные суммы в файлах «' + conflict.firstSource + '» и «' + conflict.secondSource + '». Сверка не запущена.', 'Конфликт отчётов')
+    return null
+  }
+
+  if (reportResult.orderNumbers.length === 0) {
+    // Собираем отладочную информацию
+    const debugLines = []
+    if (rows.length > 0) {
+      debugLines.push('Формат: v' + version + ' (' + (version === 1 ? 'до августа 2026' : 'с августа 2026') + ')')
+      debugLines.push('Колонок в заголовке: ' + (rows[version === 1 ? 0 : 1] ? rows[version === 1 ? 0 : 1].length : '?'))
+      debugLines.push('Всего строк: ' + rows.length)
+      // Показываем первые строки данных
+      const dataStart = version === 1 ? 1 : 2
+      const maxSample = Math.min(dataStart + 4, rows.length)
+      for (let ri = dataStart; ri < maxSample; ri++) {
+        const r = rows[ri]
+        if (version === 1) {
+          const bRaw = r[1]
+          const bStr = fixCyrillicEncoding(String(bRaw ?? ''))
+          debugLines.push(
+            'Строка ' + (ri + 1) + ': B=' + JSON.stringify(bStr) +
+            ' | E=' + JSON.stringify(r[4]) +
+            ' | C=' + JSON.stringify(r[2]) +
+            ' | J=' + JSON.stringify(r[9])
+          )
+        } else {
+          debugLines.push(
+            'Строка ' + (ri + 1) + ': D=' + JSON.stringify(fixCyrillicEncoding(String(r[3] || ''))) +
+            ' | C=' + JSON.stringify(fixCyrillicEncoding(String(r[2] || ''))) +
+            ' | K=' + JSON.stringify(fixCyrillicEncoding(String(r[10] || ''))) +
+            ' | L=' + JSON.stringify(fixCyrillicEncoding(String(r[11] || ''))) +
+            ' | A=' + JSON.stringify(r[0]) +
+            ' | P=' + JSON.stringify(r[15])
+          )
+        }
+      }
+    } else {
+      debugLines.push('Нет строк в отчёте')
+    }
+    await showAlert(
+      'Не найдено заказов в отчёте. Проверьте формат файла.\n\n' +
+      'Ожидаемые колонки для v1 (до августа 2026):\n' +
+      '  B = "Доставка покупателю"\n' +
+      '  E = "FBS"\n' +
+      '  C = номер заказа\n' +
+      '  J = сумма (не ноль)\n\n' +
+      'Ожидаемые колонки для v2 (с августа 2026):\n' +
+      '  D = "Выручка"\n' +
+      '  C = "Продажи"\n' +
+      '  K = "Ozon"\n' +
+      '  L = "FBS"\n' +
+      '  P = сумма итого\n\n' +
+      '--- Отладка ---\n' +
+      debugLines.join('\n'),
+      'Нет данных для сравнения'
+    )
+    return null
+  }
+
+  // Сохраняем map для сравнения
+  window._reportMap = reportResult.map
+  window._reportMeta = {
+    totalJ: reportResult.totalJ,
+    totalJPos: reportResult.totalJPos,
+    totalRealized: reportResult.totalRealized || 0,
+    rowsCount: reportResult.rowsCount,
+    version: marketplace === 'ozon' ? reports[0].version : 0,
+    marketplace,
+    sourceFiles: reportResult.sourceFiles
+  }
+  // Сохраняем FBO номера для вывода в отчёте
+  window._fboOrderNumbers = reportResult.fboOrderNumbers || []
+
+  return reportResult.map
+}
+
+/**
  * Запускает сравнение скана МойСклад с загруженным отчётом Ozon.
  * 1. Проверяет выбран ли файл отчёта
- * 2. Парсит XLSX через parseReportFile + buildReportMap
+ * 2. Строит карту отчёта через loadSelectedReport()
  * 3. Заполняет поле ввода номерами заказов из отчёта
  * 4. Устанавливает флаг ожидания сравнения
  * 5. Запускает checkNumbers() — после SSE done сработает compareWithReport()
@@ -6356,7 +6780,6 @@ async function runComparison() {
   }
 
   const files = window._selectedReportFiles || []
-  const marketplace = window._selectedMarketplace || 'ozon'
   if (files.length === 0) {
     await showAlert('Сначала выберите XLSX-отчёт Ozon или Wildberries', 'Файлы не выбраны')
     return
@@ -6372,99 +6795,16 @@ async function runComparison() {
   }
 
   try {
-    const reports = []
-    let rows = []
-    let version = marketplace === 'ozon' ? 1 : 0
-    for (const file of files) {
-      const fileRows = await parseMarketplaceReportFile(file, marketplace)
-      const fileVersion = marketplace === 'ozon' ? detectReportVersion(fileRows) : 0
-      const result = marketplace === 'ozon' ? buildReportMap(fileRows, fileVersion) : buildWbReportMap(fileRows)
-      if (reports.length === 0) {
-        rows = fileRows
-        version = fileVersion
-      }
-      reports.push({ name: file.name, result, version: fileVersion })
-    }
-    const reportResult = mergeReportMaps(reports)
-    if (reportResult.conflicts.length > 0) {
-      const conflict = reportResult.conflicts[0]
-      await showAlert('Заказ ' + conflict.orderKey + ' имеет разные суммы в файлах «' + conflict.firstSource + '» и «' + conflict.secondSource + '». Сверка не запущена.', 'Конфликт отчётов')
-      return
-    }
+    // Парсинг выбранных файлов и построение карты — в переиспользуемой loadSelectedReport().
+    // Возвращает null при отсутствии файлов/конфликте/пустом отчёте (loadSelectedReport
+    // сама показывает showAlert), поэтому здесь достаточно раннего выхода.
+    const reportMap = await loadSelectedReport()
+    if (!reportMap) return
 
-    if (reportResult.orderNumbers.length === 0) {
-      // Собираем отладочную информацию
-      const debugLines = []
-      if (rows.length > 0) {
-        debugLines.push('Формат: v' + version + ' (' + (version === 1 ? 'до августа 2026' : 'с августа 2026') + ')')
-        debugLines.push('Колонок в заголовке: ' + (rows[version === 1 ? 0 : 1] ? rows[version === 1 ? 0 : 1].length : '?'))
-        debugLines.push('Всего строк: ' + rows.length)
-        // Показываем первые строки данных
-        const dataStart = version === 1 ? 1 : 2
-        const maxSample = Math.min(dataStart + 4, rows.length)
-        for (let ri = dataStart; ri < maxSample; ri++) {
-          const r = rows[ri]
-          if (version === 1) {
-            const bRaw = r[1]
-            const bStr = fixCyrillicEncoding(String(bRaw ?? ''))
-            debugLines.push(
-              'Строка ' + (ri + 1) + ': B=' + JSON.stringify(bStr) +
-              ' | E=' + JSON.stringify(r[4]) +
-              ' | C=' + JSON.stringify(r[2]) +
-              ' | J=' + JSON.stringify(r[9])
-            )
-          } else {
-            debugLines.push(
-              'Строка ' + (ri + 1) + ': D=' + JSON.stringify(fixCyrillicEncoding(String(r[3] || ''))) +
-              ' | C=' + JSON.stringify(fixCyrillicEncoding(String(r[2] || ''))) +
-              ' | K=' + JSON.stringify(fixCyrillicEncoding(String(r[10] || ''))) +
-              ' | L=' + JSON.stringify(fixCyrillicEncoding(String(r[11] || ''))) +
-              ' | A=' + JSON.stringify(r[0]) +
-              ' | P=' + JSON.stringify(r[15])
-            )
-          }
-        }
-      } else {
-        debugLines.push('Нет строк в отчёте')
-      }
-      await showAlert(
-        'Не найдено заказов в отчёте. Проверьте формат файла.\n\n' +
-        'Ожидаемые колонки для v1 (до августа 2026):\n' +
-        '  B = "Доставка покупателю"\n' +
-        '  E = "FBS"\n' +
-        '  C = номер заказа\n' +
-        '  J = сумма (не ноль)\n\n' +
-        'Ожидаемые колонки для v2 (с августа 2026):\n' +
-        '  D = "Выручка"\n' +
-        '  C = "Продажи"\n' +
-        '  K = "Ozon"\n' +
-        '  L = "FBS"\n' +
-        '  P = сумма итого\n\n' +
-        '--- Отладка ---\n' +
-        debugLines.join('\n'),
-        'Нет данных для сравнения'
-      )
-      return
-    }
-
-    // Сохраняем map для сравнения после поиска
-    window._reportMap = reportResult.map
-    window._reportMeta = {
-      totalJ: reportResult.totalJ,
-      totalJPos: reportResult.totalJPos,
-      totalRealized: reportResult.totalRealized || 0,
-      rowsCount: reportResult.rowsCount,
-      version: marketplace === 'ozon' ? reports[0].version : 0,
-      marketplace,
-      sourceFiles: reportResult.sourceFiles
-    }
-    // Сохраняем FBO номера для вывода в отчёте
-    window._fboOrderNumbers = reportResult.fboOrderNumbers || []
-
-    // Заполняем поле ввода номерами заказов
+    // Заполняем поле ввода номерами заказов из отчёта (ключи карты = номера заказов)
     const input = document.getElementById('numbersInput')
     if (input) {
-      input.value = reportResult.orderNumbers.join('\n')
+      input.value = Object.keys(reportMap).join('\n')
     }
 
     // Устанавливаем флаг: после завершения поиска запустить сравнение
@@ -6771,68 +7111,36 @@ function renderComparisonPanel(stats) {
 
   html += '</div>' // .comparison-summary-grid
 
-  // ── Разбивка по статусам (как в калькуляторе) ──
-  const calc = calculateStats(ordersData)
-  html += '<div class="cmp-block-total">'
-  html += '<strong>📊 Разбивка по статусам (калькулятор)</strong><br>'
-  html += 'Отгрузок: <strong>' + calc.demandCount + '</strong> · ' + fmt(calc.demandSum) + ' ₽<br>'
-  html += 'Оплачено: <strong>' + calc.paymentCount + '</strong> · ' + fmt(calc.paymentSum) + ' ₽<br>'
-  if (calc.returnCount > 0) html += 'Возвраты: <strong>' + calc.returnCount + '</strong> · ' + fmt(calc.returnSum) + ' ₽<br>'
-  if (calc.cancelledCount > 0) html += 'Отмены: <strong>' + calc.cancelledCount + '</strong> · ' + fmt(calc.cancelledSum) + ' ₽<br>'
-  if (calc.errorCount > 0) html += 'Ошибки: <strong>' + calc.errorCount + '</strong> · ' + fmt(calc.errorSum) + ' ₽<br>'
-  if (calc.notFoundCount > 0) html += 'Не найдено: <strong>' + calc.notFoundCount + '</strong><br>'
-  html += '<span style="font-size:0.8rem;color:var(--text-muted);">Отгрузки = Оплачено + Возвраты + Отмены. Возвраты и отмены уже обработаны и не создают расхождение.</span>'
-  html += '</div>'
+  // ── Реальные расхождения: mismatch / partial / missing / возврат на площадке ──
+  // Единый источник списка проблемных заказов для таблицы Δ и детального разбора.
+  const problemDetails = details.filter(d =>
+    d.status === 'mismatch' || d.status === 'partial' || d.status === 'missing-in-report' || d.status === 'marketplace-return'
+  )
 
-  // ── Заказы, образующие реальное расхождение ──
-  const diffOrders = details.filter(d => d.status === 'mismatch' || d.status === 'partial')
-  if (diffOrders.length > 0) {
-    html += '<div class="cmp-block-diff">'
-    html += '<strong>⚠️ Расхождение</strong> — D − J+ = <strong>' + fmtDiff(summary.totalDiff) + '</strong> · заказов: <strong>' + diffOrders.length + '</strong><br>'
-    html += '<span class="comparison-diff-caption">Полные отмены и полные возвраты в список не включены.</span>'
-    html += '<table class="comparison-table"><thead><tr>'
-    html += '<th>№ заказа покупателя</th><th>D (скан)</th><th>J+ (отчёт)</th><th>Δ (D − J+)</th>'
-    html += '</tr></thead><tbody>'
-    for (const d of diffOrders) {
-      html += '<tr>'
-      html += '<td>' + escapeHtml(d.orderKey) + '</td>'
-      html += '<td>' + fmtSum(d.sumD) + '</td>'
-      html += '<td>' + fmtSum(d.jPos) + '</td>'
-      html += '<td class="' + (d.diff < 0 ? 'diff-neg' : 'diff-pos') + '">' + fmtDiff(d.diff) + '</td>'
-      html += '</tr>'
+  if (problemDetails.length === 0) {
+    // Расхождений нет — явное сообщение вместо пустых секций и дублей
+    html += '<div class="cmp-block-total comparison-no-diff"><strong>✅ Расхождений нет</strong></div>'
+  } else {
+    // ── Заказы, образующие реальное расхождение (таблица Δ) ──
+    const diffOrders = problemDetails.filter(d => d.status === 'mismatch' || d.status === 'partial')
+    if (diffOrders.length > 0) {
+      html += '<div class="cmp-block-diff">'
+      html += '<strong>⚠️ Расхождение</strong> — D − J+ = <strong>' + fmtDiff(summary.totalDiff) + '</strong> · заказов: <strong>' + diffOrders.length + '</strong><br>'
+      html += '<span class="comparison-diff-caption">Полные отмены и полные возвраты в список не включены.</span>'
+      html += '<table class="comparison-table"><thead><tr>'
+      html += '<th>№ заказа покупателя</th><th>D (скан)</th><th>J+ (отчёт)</th><th>Δ (D − J+)</th>'
+      html += '</tr></thead><tbody>'
+      for (const d of diffOrders) {
+        html += '<tr>'
+        html += '<td>' + escapeHtml(d.orderKey) + '</td>'
+        html += '<td>' + fmtSum(d.sumD) + '</td>'
+        html += '<td>' + fmtSum(d.jPos) + '</td>'
+        html += '<td class="' + (d.diff < 0 ? 'diff-neg' : 'diff-pos') + '">' + fmtDiff(d.diff) + '</td>'
+        html += '</tr>'
+      }
+      html += '</tbody></table></div>'
     }
-    html += '</tbody></table></div>'
   }
-
-  // ── Цветовые блоки ──
-  // Блок итоговых сумм
-  html += '<div class="cmp-block-total">'
-  html += '<strong>💰 Итоговые суммы</strong><br>'
-  html += 'Total D (МойСклад): <strong>' + fmt(summary.totalD) + ' ₽</strong><br>'
-  html += 'Сумма отчёта для сверки (O): <strong>' + fmt(summary.totalJPos) + ' ₽</strong><br>'
-  if (marketplace === 'wb') {
-      html += 'WB реализовано (P): <strong>' + fmt(reportRealizedTotal) + ' ₽</strong><br>'
-  }
-  const diffIcon = Math.abs(summary.totalDiff) < 1 ? '✅' : '⚠️'
-  html += 'Разница: <strong>' + fmt(summary.totalDiff) + ' ₽</strong> ' + diffIcon + '<br>'
-  html += '</div>'
-
-  // Счётчики
-  html += '<div class="cmp-block-ok">'
-  html += '✅ Совпало: <strong>' + (summary.okCount + summary.returnCount) + '</strong><br>'
-  if (summary.mismatchCount + summary.partialCount > 0) {
-    html += '⚠️ Расхождений / частичных: <strong>' + (summary.mismatchCount + summary.partialCount) + '</strong><br>'
-  }
-  if (summary.missingCount > 0) {
-    html += '❌ Не найдено в отчёте: <strong>' + summary.missingCount + '</strong><br>'
-  }
-  if (summary.returnCount > 0) {
-    html += '🔄 Полных возвратов (отмен): <strong>' + summary.returnCount + '</strong> (учтены как ОК)<br>'
-  }
-  if (summary.marketplaceReturnNoMsCount > 0) {
-    html += '🔄 Возвращён на площадке, нет в МС: <strong>' + summary.marketplaceReturnNoMsCount + '</strong><br>'
-  }
-  html += '</div>'
 
   // ── Повествовательный блок ──
   if (summary.narrative) {
@@ -6872,9 +7180,7 @@ function renderComparisonPanel(stats) {
   }
 
   // ── Детальный разбор по заказам с расхождениями ──
-  const problemDetails = details.filter(d =>
-    d.status === 'mismatch' || d.status === 'partial' || d.status === 'missing-in-report' || d.status === 'marketplace-return'
-  )
+  // problemDetails уже вычислен выше (единый источник проблемных заказов).
   if (problemDetails.length > 0) {
     html += '<div class="cmp-section cmp-detail-breakdown">'
     html += '<h4>🔍 Детальный разбор по заказам</h4>'

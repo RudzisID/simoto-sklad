@@ -1617,14 +1617,23 @@ button:disabled {
   margin-top: 2px;
 }
 
-/* === Mismatch panel — flexible height === */
-.stats-mismatch {
-  flex: 1;
-  overflow: hidden;
+/* === Mismatch panel — natural height, no clipping/scroll ===
+   Специфичность .stats-panel.stats-mismatch (0-2-0) перебивает базовый
+   .stats-panel (0-1-0, ниже по файлу): без этого desktop-каскад возвращает
+   flex:1/min-height:0/overflow:hidden и панель снова режется.
+   Класс stats-mismatch общий с панелью поставок (index.html) — ей natural
+   height не вредит: контент короткий (строки статистики), остаток колонки
+   занимает .stats-current (flex:3). */
+.stats-panel.stats-mismatch {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: visible;
 }
 
 .stats-mismatch .stats-output {
+  flex: none;
   min-height: 0;
+  overflow: visible;
 }
 
 .stats-mismatch .mismatch-body {
@@ -1639,7 +1648,7 @@ button:disabled {
   margin: 6px 0;
 }
 
-/* Кликабельные строки */
+/* Кликабельные строки (обёртка строки расхождения + чипов) */
 .stats-mismatch [data-mismatch-type] {
   cursor: pointer;
   border-radius: var(--radius-sm);
@@ -1650,6 +1659,51 @@ button:disabled {
 
 .stats-mismatch [data-mismatch-type]:hover {
   background: rgba(255, 255, 255, 0.06);
+}
+
+/* Компактные чипы с кодами спорных заказов */
+.stats-mismatch .mismatch-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 2px;
+  padding-left: 12px;
+}
+
+.stats-mismatch .mismatch-chip {
+  font-size: 0.62rem;
+  line-height: 1.3;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  transition: background 0.15s, color 0.15s;
+}
+
+.stats-mismatch .mismatch-chip:not(.mismatch-chip-more):hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Информационный чип «+N ещё» — не кликабельный */
+.stats-mismatch .mismatch-chip-more {
+  cursor: default;
+  font-style: italic;
+}
+
+/* Подсветка строки таблицы после перехода (jumpToOrderRow) */
+.table-panel tbody tr.row-jump-highlight {
+  background: linear-gradient(135deg, rgba(91, 196, 241, 0.3) 0%, rgba(91, 196, 241, 0.15) 100%);
+  border-left: 3px solid var(--accent);
+  transition: background 0.3s;
 }
 
 /* Подсветка типов расхождений */
@@ -1667,30 +1721,6 @@ button:disabled {
   color: var(--success);
   font-weight: 600;
   font-size: 0.8rem;
-}
-
-/* Mismatch filter banner */
-.mismatch-filter-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  margin-bottom: 6px;
-  background: rgba(249, 115, 22, 0.1);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  font-size: 0.75rem;
-  color: var(--text);
-}
-
-.mismatch-filter-banner .btn-small {
-  font-size: 0.7rem;
-  padding: 2px 8px;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
 }
 
 /* === Save Token Button === */

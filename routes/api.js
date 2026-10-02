@@ -287,16 +287,29 @@ module.exports = function(deps) {
         paymentSum: result.paymentSum
       })
 
-      const orderFull = await getOrderFullForCreate(orderId)
+      let orderFull = null
+      try {
+        orderFull = await getOrderFullForCreate(orderId)
+      } catch (error) {
+        log(`Не удалось повторно получить заказ после платежа: ${error.message}`, { shipmentNum })
+      }
 
       updateOrderState(shipmentNum, 'partial_payment_created', result.name, {
-        orderName: orderFull.name,
-        orderId: orderFull.id,
+        ...(orderFull?.name ? { orderName: orderFull.name } : {}),
+        orderId,
         paymentSum: result.paymentSum,
-        orderUrl: `https://online.moysklad.ru/app/#customerorder/${orderFull.id}`
+        paid: result.paymentSum,
+        hasPayment: true,
+        statusName: 'Частичная отмена',
+        orderUrl: `https://online.moysklad.ru/app/#customerorder/${orderId}`
       }, STATE_FILE, log)
 
-      res.json({ success: true, paymentName: result.name, paymentSum: result.paymentSum })
+      res.json({
+        success: true,
+        paymentName: result.name,
+        paymentSum: result.paymentSum,
+        ...(result.statusWarning ? { statusWarning: result.statusWarning } : {})
+      })
     } catch (e) {
       log(`Ошибка создания частичного платежа: ${e.message}`, { shipmentNum, stack: e.stack })
       updateOrderState(shipmentNum, 'partial_payment_error', e.message, {}, STATE_FILE, log)
@@ -719,11 +732,11 @@ module.exports = function(deps) {
       return res.json({ success: true, count: orders.length })
     }
 
-    const { shipmentNum, action, result } = req.body
+    const { shipmentNum, action, result, ...extraData } = req.body
     if (!shipmentNum || !action) {
       return res.json({ error: 'Требуется shipmentNum и action' })
     }
-    const orderState = updateOrderState(shipmentNum, action, result, {}, STATE_FILE, log)
+    const orderState = updateOrderState(shipmentNum, action, result, extraData, STATE_FILE, log)
     res.json({ success: true, state: orderState })
   })
 
