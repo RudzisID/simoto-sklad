@@ -686,7 +686,11 @@ module.exports = function(deps) {
             // Fallback-поиск по кэшу WB/Ozon требует актуального кэша —
             // ждём завершения фонового refreshIfStale (иначе гонка при холодном кэше)
             await ensureCachesReady()
-            const ozonData = ozon.findInCache(code)
+            let ozonData = ozon.findInCache(code)
+            // Live-фолбэк по ii-штрихкоду возврата: split-возвратов нет в bulk-кэше
+            if (!ozonData && ozonClientId && ozonApiKey) {
+              ozonData = await ozon.findReturnByBarcodeLive(ozonClientId, ozonApiKey, code, ulog)
+            }
             if (ozonData) {
               marketplace = 'ozon'
               marketplaceData = ozonData
@@ -1180,7 +1184,15 @@ module.exports = function(deps) {
         for (const code of missed) {
           if (req.destroyed) break
 
-          const found = ozon.findInCache(code)
+          let found = ozon.findInCache(code)
+
+          // Live-фолбэк по штрихкоду возврата: split-возвраты не содержат ii-код
+          // в bulk-кэше (logistic.barcode = штрихкод товара), ищем через API по barcode
+          if (!found) {
+            ozonLog(`[Ozon-Return] cache miss, live barcode lookup: ${code}`)
+            found = await ozon.findReturnByBarcodeLive(ozonClientId, ozonApiKey, code, ozonLog)
+          }
+
           if (!found) {
             errors++
             sendSSE(res, {

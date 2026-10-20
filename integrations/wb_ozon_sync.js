@@ -1350,8 +1350,14 @@ async function fetchWBOrderIdBySrid(srid, token) {
 // ──────────────────────────────────────────
 
 /**
- * Ozon: выполнение HTTP-запроса с повторными попытками при rate limiting (429).
- * Читает заголовок Retry-After, при отсутствии ждёт 60 с.
+ * Ozon: выполнение HTTP-запроса с повторными попытками.
+ * Повтор при rate limiting (429): читает заголовок Retry-After,
+ * при отсутствии ждёт 60 с.
+ * Повтор при таймауте/сетевой ошибке (makeRequest бросает исключение):
+ * экспоненциальный бэкофф 1с→2с→4с (потолок 8с) — стабилизирует работу
+ * при нестабильной сети до api-seller.ozon.ru, чтобы фоновое обновление
+ * кэшей и живой поиск по штрихкоду не падали на stale cache из-за
+ * единичного таймаута.
  * Максимум {maxRetries} повторных попыток.
  *
  * @param {string} hostname - Хост API (например, 'api-seller.ozon.ru')
@@ -1361,11 +1367,24 @@ async function fetchWBOrderIdBySrid(srid, token) {
  * @param {string} [body] - Тело запроса (JSON-строка)
  * @param {number} [maxRetries=3] - Максимальное количество повторных попыток
  * @returns {Promise<{status: number, headers: object, body: any}>} Ответ API
- * @throws {Error} Если превышено максимальное количество попыток (429)
+ * @throws {Error} Если превышено максимальное количество попыток (429 или сеть/таймаут)
  */
 async function ozonRequestWithRetry(hostname, path, method, headers, body, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const response = await makeRequest({ hostname, path, method, headers }, body)
+    let response
+    try {
+      response = await makeRequest({ hostname, path, method, headers }, body)
+    } catch (err) {
+      // Таймаут или сетевая ошибка: повторяем с экспоненциальным бэкоффом,
+      // пока попытки не исчерпаны. Исходную ошибку пробрасываем наверх.
+      if (attempt < maxRetries) {
+        const backoffMs = Math.min(2 ** attempt * 1000, 8000) // 1с, 2с, 4с...
+        warn(`[Ozon] Request error (${err.message}), retrying in ${backoffMs}ms (attempt ${attempt + 1}/${maxRetries})`)
+        await new Promise(r => setTimeout(r, backoffMs))
+        continue
+      }
+      throw err
+    }
 
     if (response.status === 429 && attempt < maxRetries) {
       const retryAfter = parseInt(
