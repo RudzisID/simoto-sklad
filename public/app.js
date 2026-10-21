@@ -4555,8 +4555,9 @@ function loadSavedSuppliesAndRender() {
 }
 
 /**
- * Инициализирует настройки сканирования: устанавливает даты по умолчанию (последние 2 дня)
- * в display-поля и suppliesScanDates, загружает список складов из API.
+ * Инициализирует настройки сканирования: устанавливает даты по умолчанию
+ * («С:» — 4 дня назад, «По:» — сегодня) в display-поля и suppliesScanDates,
+ * загружает список складов из API.
  * Вызывается один раз (lazy-init) при первом открытии вкладки.
  * @returns {void}
  */
@@ -4565,8 +4566,8 @@ function initSuppliesScanSettings() {
   var fromDisplayEl = document.getElementById('scanDateFromDisplay')
   if (!fromDisplayEl || !fromDisplayEl.value) {
     var today = new Date()
-    var threeDaysAgo = new Date(today)
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+    var fourDaysAgo = new Date(today)
+    fourDaysAgo.setDate(fourDaysAgo.getDate() - 4)
 
     var fmtISO = function(d) {
       return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
@@ -4576,11 +4577,11 @@ function initSuppliesScanSettings() {
     }
 
     // Сохраняем в JS-состояние
-    suppliesScanDates.from = fmtISO(threeDaysAgo)
+    suppliesScanDates.from = fmtISO(fourDaysAgo)
     suppliesScanDates.to = fmtISO(today)
 
     // Отображаем в полях
-    if (fromDisplayEl) fromDisplayEl.value = fmtDisplay(threeDaysAgo)
+    if (fromDisplayEl) fromDisplayEl.value = fmtDisplay(fourDaysAgo)
     var toDisplayEl = document.getElementById('scanDateToDisplay')
     if (toDisplayEl) toDisplayEl.value = fmtDisplay(today)
 

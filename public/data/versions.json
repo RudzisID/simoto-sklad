@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.10.8",
+    "date": "2026-10-21",
+    "changes": [
+      "1 file changed, 7 insertions(+), 6 deletions(-)"
+    ]
+  },
+  {
     "version": "1.10.7",
     "date": "2026-10-21",
     "changes": [
@@ -235,13 +242,6 @@
     "date": "2026-06-17",
     "changes": [
       "Автоматическое обновление"
-    ]
-  },
-  {
-    "version": "1.8.12",
-    "date": "2026-06-17",
-    "changes": [
-      "github-push.bat теперь синхронизирует versions.json автоматически через scripts/sync-version.js."
     ]
   }
 ]
