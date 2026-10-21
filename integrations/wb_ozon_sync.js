@@ -1622,8 +1622,14 @@ async function fetchOzonReturnsList(clientId, apiKey, daysBack = 120) {
 
 /**
  * Ozon: получение списка FBS-отправлений
- * Endpoint: POST /v3/posting/fbs/list
- * Постраничная пагинация через offset.
+ * Endpoint: POST /v4/posting/fbs/list
+ *
+ * v3 (/v3/posting/fbs/list) отключён Ozon 01.06.2026 («obsolete method cannot
+ * be used», HTTP 400 code 9) — миграция на v4. Отличия v4:
+ *  - лимит страницы ≤ 100 (было 1000);
+ *  - пагинация курсором (`cursor`), а не `offset`;
+ *  - ответ top-level: `{ has_next, cursor, postings }` (без обёртки `result`).
+ * Поля status/products/shipment_date/analytics_data приходят по умолчанию.
  * Фильтр по дате: от daysBack дней назад до текущего момента.
  *
  * @param {string} clientId - Ozon Client-Id
@@ -1636,7 +1642,9 @@ async function fetchOzonReturnsList(clientId, apiKey, daysBack = 120) {
  *   products: Array<{offer_id: string, name: string, price: string, sku: number, quantity: number}>,
  *   shipment_date: string,
  *   delivering_date: string,
- *   price: number
+ *   price: number,
+ *   is_return: boolean,
+ *   is_cancel: boolean
  * }>>} Массив отправлений FBS
  * @throws {Error} При HTTP-статусе, отличном от 200
  */
@@ -1655,31 +1663,22 @@ async function fetchOzonPostingsList(clientId, apiKey, daysBack = 120) {
     'Api-Key': apiKey
   }
 
-  let offset = 0
-  const limit = 1000
+  // v4: курсорная пагинация, максимум 100 запросов на страницу
+  const limit = 100
+  let cursor = ''
   let hasNext = true
 
   try {
     while (hasNext) {
-      const body = JSON.stringify({
-        filter: { since, to },
-        dir: 'ASC',
-        offset,
-        limit,
-        with: {
-          analytics_data: true,
-          barcodes: true,
-          financial_data: true,
-          translit: true
-        }
-      })
+      const bodyReq = { filter: { since, to }, limit }
+      if (cursor) bodyReq.cursor = cursor
 
       const response = await ozonRequestWithRetry(
         'api-seller.ozon.ru',
-        '/v3/posting/fbs/list',
+        '/v4/posting/fbs/list',
         'POST',
         headers,
-        body
+        JSON.stringify(bodyReq)
       )
 
       if (response.status !== 200) {
@@ -1689,34 +1688,37 @@ async function fetchOzonPostingsList(clientId, apiKey, daysBack = 120) {
         throw new Error(`Ozon Postings List API: HTTP ${response.status} — ${snippet}`)
       }
 
-      const items = response.body && response.body.result && response.body.result.postings
-        ? response.body.result.postings
+      // v4: postings/has_next/cursor на верхнем уровне (НЕ в .result)
+      const items = Array.isArray(response.body && response.body.postings)
+        ? response.body.postings
         : []
       for (const post of items) {
-        const firstProduct = post.products && post.products.length > 0 ? post.products[0] : null
+        // v4: products[].price — объект {amount, currency}; нормализуем к строке amount
+        // (в v3 это была строка). Иначе parseFloat(object) → NaN → потеря суммы.
+        const normPrice = pr => (pr && pr.amount != null) ? String(pr.amount) : (typeof pr === 'string' ? pr : '0')
+        const products = (post.products || []).map(p => ({
+          offer_id: p.offer_id || '',
+          name: p.name || '',
+          price: normPrice(p.price),
+          sku: p.sku,
+          quantity: p.quantity || 0
+        }))
         postings.push({
           posting_number: post.posting_number || '',
           order_id: post.order_id,
           status: post.status || '',
-          products: (post.products || []).map(p => ({
-            offer_id: p.offer_id || '',
-            name: p.name || '',
-            price: p.price || '0',
-            sku: p.sku,
-            quantity: p.quantity || 0
-          })),
+          products,
           shipment_date: post.shipment_date || '',
           delivering_date: post.delivering_date || '',
-          price: firstProduct ? parseFloat(firstProduct.price) || 0 : 0,
+          price: products.length ? parseFloat(products[0].price) || 0 : 0,
           is_return: post.analytics_data?.is_return ?? false,
           is_cancel: post.analytics_data?.is_cancel ?? false
         })
       }
 
-      hasNext = response.body && response.body.result && response.body.result.has_next === true && items.length >= limit
+      hasNext = response.body && response.body.has_next === true && items.length > 0
       if (hasNext) {
-        offset += limit
-        await new Promise(r => setTimeout(r, 1000))
+        cursor = response.body.cursor || cursor
       } else {
         hasNext = false
       }
