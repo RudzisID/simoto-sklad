@@ -41,6 +41,10 @@ const attributesCache = new Map()
  */
 function makeRequest(options, postData = null) {
   return new Promise((resolve, reject) => {
+    // Таймаут запроса: по умолчанию 30 с, но вызывающий может задать короткий
+    // (options.timeoutMs) — например для live-фолбэка по одному отправлению,
+    // чтобы единичный медленный ответ не блокировал сканирование надолго.
+    const timeoutMs = options.timeoutMs || 30000
     // Content-Length обязателен для Ozon API (не поддерживает chunked encoding)
     if (postData) {
       options.headers = options.headers || {}
@@ -74,7 +78,7 @@ function makeRequest(options, postData = null) {
         }
       })
     })
-    req.setTimeout(30000, () => {
+    req.setTimeout(timeoutMs, () => {
       req.destroy()
       reject(new Error(`Request timeout: ${options.method} ${options.hostname}${options.path}`))
     })
@@ -1349,6 +1353,66 @@ async function fetchWBOrderIdBySrid(srid, token) {
 // Ozon: Returns & Postings API
 // ──────────────────────────────────────────
 
+// ── Метрика отклика Ozon API ──────────────────────────────────
+// Измеряется в ozonRequestWithRetry (единая точка всех запросов к Ozon).
+// Нужна, чтобы живой фолбэк по ОДНОМУ отправлению запускался только когда
+// Ozon реально отвечает быстро, а при тормозах/падениях — пропускался,
+// иначе очередь медленных live-запросов заблокировала бы всё сканирование.
+const ozonLatency = {
+  ewmaMs: 0,        // скользящее среднее времени успешных ответов
+  sampleCount: 0,   // число успешных замеров
+  lastOkAt: 0,      // timestamp последнего успешного ответа
+  lastErrorAt: 0    // timestamp последнего сбоя (таймаут/сеть)
+}
+const OZON_LATENCY_EWMA_ALPHA = 0.35   // вес свежего замера в среднем
+const OZON_LIVE_ERROR_GAP_MS = 15000   // после сбоя не запускаем live-запросы это время
+const OZON_LIVE_OK_WINDOW_MS = 5 * 60 * 1000 // «Ozon жив» — если был успех за это окно
+
+/**
+ * Регистрация успешного ответа Ozon: обновление EWMA времени отклика.
+ * @param {number} ms - длительность ответа в миллисекундах
+ * @returns {void}
+ */
+function recordOzonSuccess(ms) {
+  ozonLatency.ewmaMs = ozonLatency.sampleCount === 0
+    ? ms
+    : OZON_LATENCY_EWMA_ALPHA * ms + (1 - OZON_LATENCY_EWMA_ALPHA) * ozonLatency.ewmaMs
+  ozonLatency.sampleCount++
+  ozonLatency.lastOkAt = Date.now()
+}
+
+/**
+ * Регистрация сбоя Ozon (таймаут/сетевая ошибка): фиксирует время для шлюза.
+ * @returns {void}
+ */
+function recordOzonError() {
+  ozonLatency.lastErrorAt = Date.now()
+}
+
+/**
+ * Текущая метрика отклика Ozon (для диагностики/логирования).
+ * @returns {{ewmaMs: number, sampleCount: number, lastOkAt: number, lastErrorAt: number}}
+ */
+function getOzonLatency() {
+  return { ...ozonLatency }
+}
+
+/**
+ * Шлюз для live-фолбэка: можно ли безопасно делать одиночные запросы к Ozon.
+ * Истина — если был успешный ответ в последнее окно (Ozon «жив») И нет свежего
+ * сбоя в пределах OZON_LIVE_ERROR_GAP_MS (иначе сеть нестабильна и очередь
+ * медленных live-запросов заблокировала бы сканирование). EWMA времени отклика
+ * ведётся отдельно (для диагностики), но не является блокирующим условием, т.к.
+ * смешивает долгие bulk-страницы и быстрые одиночные ответы.
+ * @returns {boolean}
+ */
+function isOzonResponsive() {
+  const now = Date.now()
+  const freshError = ozonLatency.lastErrorAt && (now - ozonLatency.lastErrorAt) < OZON_LIVE_ERROR_GAP_MS
+  if (freshError) return false
+  return ozonLatency.lastOkAt > 0 && (now - ozonLatency.lastOkAt) < OZON_LIVE_OK_WINDOW_MS
+}
+
 /**
  * Ozon: выполнение HTTP-запроса с повторными попытками.
  * Повтор при rate limiting (429): читает заголовок Retry-After,
@@ -1366,17 +1430,22 @@ async function fetchWBOrderIdBySrid(srid, token) {
  * @param {object} headers - Заголовки запроса
  * @param {string} [body] - Тело запроса (JSON-строка)
  * @param {number} [maxRetries=3] - Максимальное количество повторных попыток
+ * @param {number} [timeoutMs=30000] - Таймаут одной попытки (мс)
  * @returns {Promise<{status: number, headers: object, body: any}>} Ответ API
  * @throws {Error} Если превышено максимальное количество попыток (429 или сеть/таймаут)
  */
-async function ozonRequestWithRetry(hostname, path, method, headers, body, maxRetries = 3) {
+async function ozonRequestWithRetry(hostname, path, method, headers, body, maxRetries = 3, timeoutMs = 30000) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let response
+    const t0 = Date.now()
     try {
-      response = await makeRequest({ hostname, path, method, headers }, body)
+      response = await makeRequest({ hostname, path, method, headers, timeoutMs }, body)
+      // Успешный транспорт (HTTP-статус может быть и 4xx/5xx) — фиксируем отклик
+      recordOzonSuccess(Date.now() - t0)
     } catch (err) {
       // Таймаут или сетевая ошибка: повторяем с экспоненциальным бэкоффом,
       // пока попытки не исчерпаны. Исходную ошибку пробрасываем наверх.
+      recordOzonError()
       if (attempt < maxRetries) {
         const backoffMs = Math.min(2 ** attempt * 1000, 8000) // 1с, 2с, 4с...
         warn(`[Ozon] Request error (${err.message}), retrying in ${backoffMs}ms (attempt ${attempt + 1}/${maxRetries})`)
@@ -1631,10 +1700,13 @@ async function fetchOzonPostingsList(clientId, apiKey, daysBack = 120) {
  * @param {string} clientId - Ozon Client-Id
  * @param {string} apiKey - Ozon Api-Key
  * @param {string} postingNumber - Номер отправления FBS
+ * @param {{timeoutMs?: number, maxRetries?: number}} [opts={}] - overrides для
+ *   live-фолбэка: короткий таймаут и 0 ретраев, чтобы одиночный медленный ответ
+ *   не блокировал сканирование. По умолчанию — стандартные 30 с / 3 ретрая.
  * @returns {Promise<Object|null>} Объект отправления или null при ошибке
  * @throws {Error} При HTTP-статусе, отличном от 200
  */
-async function fetchOzonPostingDetail(clientId, apiKey, postingNumber) {
+async function fetchOzonPostingDetail(clientId, apiKey, postingNumber, opts = {}) {
   const headers = {
     'Content-Type': 'application/json',
     'Client-Id': clientId,
@@ -1655,7 +1727,9 @@ async function fetchOzonPostingDetail(clientId, apiKey, postingNumber) {
       '/v3/posting/fbs/get',
       'POST',
       headers,
-      body
+      body,
+      opts.maxRetries ?? 3,
+      opts.timeoutMs ?? 30000
     )
 
     if (response.status !== 200) {
@@ -1842,5 +1916,7 @@ module.exports = {
   fetchOzonReturnsList,
   fetchOzonPostingsList,
   fetchOzonPostingDetail,
-  fetchOzonReturnByBarcode
+  fetchOzonReturnByBarcode,
+  isOzonResponsive,
+  getOzonLatency
 }
