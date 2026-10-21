@@ -1413,10 +1413,40 @@ function isOzonResponsive() {
   return ozonLatency.lastOkAt > 0 && (now - ozonLatency.lastOkAt) < OZON_LIVE_OK_WINDOW_MS
 }
 
+// ── Ограничитель частоты запросов к Ozon ──────────────────────
+// Ozon отдаёт 429 «rate limit per second» (code 8), если слать запросы впритык:
+// bulk-пагинация (returns/postings) идёт страницами подряд, ещё и параллельно по
+// двум кэшам, плюс live-фолбэк. Единая очередь-токен разводит ВСЕ запросы к Ozon
+// минимум на OZON_MIN_REQUEST_INTERVAL_MS друг от друга, убирая всплеск в секунду.
+const OZON_MIN_REQUEST_INTERVAL_MS = 250
+let ozonNextRequestAt = 0
+let ozonRequestQueue = Promise.resolve()
+
+/**
+ * Очередь-ограничитель: гарантирует, что следующий запрос к Ozon стартует не
+ * раньше, чем через OZON_MIN_REQUEST_INTERVAL_MS после предыдущего. Вызывается
+ * перед каждой попыткой ozonRequestWithRetry. Серийзует параллельные потоки
+ * (returns+postings, live), не ломаясь при отклонённых промисах.
+ * @returns {Promise<void>} резолвится, когда можно слать запрос
+ */
+function ozonThrottle() {
+  const run = ozonRequestQueue.then(async () => {
+    const wait = ozonNextRequestAt - Date.now()
+    if (wait > 0) await new Promise(r => setTimeout(r, wait))
+    ozonNextRequestAt = Date.now() + OZON_MIN_REQUEST_INTERVAL_MS
+  })
+  // Держим очередь живой даже если конкретный запрос позже упадёт
+  ozonRequestQueue = run.catch(() => {})
+  return run
+}
+
 /**
  * Ozon: выполнение HTTP-запроса с повторными попытками.
- * Повтор при rate limiting (429): читает заголовок Retry-After,
- * при отсутствии ждёт 60 с.
+ * Перед каждой попыткой выдерживает глобальный интервал ozonThrottle() — чтобы
+ * bulk-пагинация и live-фолбэк не превышали лимит Ozon «запросов в секунду».
+ * Повтор при rate limiting (429): уважает заголовок Retry-After, при отсутствии
+ * ждёт немного (лимиты Ozon — в секунду/минуту, не в час). 429 также отмечает
+ * Ozon как «нереактивного» (recordOzonError), чтобы live-фолбэк встал на паузу.
  * Повтор при таймауте/сетевой ошибке (makeRequest бросает исключение):
  * экспоненциальный бэкофф 1с→2с→4с (потолок 8с) — стабилизирует работу
  * при нестабильной сети до api-seller.ozon.ru, чтобы фоновое обновление
@@ -1439,6 +1469,8 @@ async function ozonRequestWithRetry(hostname, path, method, headers, body, maxRe
     let response
     const t0 = Date.now()
     try {
+      // Глобальная частотная очередь: разнести запросы, чтобы не словить 429/сек
+      await ozonThrottle()
       response = await makeRequest({ hostname, path, method, headers, timeoutMs }, body)
       // Успешный транспорт (HTTP-статус может быть и 4xx/5xx) — фиксируем отклик
       recordOzonSuccess(Date.now() - t0)
@@ -1456,10 +1488,15 @@ async function ozonRequestWithRetry(hostname, path, method, headers, body, maxRe
     }
 
     if (response.status === 429 && attempt < maxRetries) {
+      // 429 = мы под лимитом: ставим live-фолбэк на паузу (иначе он продолжит
+      // долбить тот же лимитируемый API поверх bulk-запросов)
+      recordOzonError()
+      // Retry-After уважаем, если прислан; иначе короткий wait (Ozon-лимиты
+      // в секунду/минуту) — вместо прежних 60-секундных остановок
       const retryAfter = parseInt(
         response.headers && response.headers['retry-after'],
         10
-      ) || 60
+      ) || 5
       warn(`[Ozon] Rate limited (429), retrying after ${retryAfter}s (attempt ${attempt + 1}/${maxRetries})`)
       await new Promise(r => setTimeout(r, retryAfter * 1000))
       continue
