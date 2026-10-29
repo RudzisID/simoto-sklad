@@ -249,11 +249,6 @@
                 <button class="btn btn-ms" onclick="transferToSklad()">📋 Передать номера в Склад</button>
               </div>
             </div>
-            <!-- Справка по версиям — отдельный блок с прокруткой -->
-            <div class="settings-changelog" id="versionsChangelog">
-              <div class="settings-label">История версий</div>
-              <div class="changelog-scroll" id="changelogContent"></div>
-            </div>
             <!-- Скрытые поля для дат сканирования (читаются в scanSupplies) -->
             <input type="hidden" id="scanDateFrom" value="">
             <input type="hidden" id="scanDateTo" value="">
@@ -359,7 +354,7 @@
           <div style="display: flex; justify-content: center; margin: 16px 0;">
             <canvas id="qrCanvas"></canvas>
           </div>
-          <p id="qrUrlText" style="font-size: 12px; color: #888; word-break: break-all; margin: 0;"></p>
+          <p id="qrUrlText" style="font-size: 12px; color: var(--text-muted); word-break: break-all; margin: 0;"></p>
         </div>
         <div class="modal-footer" style="justify-content: center;">
           <button id="qrClose" class="btn btn-cancel">Закрыть</button>
@@ -456,7 +451,7 @@
           <button class="btn-close" id="pushArchiveCloseBtn">✕</button>
         </div>
         <div class="modal-body" style="max-height: 70vh; overflow: auto; padding: 0;">
-          <pre id="pushArchiveContent" style="margin:0;padding:16px;font-size:11px;line-height:1.4;white-space:pre-wrap;background:#1e1e1e;color:#d4d4d4;border-radius:0;overflow:auto;"></pre>
+          <pre id="pushArchiveContent" style="margin:0;padding:16px;font-size:11px;line-height:1.4;white-space:pre-wrap;background:var(--sf-header-bg);color:var(--text-muted);border-radius:0;overflow:auto;"></pre>
         </div>
         <div class="modal-footer">
           <button class="btn btn-cancel" id="pushArchiveCloseBtn2">Закрыть</button>
@@ -575,7 +570,7 @@
           try {
             const resp = await fetch('/api/server-url');
             const data = await resp.json();
-            new QRious({ element: qrCanvas, value: data.url, size: 200, backgroundAlpha: 0, foreground: '#e0e0e0' });
+            new QRious({ element: qrCanvas, value: data.url, size: 200, backgroundAlpha: 0, foreground: '#fafafa' });
             document.getElementById('qrUrlText').textContent = data.url;
           } catch (e) {
             document.getElementById('qrUrlText').textContent = 'Ошибка получения URL: ' + e.message;

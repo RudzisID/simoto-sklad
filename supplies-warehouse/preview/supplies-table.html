@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SiMOTO — Поставки</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --sf-canvas: 5 5 5;
+      --sf-panel: 255 255 255;
+      --sf-panel-solid: 15 15 15;
+      --sf-header-bg: 10 10 10;
+      --sf-fg: 250 250 250;
+      --sf-fg-secondary: 229 229 229;
+      --sf-muted: 167 166 166;
+      --sf-border: 255 255 255;
+      --sf-accent: 255 133 98;
+      --sf-btn-bg: 255 255 255;
+      --sf-btn-fg: 5 5 5;
+      --sf-rose-fg: 251 113 133;
+      --sf-amber-fg: 251 191 36;
+      --sf-emerald-fg: 52 211 153;
+      --sf-tag-sky: 125 211 252;
+      --sf-tag-amber: 252 211 77;
+      --sf-tag-emerald: 110 231 183;
+    }
+
+    body.sf-canvas {
+      background-color: rgb(var(--sf-canvas));
+      color: rgb(var(--sf-fg));
+      color-scheme: dark;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0; padding: 0;
+    }
+
+    .sf-canvas * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent; }
+    .sf-canvas *::-webkit-scrollbar { width: 8px; height: 8px; }
+    .sf-canvas *::-webkit-scrollbar-track { background: transparent; }
+    .sf-canvas *::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 8px; }
+
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .status-dot.new { background-color: rgb(167 166 166); }
+    .status-dot.checking { background-color: rgb(var(--sf-tag-amber)); }
+    .status-dot.can_ship { background-color: rgb(var(--sf-tag-sky)); }
+    .status-dot.shipped { background-color: rgb(var(--sf-emerald-fg)); }
+    .status-dot.can_pay { background-color: rgb(168 85 247); }
+    .status-dot.paid { background-color: rgb(var(--sf-emerald-fg)); }
+    .status-dot.can_return { background-color: rgb(var(--sf-amber-fg)); }
+    .status-dot.returned { background-color: rgb(var(--sf-rose-fg)); }
+    .status-dot.cancelled { background-color: rgb(100 100 100); }
+
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 8px; border-radius: 9999px;
+      font-size: 11px; font-weight: 500; border: 1px solid transparent;
+    }
+    .badge.wb { background-color: rgba(168 85 247/0.15); color: rgb(192 132 252); border-color: rgba(168 85 247/0.3); }
+    .badge.ozon { background-color: rgba(59 130 246/0.15); color: rgb(147 197 253); border-color: rgba(59 130 246/0.3); }
+
+    .toolbar-btn {
+      background-color: rgba(var(--sf-panel)/0.05);
+      border: 1px solid rgba(var(--sf-border)/0.1);
+      color: rgb(var(--sf-fg));
+      padding: 8px 16px; border-radius: 8px;
+      font-size: 13px; cursor: pointer;
+      transition: background-color 0.15s;
+    }
+    .toolbar-btn:hover { background-color: rgba(var(--sf-panel)/0.1); }
+    .toolbar-btn.primary { background-color: rgb(var(--sf-accent)); color: rgb(var(--sf-btn-fg)); border-color: transparent; }
+    .toolbar-btn.primary:hover { opacity: 0.9; }
+
+    .sf-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .sf-table thead th {
+      text-align: left; padding: 10px 16px;
+      font-size: 11px; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: rgb(var(--sf-muted));
+      border-bottom: 1px solid rgba(var(--sf-border)/0.08);
+      background-color: rgba(var(--sf-panel)/0.02);
+    }
+    .sf-table tbody tr { border-bottom: 1px solid rgba(var(--sf-border)/0.04); transition: background-color 0.1s; }
+    .sf-table tbody tr:hover { background-color: rgba(var(--sf-panel)/0.03); }
+    .sf-table td { padding: 12px 16px; font-size: 13px; }
+
+    .sf-tab {
+      padding: 8px 16px; border-radius: 8px;
+      font-size: 13px; font-weight: 500; cursor: pointer;
+      color: rgb(var(--sf-muted)); border: 1px solid transparent;
+      background: transparent; transition: color 0.15s, background-color 0.15s;
+    }
+    .sf-tab:hover { color: rgb(var(--sf-fg)); }
+    .sf-tab.active { color: rgb(var(--sf-fg)); background-color: rgba(var(--sf-panel)/0.06); border-color: rgba(var(--sf-border)/0.1); }
+  </style>
+</head>
+<body class="sf-canvas min-h-screen p-8">
+  <div class="max-w-7xl mx-auto">
+    <h1 class="text-xl font-semibold mb-6" style="color: rgb(var(--sf-fg));">📦 SiMOTO</h1>
+    <div class="flex items-center gap-2 mb-6">
+      <button class="sf-tab active">Поставки</button>
+      <button class="sf-tab">Склад</button>
+    </div>
+    <div class="flex items-center gap-3 mb-4 flex-wrap">
+      <button class="toolbar-btn primary font-medium">🔄 Сканировать</button>
+      <button class="toolbar-btn">🔄 WB кэш</button>
+      <button class="toolbar-btn">🔄 Ozon кэш</button>
+      <div class="w-px h-6" style="background: rgba(var(--sf-border)/0.1);"></div>
+      <select class="toolbar-btn bg-transparent" style="color: rgb(var(--sf-fg));"><option>Все площадки</option><option>WB</option><option>Ozon</option></select>
+      <select class="toolbar-btn bg-transparent" style="color: rgb(var(--sf-fg));"><option>Все статусы</option><option>Новые</option><option>К отгрузке</option><option>Отгружено</option></select>
+    </div>
+    <div class="rounded-xl overflow-hidden" style="border: 1px solid rgba(var(--sf-border)/0.06);">
+      <table class="sf-table">
+        <thead><tr><th>Статус</th><th>Отправление</th><th>Площадка</th><th>Сумма</th><th>Оплачено</th><th>Поз.</th><th>Дата</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="flex items-center gap-2"><span class="status-dot can_ship"></span><span style="color: rgb(var(--sf-muted));">К отгрузке</span></span></td>
+            <td class="font-mono" style="color: rgb(var(--sf-fg));">WB-47291</td>
+            <td><span class="badge wb">WB</span></td>
+            <td style="color: rgb(var(--sf-fg));">2,400 ₽</td>
+            <td style="color: rgb(var(--sf-muted));">0 ₽</td>
+            <td style="color: rgb(var(--sf-muted));">2</td>
+            <td style="color: rgb(var(--sf-muted));">28.10</td>
+            <td><button class="text-xs px-3 py-1 rounded-lg" style="background: rgba(125 211 252/0.15); color: rgb(var(--sf-tag-sky)); border: 1px solid rgba(125 211 252/0.3);">📦</button></td>
+          </tr>
+          <tr>
+            <td><span class="flex items-center gap-2"><span class="status-dot new"></span><span style="color: rgb(var(--sf-muted));">Новый</span></span></td>
+            <td class="font-mono" style="color: rgb(var(--sf-fg));">OZ-88432</td>
+            <td><span class="badge ozon">Ozon</span></td>
+            <td style="color: rgb(var(--sf-fg));">1,200 ₽</td>
+            <td style="color: rgb(var(--sf-muted));">0 ₽</td>
+            <td style="color: rgb(var(--sf-muted));">1</td>
+            <td style="color: rgb(var(--sf-muted));">28.10</td>
+            <td><button class="text-xs px-3 py-1 rounded-lg" style="background: rgba(125 211 252/0.15); color: rgb(var(--sf-tag-sky)); border: 1px solid rgba(125 211 252/0.3);">📦</button></td>
+          </tr>
+          <tr>
+            <td><span class="flex items-center gap-2"><span class="status-dot checking"></span><span style="color: rgb(var(--sf-muted));">Проверяется</span></span></td>
+            <td class="font-mono" style="color: rgb(var(--sf-fg));">OZ-88450</td>
+            <td><span class="badge ozon">Ozon</span></td>
+            <td style="color: rgb(var(--sf-fg));">3,100 ₽</td>
+            <td style="color: rgb(var(--sf-muted));">0 ₽</td>
+            <td style="color: rgb(var(--sf-muted));">3</td>
+            <td style="color: rgb(var(--sf-muted));">28.10</td>
+            <td><span class="text-xs animate-pulse" style="color: rgb(var(--sf-tag-amber));">⏳</span></td>
+          </tr>
+          <tr>
+            <td><span class="flex items-center gap-2"><span class="status-dot shipped"></span><span style="color: rgb(var(--sf-muted));">Отгружено</span></span></td>
+            <td class="font-mono" style="color: rgb(var(--sf-fg));">WB-31045</td>
+            <td><span class="badge wb">WB</span></td>
+            <td style="color: rgb(var(--sf-fg));">3,100 ₽</td>
+            <td style="color: rgb(var(--sf-muted));">0 ₽</td>
+            <td style="color: rgb(var(--sf-muted));">3</td>
+            <td style="color: rgb(var(--sf-muted));">26.10</td>
+            <td><button class="text-xs px-3 py-1 rounded-lg" style="background: rgba(168 85 247/0.15); color: rgb(192 132 252); border: 1px solid rgba(168 85 247/0.3);">💰</button></td>
+          </tr>
+          <tr class="opacity-60">
+            <td><span class="flex items-center gap-2"><span class="status-dot paid"></span><span style="color: rgb(var(--sf-muted));">Оплачено</span></span></td>
+            <td class="font-mono" style="color: rgb(var(--sf-muted));">WB-10023</td>
+            <td><span class="badge wb">WB</span></td>
+            <td style="color: rgb(var(--sf-emerald-fg));">5,200 ₽</td>
+            <td style="color: rgb(var(--sf-emerald-fg));">5,200 ₽</td>
+            <td style="color: rgb(var(--sf-muted));">4</td>
+            <td style="color: rgb(var(--sf-muted));">20.10</td>
+            <td></td>
+          </tr>
+          <tr style="background: rgba(251 191 36/0.05);">
+            <td><span class="flex items-center gap-2"><span class="status-dot can_return"></span><span style="color: rgb(var(--sf-muted));">К возврату</span></span></td>
+            <td class="font-mono" style="color: rgb(var(--sf-fg));">WB-28015</td>
+            <td><span class="badge wb">WB</span></td>
+            <td style="color: rgb(var(--sf-fg));">2,300 ₽</td>
+            <td style="color: rgb(var(--sf-muted));">0 ₽</td>
+            <td style="color: rgb(var(--sf-muted));">2</td>
+            <td style="color: rgb(var(--sf-muted));">24.10</td>
+            <td><button class="text-xs px-3 py-1 rounded-lg" style="background: rgba(251 191 36/0.15); color: rgb(var(--sf-amber-fg)); border: 1px solid rgba(251 191 36/0.3);">↩️</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

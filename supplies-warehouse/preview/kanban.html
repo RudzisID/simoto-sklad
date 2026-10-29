@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SiMOTO — Канбан поставок</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* === Storefront Canvas (from storefront-canvas.tsx) === */
+    :root {
+      --sf-canvas: 5 5 5;
+      --sf-panel: 255 255 255;
+      --sf-panel-solid: 15 15 15;
+      --sf-header-bg: 10 10 10;
+      --sf-fg: 250 250 250;
+      --sf-fg-secondary: 229 229 229;
+      --sf-muted: 167 166 166;
+      --sf-border: 255 255 255;
+      --sf-accent: 255 133 98;
+      --sf-btn-bg: 255 255 255;
+      --sf-btn-fg: 5 5 5;
+      --sf-rose-fg: 251 113 133;
+      --sf-amber-fg: 251 191 36;
+      --sf-emerald-fg: 52 211 153;
+      --sf-tag-sky: 125 211 252;
+      --sf-tag-amber: 252 211 77;
+      --sf-tag-emerald: 110 231 183;
+    }
+
+    body.sf-canvas {
+      background-color: rgb(var(--sf-canvas));
+      color: rgb(var(--sf-fg));
+      color-scheme: dark;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* === Scrollbar === */
+    .sf-canvas * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent; }
+    .sf-canvas *::-webkit-scrollbar { width: 8px; height: 8px; }
+    .sf-canvas *::-webkit-scrollbar-track { background: transparent; }
+    .sf-canvas *::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 8px; }
+    .sf-canvas *::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+
+    /* === Status dots (from tasks page) === */
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .status-dot.new { background-color: rgb(167 166 166); }
+    .status-dot.checking { background-color: rgb(var(--sf-tag-amber)); }
+    .status-dot.can_ship { background-color: rgb(var(--sf-tag-sky)); }
+    .status-dot.shipped { background-color: rgb(var(--sf-emerald-fg)); }
+    .status-dot.can_pay { background-color: rgb(168 85 247); }
+    .status-dot.paid { background-color: rgb(var(--sf-emerald-fg)); }
+    .status-dot.can_return { background-color: rgb(var(--sf-amber-fg)); }
+    .status-dot.returned { background-color: rgb(var(--sf-rose-fg)); }
+    .status-dot.cancelled { background-color: rgb(100 100 100); }
+    .status-dot.delayed { background-color: rgb(var(--sf-tag-amber)); }
+
+    /* === Kanban cards === */
+    .kanban-card {
+      background-color: rgb(var(--sf-panel-solid));
+      border: 1px solid rgba(var(--sf-border)/0.08);
+      border-radius: 12px;
+      padding: 12px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .kanban-card:hover {
+      border-color: rgba(var(--sf-border)/0.15);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    /* === Marketplace badges === */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 500;
+      border: 1px solid transparent;
+    }
+    .badge.wb { background-color: rgba(168 85 247/0.15); color: rgb(192 132 252); border-color: rgba(168 85 247/0.3); }
+    .badge.ozon { background-color: rgba(59 130 246/0.15); color: rgb(147 197 253); border-color: rgba(59 130 246/0.3); }
+
+    /* === Action toolbar === */
+    .toolbar-btn {
+      background-color: rgba(var(--sf-panel)/0.05);
+      border: 1px solid rgba(var(--sf-border)/0.1);
+      color: rgb(var(--sf-fg));
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background-color 0.15s;
+    }
+    .toolbar-btn:hover { background-color: rgba(var(--sf-panel)/0.1); }
+    .toolbar-btn.primary { background-color: rgb(var(--sf-accent)); color: rgb(var(--sf-btn-fg)); border-color: transparent; }
+    .toolbar-btn.primary:hover { opacity: 0.9; }
+
+    /* === Kanban column === */
+    .kanban-column {
+      background-color: rgba(var(--sf-panel)/0.02);
+      border: 1px solid rgba(var(--sf-border)/0.06);
+      border-radius: 16px;
+      min-height: 200px;
+    }
+  </style>
+</head>
+<body class="sf-canvas min-h-screen p-8">
+
+  <div class="max-w-full">
+    <h1 class="text-xl font-semibold mb-6" style="color: rgb(var(--sf-fg));">📦 Поставки</h1>
+
+    <!-- Action Toolbar -->
+    <div class="flex items-center gap-3 mb-6 flex-wrap">
+      <button class="toolbar-btn primary font-medium">🔄 Сканировать</button>
+      <button class="toolbar-btn">🔄 WB кэш</button>
+      <button class="toolbar-btn">🔄 Ozon кэш</button>
+      <div class="w-px h-6" style="background: rgba(var(--sf-border)/0.1);"></div>
+      <select class="toolbar-btn bg-transparent" style="color: rgb(var(--sf-fg));">
+        <option>Все площадки</option>
+        <option>Wildberries</option>
+        <option>Ozon</option>
+      </select>
+    </div>
+
+    <!-- Kanban Board -->
+    <div class="flex gap-4 overflow-x-auto pb-4">
+
+      <!-- Колонка: Новые -->
+      <div class="kanban-column flex-shrink-0 w-72 flex flex-col">
+        <div class="p-4 pb-3 border-b" style="border-color: rgba(var(--sf-border)/0.06);">
+          <div class="flex items-center gap-2">
+            <span class="status-dot new"></span>
+            <span class="text-sm font-medium" style="color: rgb(var(--sf-fg));">Новые</span>
+            <span class="text-xs" style="color: rgb(var(--sf-muted));">(3)</span>
+          </div>
+        </div>
+        <div class="p-3 space-y-3 flex-1">
+          <div class="kanban-card">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium" style="color: rgb(var(--sf-fg));">WB-47291</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-fg));">2,400 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">2 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs" style="color: rgb(var(--sf-muted));">
+              <span class="badge wb">WB</span>
+              <span>28.10</span>
+            </div>
+          </div>
+          <div class="kanban-card">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium" style="color: rgb(var(--sf-fg));">OZ-88432</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-fg));">1,200 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">1 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs" style="color: rgb(var(--sf-muted));">
+              <span class="badge ozon">Ozon</span>
+              <span>28.10</span>
+            </div>
+          </div>
+          <div class="kanban-card">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium" style="color: rgb(var(--sf-fg));">WB-47305</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-fg));">4,800 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">4 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs" style="color: rgb(var(--sf-muted));">
+              <span class="badge wb">WB</span>
+              <span>27.10</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Колонка: Проверяется -->
+      <div class="kanban-column flex-shrink-0 w-72 flex flex-col">
+        <div class="p-4 pb-3 border-b" style="border-color: rgba(var(--sf-border)/0.06);">
+          <div class="flex items-center gap-2">
+            <span class="status-dot checking"></span>
+            <span class="text-sm font-medium" style="color: rgb(var(--sf-fg));">Проверяется</span>
+            <span class="text-xs" style="color: rgb(var(--sf-muted));">(1)</span>
+          </div>
+        </div>
+        <div class="p-3 space-y-3 flex-1">
+          <div class="kanban-card" style="border-color: rgba(var(--sf-tag-amber)/0.3);">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium" style="color: rgb(var(--sf-fg));">OZ-88450</span>
+              <span class="text-xs animate-pulse" style="color: rgb(var(--sf-tag-amber));">⏳</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-fg));">3,100 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">3 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs" style="color: rgb(var(--sf-muted));">
+              <span class="badge ozon">Ozon</span>
+              <span>28.10</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Колонка: К отгрузке -->
+      <div class="kanban-column flex-shrink-0 w-72 flex flex-col">
+        <div class="p-4 pb-3 border-b" style="border-color: rgba(var(--sf-border)/0.06);">
+          <div class="flex items-center gap-2">
+            <span class="status-dot can_ship"></span>
+            <span class="text-sm font-medium" style="color: rgb(var(--sf-fg));">К отгрузке</span>
+            <span class="text-xs" style="color: rgb(var(--sf-muted));">(2)</span>
+          </div>
+        </div>
+        <div class="p-3 space-y-3 flex-1">
+          <div class="kanban-card group">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium" style="color: rgb(var(--sf-fg));">WB-47280</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-fg));">1,890 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">2 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs mb-2" style="color: rgb(var(--sf-muted));">
+              <span class="badge wb">WB</span>
+              <span>27.10</span>
+            </div>
+            <button class="w-full mt-2 text-xs py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" style="background: rgba(125 211 252/0.15); color: rgb(var(--sf-tag-sky)); border: 1px solid rgba(125 211 252/0.3);">📦 Отгрузить</button>
+          </div>
+          <div class="kanban-card group">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium" style="color: rgb(var(--sf-fg));">OZ-88410</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-fg));">4,500 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">5 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs mb-2" style="color: rgb(var(--sf-muted));">
+              <span class="badge ozon">Ozon</span>
+              <span>27.10</span>
+            </div>
+            <button class="w-full mt-2 text-xs py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" style="background: rgba(125 211 252/0.15); color: rgb(var(--sf-tag-sky)); border: 1px solid rgba(125 211 252/0.3);">📦 Отгрузить</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Колонка: Отгружено -->
+      <div class="kanban-column flex-shrink-0 w-72 flex flex-col">
+        <div class="p-4 pb-3 border-b" style="border-color: rgba(var(--sf-border)/0.06);">
+          <div class="flex items-center gap-2">
+            <span class="status-dot shipped"></span>
+            <span class="text-sm font-medium" style="color: rgb(var(--sf-fg));">Отгружено</span>
+            <span class="text-xs" style="color: rgb(var(--sf-muted));">(1)</span>
+          </div>
+        </div>
+        <div class="p-3 space-y-3 flex-1">
+          <div class="kanban-card">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium" style="color: rgb(var(--sf-fg));">WB-31045</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-fg));">3,100 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">3 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs" style="color: rgb(var(--sf-muted));">
+              <span class="badge wb">WB</span>
+              <span>26.10</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Колонка: К оплате -->
+      <div class="kanban-column flex-shrink-0 w-72 flex flex-col">
+        <div class="p-4 pb-3 border-b" style="border-color: rgba(var(--sf-border)/0.06);">
+          <div class="flex items-center gap-2">
+            <span class="status-dot can_pay"></span>
+            <span class="text-sm font-medium" style="color: rgb(var(--sf-fg));">К оплате</span>
+            <span class="text-xs" style="color: rgb(var(--sf-muted));">(1)</span>
+          </div>
+        </div>
+        <div class="p-3 space-y-3 flex-1">
+          <div class="kanban-card group">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium" style="color: rgb(var(--sf-fg));">WB-29100</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-fg));">1,500 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">1 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs mb-2" style="color: rgb(var(--sf-muted));">
+              <span class="badge wb">WB</span>
+              <span>25.10</span>
+            </div>
+            <button class="w-full mt-2 text-xs py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" style="background: rgba(168 85 247/0.15); color: rgb(192 132 252); border: 1px solid rgba(168 85 247/0.3);">💰 Оплатить</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Колонка: Оплачено -->
+      <div class="kanban-column flex-shrink-0 w-72 flex flex-col">
+        <div class="p-4 pb-3 border-b" style="border-color: rgba(var(--sf-border)/0.06);">
+          <div class="flex items-center gap-2">
+            <span class="status-dot paid"></span>
+            <span class="text-sm font-medium" style="color: rgb(var(--sf-fg));">Оплачено</span>
+            <span class="text-xs" style="color: rgb(var(--sf-muted));">(2)</span>
+          </div>
+        </div>
+        <div class="p-3 space-y-3 flex-1">
+          <div class="kanban-card">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium" style="color: rgb(var(--sf-muted));">WB-10023</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-emerald-fg));">5,200 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">4 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs" style="color: rgb(var(--sf-muted));">
+              <span class="badge wb">WB</span>
+              <span>20.10</span>
+            </div>
+          </div>
+          <div class="kanban-card">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium" style="color: rgb(var(--sf-muted));">OZ-55100</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-emerald-fg));">980 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">1 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs" style="color: rgb(var(--sf-muted));">
+              <span class="badge ozon">Ozon</span>
+              <span>20.10</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Колонка: К возврату -->
+      <div class="kanban-column flex-shrink-0 w-72 flex flex-col">
+        <div class="p-4 pb-3 border-b" style="border-color: rgba(var(--sf-border)/0.06);">
+          <div class="flex items-center gap-2">
+            <span class="status-dot can_return"></span>
+            <span class="text-sm font-medium" style="color: rgb(var(--sf-fg));">К возврату</span>
+            <span class="text-xs" style="color: rgb(var(--sf-muted));">(1)</span>
+          </div>
+        </div>
+        <div class="p-3 space-y-3 flex-1">
+          <div class="kanban-card group" style="border-color: rgba(var(--sf-amber-fg)/0.3);">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium" style="color: rgb(var(--sf-fg));">WB-28015</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-fg));">2,300 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">2 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs mb-2" style="color: rgb(var(--sf-muted));">
+              <span class="badge wb">WB</span>
+              <span>24.10</span>
+              <span style="color: rgb(var(--sf-amber-fg));">⬅ Возврат WB</span>
+            </div>
+            <button class="w-full mt-2 text-xs py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" style="background: rgba(251 191 36/0.15); color: rgb(var(--sf-amber-fg)); border: 1px solid rgba(251 191 36/0.3);">↩️ Вернуть</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Колонка: Возвращено -->
+      <div class="kanban-column flex-shrink-0 w-72 flex flex-col">
+        <div class="p-4 pb-3 border-b" style="border-color: rgba(var(--sf-border)/0.06);">
+          <div class="flex items-center gap-2">
+            <span class="status-dot returned"></span>
+            <span class="text-sm font-medium" style="color: rgb(var(--sf-fg));">Возвращено</span>
+            <span class="text-xs" style="color: rgb(var(--sf-muted));">(1)</span>
+          </div>
+        </div>
+        <div class="p-3 space-y-3 flex-1">
+          <div class="kanban-card opacity-60">
+            <div class="flex items-start justify-between mb-2">
+              <span class="font-mono text-sm font-medium line-through" style="color: rgb(var(--sf-muted));">WB-15008</span>
+            </div>
+            <div class="flex items-center justify-between text-sm mb-2">
+              <span style="color: rgb(var(--sf-muted));">890 ₽</span>
+              <span class="text-xs" style="color: rgb(var(--sf-muted));">1 поз.</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs" style="color: rgb(var(--sf-muted));">
+              <span class="badge wb">WB</span>
+              <span>18.10</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Колонка: Отменён -->
+      <div class="kanban-column flex-shrink-0 w-72 flex flex-col">
+        <div class="p-4 pb-3 border-b" style="border-color: rgba(var(--sf-border)/0.06);">
+          <div class="flex items-center gap-2">
+            <span class="status-dot cancelled"></span>
+            <span class="text-sm font-medium" style="color: rgb(var(--sf-fg));">Отменён</span>
+            <span class="text-xs" style="color: rgb(var(--sf-muted));">(0)</span>
+          </div>
+        </div>
+        <div class="p-3">
+          <div class="text-center text-xs py-4" style="color: rgba(var(--sf-muted)/0.5);">Нет заказов</div>
+        </div>
+      </div>
+
+      <!-- Колонка: Отложено -->
+      <div class="kanban-column flex-shrink-0 w-72 flex flex-col">
+        <div class="p-4 pb-3 border-b" style="border-color: rgba(var(--sf-border)/0.06);">
+          <div class="flex items-center gap-2">
+            <span class="status-dot delayed"></span>
+            <span class="text-sm font-medium" style="color: rgb(var(--sf-fg));">Отложено</span>
+            <span class="text-xs" style="color: rgb(var(--sf-muted));">(0)</span>
+          </div>
+        </div>
+        <div class="p-3">
+          <div class="text-center text-xs py-4" style="color: rgba(var(--sf-muted)/0.5);">Нет заказов</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</body>
+</html>

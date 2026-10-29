@@ -1,0 +1,14 @@
+{
+  "name": "supplies-warehouse",
+  "version": "1.0.0",
+  "description": "Medusa module for supplies and warehouse management via MoySklad, WB, Ozon",
+  "private": true,
+  "main": "index.ts",
+  "dependencies": {
+    "@medusajs/framework": "^2.0.0",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

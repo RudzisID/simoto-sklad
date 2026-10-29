@@ -43,44 +43,51 @@ const LIFECYCLE_STATUSES = [
 ]
 
 /**
- * Возвращает отсортированные статусы из жизненного цикла, присутствующие в текущих данных.
- * Сначала идут статусы из LIFECYCLE_STATUSES (в порядке цикла), затем остальные (по алфавиту).
+ * Возвращает все статусы, присутствующие в данных, в порядке для циклической сортировки:
+ * сначала статусы из LIFECYCLE_STATUSES (по порядку), затем все остальные (кастомные
+ * статусы тенанта) по алфавиту.
  *
- * @returns {string[]} Массив названий статусов в порядке сортировки
+ * @returns {string[]} Упорядоченный список статусов
  */
-function getLifecycleStatuses() {
-  const statusSet = new Set()
+function getStatusOrder() {
+  const set = new Set()
   ordersData.forEach((order) => {
-    if (order.statusName) statusSet.add(order.statusName)
+    if (order.statusName) set.add(order.statusName)
   })
+  const all = [...set]
+  const inLifecycle = all
+    .filter((s) => LIFECYCLE_STATUSES.includes(s))
+    .sort((a, b) => LIFECYCLE_STATUSES.indexOf(a) - LIFECYCLE_STATUSES.indexOf(b))
+  const custom = all
+    .filter((s) => !LIFECYCLE_STATUSES.includes(s))
+    .sort((a, b) => a.localeCompare(b, 'ru'))
+  return [...inLifecycle, ...custom]
+}
 
-  // Разделяем на статусы из жизненного цикла и остальные
-  const inLifecycle = []
-  const notInLifecycle = []
-
-  statusSet.forEach((status) => {
-    if (LIFECYCLE_STATUSES.includes(status)) {
-      inLifecycle.push(status)
-    } else {
-      notInLifecycle.push(status)
-    }
-  })
-
-  // Сортируем статусы из жизненного цикла по порядку в LIFECYCLE_STATUSES
-  inLifecycle.sort((a, b) => LIFECYCLE_STATUSES.indexOf(a) - LIFECYCLE_STATUSES.indexOf(b))
-
-  // Сортируем остальные статусы по алфавиту
-  notInLifecycle.sort((a, b) => a.localeCompare(b, 'ru'))
-
-  // Объединяем: сначала жизненный цикл, потом остальные
-  return [...inLifecycle, ...notInLifecycle]
+/**
+ * Приводит выбранный для поднятия наверх статус в соответствие с текущими данными.
+ * Если выбранного статуса больше нет — берёт первый доступный.
+ *
+ * @returns {void}
+ */
+function normalizeStatusTarget() {
+  if (currentSort.column !== 'statusName') return
+  const statuses = getStatusOrder()
+  if (statuses.length === 0) {
+    currentSort.statusTarget = null
+    return
+  }
+  if (!statuses.includes(currentSort.statusTarget)) {
+    currentSort.statusTarget = statuses[0]
+  }
 }
 
 let currentPage = 0
 const PAGE_SIZE = 1000
 let ordersState = {}
-// currentSort: column - текущая колонка, statusIndex - индекс в getLifecycleStatuses() (для статуса)
-let currentSort = { column: 'shipmentNum', asc: true, statusIndex: 0 }
+// currentSort: column - текущая колонка, asc - направление (true = по возрастанию),
+// statusTarget - статус, который при сортировке по «Статус» поднимается наверх
+let currentSort = { column: 'shipmentNum', asc: true, statusTarget: null }
 let dateFilter = { from: '', to: '' }
 let drpState = { month: new Date().getMonth(), year: new Date().getFullYear() }
 let currentController = null
@@ -620,19 +627,22 @@ function loadSavedOrdersAndRender() {
  */
 function sortTable(column) {
   if (column === 'statusName') {
-    if (currentSort.column === column) {
-      // Циклически переключаем статус: +1 по кругу
-      const statuses = getLifecycleStatuses()
-      if (statuses.length > 0) {
-        currentSort.statusIndex = (currentSort.statusIndex + 1) % statuses.length
-      }
+    // Циклический перебор ВСЕХ присутствующих статусов (включая кастомные).
+    // Выбор хранится по имени статуса, а не по индексу — поэтому он не «съезжает»,
+    // когда данные меняются после обновления строк.
+    const statuses = getStatusOrder()
+    if (statuses.length === 0) return
+
+    const currentIndex = statuses.indexOf(currentSort.statusTarget)
+    if (currentSort.column === 'statusName' && currentIndex !== -1) {
+      currentSort.statusTarget = statuses[(currentIndex + 1) % statuses.length]
     } else {
-      // Первая сортировка по статусу - берем первый статус из жизненного цикла
-      currentSort.column = column
-      currentSort.statusIndex = 0
+      currentSort.statusTarget = statuses[0]
     }
+    currentSort.column = 'statusName'
+    currentSort.asc = true
   } else {
-    // Для других колонок - стандартная логика asc/desc
+    // Для остальных колонок — стандартная логика asc/desc
     if (currentSort.column === column) {
       currentSort.asc = !currentSort.asc
     } else {
@@ -656,15 +666,14 @@ function updateSortIndicators() {
     th.removeAttribute('data-cycle-status')
   })
   const th = document.querySelector(`th[onclick="sortTable('${currentSort.column}')"]`)
-  if (th) {
-    if (currentSort.column === 'statusName') {
-      th.classList.add('cycle')
-      const lifecycleStatuses = getLifecycleStatuses()
-      const currentStatus = lifecycleStatuses[currentSort.statusIndex] || ''
-      th.setAttribute('data-cycle-status', currentStatus)
-    } else {
-      th.classList.add(currentSort.asc ? 'asc' : 'desc')
-    }
+  if (!th) return
+
+  if (currentSort.column === 'statusName') {
+    normalizeStatusTarget()
+    th.classList.add('cycle')
+    th.setAttribute('data-cycle-status', currentSort.statusTarget || '')
+  } else {
+    th.classList.add(currentSort.asc ? 'asc' : 'desc')
   }
 }
 
@@ -679,25 +688,28 @@ function getSortedOrders(data = ordersData) {
   const col = currentSort.column
   const asc = currentSort.asc
 
+  // Для статуса строим карту рангов один раз на всю сортировку
+  let statusRank = null
+  if (col === 'statusName') {
+    statusRank = new Map()
+    getStatusOrder().forEach((status, i) => statusRank.set(status, i))
+    // Выбранный статус — всегда первый
+    if (currentSort.statusTarget) statusRank.set(currentSort.statusTarget, -1)
+  }
+
   return [...data].sort((a, b) => {
     let va, vb
 
     if (col === 'statusName') {
-      // Циклическая сортировка по статусу (жизненный цикл)
-      const lifecycleStatuses = getLifecycleStatuses()
-      const targetStatus = lifecycleStatuses[currentSort.statusIndex] || ''
-
-      // Группируем: выбранный статус наверху, остальные по порядку жизненного цикла
-      const getStatusPriority = (statusName) => {
-        if (statusName === targetStatus) return 0 // Выбранный статус - первый
-        const idx = lifecycleStatuses.indexOf(statusName)
-        return idx === -1 ? Number.MAX_SAFE_INTEGER : idx + 1 // Остальные по порядку
-      }
-
-      const priorityA = getStatusPriority(a[col] || '')
-      const priorityB = getStatusPriority(b[col] || '')
-      va = priorityA
-      vb = priorityB
+      // Выбранный статус — наверх, остальные — в порядке getStatusOrder()
+      // (жизненный цикл + кастомные). Побочных «всегда в конце» нет:
+      // любой присутствующий статус можно поднять наверх циклом.
+      const nameA = a[col] || ''
+      const nameB = b[col] || ''
+      const rankA = statusRank.has(nameA) ? statusRank.get(nameA) : Number.MAX_SAFE_INTEGER
+      const rankB = statusRank.has(nameB) ? statusRank.get(nameB) : Number.MAX_SAFE_INTEGER
+      if (rankA !== rankB) return rankA - rankB
+      return String(a.shipmentNum || '').localeCompare(String(b.shipmentNum || ''), 'ru', { numeric: true })
     } else if (
       col === 'hasDemand' ||
       col === 'hasPayment' ||
@@ -1809,6 +1821,319 @@ function updateFilterIndicator() {
 // ───────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Кэш дублей отправлений Ozon: ключ — номер отправления.
+ * Заполняется computeOzonDuplicates() при рендере таблицы и сравнении с отчётом.
+ */
+let ozonDuplicatesCache = new Map()
+
+/**
+ * Находит дубли внутри одной группы отправлений Ozon (общий ozonOrderId).
+ *
+ * Ozon может разбить один заказ на несколько отправлений. Если в МойСклад
+ * в заказ одного отправления попали товары других отправлений той же группы,
+ * сумма заказа завышена — это дубль, который нужно исправить в МС.
+ *
+ * Ожидаемая сумма отправления = сумма ozonProducts (price × quantity).
+ * Лишнее = фактическая сумма заказа − ожидаемая сумма отправления.
+ *
+ * @returns {Map<string, {groupId: number, expected: number, actual: number, excess: number, duplicatesOf: string[], complete: boolean}>}
+ */
+function computeOzonDuplicates() {
+  const result = new Map()
+  const groups = new Map()
+
+  for (const order of ordersData) {
+    if (!order.enabled) continue
+    if (!order.ozonOrderId) continue
+    const key = String(order.ozonOrderId)
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(order)
+  }
+
+  for (const [groupId, list] of groups) {
+    if (list.length < 2) continue
+
+    const items = list.map((order) => {
+      const expected = Array.isArray(order.ozonProducts) && order.ozonProducts.length > 0
+        ? order.ozonProducts.reduce(
+            (acc, p) => acc + (Number(p.price) || 0) * (Number(p.quantity) || 1),
+            0
+          )
+        : null
+      return { order, expected, actual: Number(order.sum) || 0 }
+    })
+
+    for (const item of items) {
+      if (item.expected == null) continue
+      const excess = Math.round((item.actual - item.expected) * 100) / 100
+      if (excess <= 0.01) continue
+
+      // Жадно набираем другие отправления группы, суммы которых дают излишек
+      const duplicatesOf = []
+      let rest = excess
+      const others = items
+        .filter((x) => x.order !== item.order && x.expected != null)
+        .sort((a, b) => b.expected - a.expected)
+      for (const other of others) {
+        if (other.expected <= rest + 0.01) {
+          duplicatesOf.push(other.order.shipmentNum)
+          rest = Math.round((rest - other.expected) * 100) / 100
+          if (rest <= 0.01) break
+        }
+      }
+
+      result.set(item.order.shipmentNum, {
+        groupId: Number(groupId),
+        expected: item.expected,
+        actual: item.actual,
+        excess,
+        duplicatesOf,
+        complete: rest <= 0.01
+      })
+    }
+  }
+
+  ozonDuplicatesCache = result
+  return result
+}
+
+/**
+ * Вернуть информацию о дубле для заказа (из кэша).
+ * @param {Object} order - Данные заказа
+ * @returns {Object|null}
+ */
+function getDuplicateInfo(order) {
+  if (!order || !order.shipmentNum) return null
+  return ozonDuplicatesCache.get(order.shipmentNum) || null
+}
+
+/**
+ * Определяет, требует ли заказ ручной проверки в МойСклад,
+ * и возвращает причину (пустая строка — проверка не нужна).
+ *
+ * Причины:
+ * - оплата без отгрузки (данные скана устарели либо ошибка в МС)
+ * - статус/действие с ошибкой
+ * - оплата есть, но статус оплаты не выставлен
+ * - возврат больше суммы заказа
+ * - нулевая сумма отгрузки
+ * - статус «оплачен», но суммы оплаты нет
+ *
+ * @param {Object} order - Данные заказа
+ * @returns {string} Причина проверки или ''
+ */
+function getReviewReason(order) {
+  const sum = Number(order.sum) || 0
+  const paid = Number(order.paid) || 0
+  const returnSum = Number(order.returnSum) || 0
+  const statusName = String(order.statusName || '')
+  const lastAction = String(order.lastAction || '')
+
+  // Ошибки проверки — первыми: остальные признаки часто их следствие
+  if (statusName.includes('Ошибка') || lastAction.includes('_error')) {
+    return 'Ошибка проверки — обновите строку ⟳ или проверьте в МС'
+  }
+  if (sum <= 0) return 'Нулевая сумма заказа'
+  if (returnSum > sum + 0.01) return 'Возврат больше суммы заказа'
+  if (paid > 0 && !order.hasDemand && !order.isCancelled) {
+    return 'Оплата без отгрузки — обновите строку ⟳ или проверьте в МС'
+  }
+  if (order.hasPayment && paid <= 0) {
+    return 'Статус «оплачен», но суммы оплаты нет'
+  }
+  // Частичная отмена: платёж создаётся на сумму без отменённой части,
+  // поэтому paid + returnSum = sum — это корректное состояние, не флаг.
+  return ''
+}
+
+/**
+ * Создаёт DOM-узлы строки заказа: основную строку и (опционально) строку позиций.
+ * Вынесено из renderTable, чтобы точечное обновление строки (refreshOrderRow)
+ * использовало тот же рендер без полной перерисовки и пересортировки таблицы.
+ *
+ * @param {Object} order - Данные заказа
+ * @param {number} actualIndex - Индекс заказа в ordersData
+ * @returns {{ tr: HTMLTableRowElement, posTr: HTMLTableRowElement|null }}
+ */
+function buildOrderRowNodes(order, actualIndex) {
+  const tr = document.createElement('tr')
+  tr.dataset.shipment = order.shipmentNum
+
+  // Номера документов и суммы
+  const demandDisplay = order.demandName
+    ? `<span class="doc-number">${order.demandName}</span>`
+    : '<span class="status-no">—</span>'
+  const paymentDisplay = order.paid
+    ? `<span class="payment-sum">${order.paid} ₽</span>`
+    : '<span class="status-no">—</span>'
+  // Return column: MS return status (top) + Ozon return sum (bottom, smaller)
+  let returnDisplay = ''
+  if (order.hasReturn) {
+    returnDisplay += `<span class="payment-sum">${order.returnSum} ₽</span>`
+  } else {
+    returnDisplay += '<span class="status-no">—</span>'
+  }
+  if (order.ozonReturnInfo && order.returnSum) {
+    returnDisplay += `<br><span class="payment-sum" style="font-size:0.85em">${order.returnSum} ₽ (Ozon)</span>`
+  }
+  if (order.wbReturnInfo && order.returnSum) {
+    returnDisplay += `<br><span class="payment-sum" style="font-size:0.85em">${order.returnSum} ₽ (WB)</span>`
+  }
+
+  // Статус документа - показываем directly из API statusName
+  const statusName = order.statusName || ''
+  let cssClass = getOrderStatusClass(order)
+
+  // Подсвечивать строку красным при ошибке
+  if (order.lastAction && order.lastAction.includes('_error')) {
+    cssClass = 'status-error'
+    tr.classList.add('row-error')
+  }
+
+  // Визуальное отличие для заказов найденных по точному номеру заказа МС
+  if (order.foundBy === 'name') {
+    tr.classList.add('row-by-name')
+  }
+
+  // Маркер «Требует проверки»
+  const reviewReason = getReviewReason(order)
+  if (reviewReason) tr.classList.add('row-review')
+  const reviewBadge = reviewReason
+    ? `<span class="review-badge" title="${esc(reviewReason)}">⚠</span>`
+    : ''
+
+  // Маркер дубля отправлений Ozon — нужно исправить в МС
+  const dupInfo = getDuplicateInfo(order)
+  if (dupInfo) tr.classList.add('row-duplicate')
+  const dupBadge = dupInfo
+    ? `<span class="duplicate-badge" title="${esc(
+        `Дубль: в заказе ${fmtSum(dupInfo.actual)}, должно быть ${fmtSum(dupInfo.expected)}. Лишнее ${fmtSum(dupInfo.excess)}` +
+        (dupInfo.duplicatesOf.length ? ` — дублирует ${dupInfo.duplicatesOf.join(', ')}` : '') +
+        '. Исправить в МойСклад.'
+      )}">⧉</span>`
+    : ''
+
+  const displayText = statusName || 'Новый'
+  const statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>' + reviewBadge + dupBadge
+  const ozonReturnLine = order.ozonReturnInfo
+    ? `<br><span class="status-return" style="font-size:0.85em">${order.ozonReturnInfo}</span>`
+    : ''
+  const ozonStatusLine = order.ozonStatus
+    ? `<br><span style="font-size:0.85em;${(order.ozonStatus === 'Доставлен' || order.ozonStatus === 'Доставляется') ? 'color:var(--success)' : order.ozonStatus === 'Доставлен → Возврат' ? 'color:var(--warning)' : 'color:var(--text-muted)'}">${order.ozonStatus} (Ozon)</span>`
+    : ''
+  const wbLine = order.wbReturnInfo
+    ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
+    : ''
+  const wbStatusLine = order.wbStatus && order.marketplace === 'wb'
+    ? `<br><span style="font-size:0.85em;${
+        order.wbStatus === 'delivered' || order.wbStatus === 'sale'
+          ? 'color:var(--success)'
+          : order.wbStatus === 'cancelled' || order.wbStatus === 'cancel'
+            ? 'color:var(--error)'
+            : 'color:var(--text-muted)'
+      }">${WB_STATUS_MAP[order.wbStatus] || order.wbStatus} (WB)</span>`
+    : ''
+
+  const storeDisplay = order.storeName
+    ? `<span>${esc(order.storeName)}</span>`
+    : '<span class="status-no">—</span>'
+
+  // Sub-elements for № column
+  let numSub = ''
+  if (order.barcode) {
+    numSub = `<br><span style="font-size:0.85em">Ozon: ${esc(order.barcode)}</span>`
+  } else if (order.wbStickerId) {
+    numSub = `<br><span style="font-size:0.85em">Стикер: ${esc(order.wbStickerId)}</span>`
+  }
+
+  tr.innerHTML = `
+        <td><input type="checkbox" ${order.enabled ? 'checked' : ''} onchange="toggleEnabled(${actualIndex}, this)"></td>
+        <td class="order-num">${esc(order.extractedShipmentNum || order.shipmentNum)}${numSub}</td>
+        <td class="order-name-cell">${esc(order.orderName || '—')}</td>
+            <td>${esc(order.sum)} ₽${order.wbForPay > 0 ? `<br><span class="price-wb">К выплате: ${esc(Number(order.wbForPay).toLocaleString('ru-RU'))} ₽</span>` : ''}</td>
+            <td>${demandDisplay}</td>
+            <td>${paymentDisplay}</td>
+            <td>${returnDisplay}</td>
+            <td>${statusDisplay}<button class="refresh-row-btn" data-shipment="${order.shipmentNum}" onclick="refreshOrderRow('${order.shipmentNum}')" title="Обновить">⟳</button>${ozonStatusLine}${ozonReturnLine}${wbStatusLine}${wbLine}</td>
+<td>${storeDisplay}</td>
+            <td class="date-cell">${formatDate(order.orderMoment)}</td>
+            <td class="action-cell">${getRowActions(order, actualIndex)}</td>
+        `
+
+  // Сохраняем srid и lastChangeDate как data-атрибуты для отладки
+  if (order.srid) tr.dataset.srid = order.srid
+  if (order.lastChangeDate) tr.dataset.lastChangeDate = order.lastChangeDate
+
+  // Подсветка брака
+  if (order.returnType === 'Брак') {
+    tr.classList.add('row-defect')
+  }
+
+  // Дополнительная секция с деталями позиций заказа
+  let posTr = null
+  const allPositions = [...(order.orderPositions || []), ...(order.demandPositions || [])]
+
+  if (allPositions.length > 0) {
+    posTr = document.createElement('tr')
+    posTr.className = 'positions-row'
+    posTr.innerHTML =
+      '<td colspan="11" class="positions-cell">' +
+      allPositions
+        .map((p) => {
+          const safeCode = esc(p.code || '')
+          const code = p.code
+            ? `<a href="#" onclick="searchProductByOEM('${(p.code || '').replace(/'/g, '\\\'')}');return false;" style="color:var(--accent);text-decoration:underline;cursor:pointer;">[${safeCode}]</a> `
+            : ''
+          const name = esc(p.name || 'Наименование')
+          const price = p.price != null ? p.price : 0
+          const qty = p.quantity != null ? p.quantity : 0
+          const sum = p.sum != null ? p.sum : price * qty
+          const printBtn = p.code
+            ? `<button class="print-btn" onclick="printSticker('${(p.code || '').replace(/'/g, '\\\'')}')" title="Печать стикера">🖨️</button>`
+            : ''
+          return `<div>${code}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`
+        })
+        .join('') +
+      '</td>'
+  }
+
+  return { tr, posTr }
+}
+
+/**
+ * Точечно заменяет строку заказа в таблице без перерисовки и пересортировки.
+ * Сохраняет позицию строки на экране и подсвечивает её после обновления.
+ *
+ * @param {string} shipmentNum - Номер отправления
+ * @returns {boolean} true, если строка была найдена и заменена
+ */
+function syncOrderRow(shipmentNum) {
+  const tbody = document.getElementById('tableBody')
+  if (!tbody) return false
+
+  const oldTr = tbody.querySelector(`tr[data-shipment="${shipmentNum}"]`)
+  if (!oldTr) return false
+
+  const index = ordersData.findIndex((o) => o.shipmentNum === shipmentNum)
+  if (index === -1) return false
+
+  const order = ordersData[index]
+  const { tr, posTr } = buildOrderRowNodes(order, index)
+  tr.classList.add('row-updated')
+  setTimeout(() => tr.classList.remove('row-updated'), 1500)
+
+  // Старая строка позиций (если была) идёт сразу после основной
+  const oldPos = oldTr.nextElementSibling
+  const hadPos = oldPos && oldPos.classList.contains('positions-row')
+
+  oldTr.replaceWith(tr)
+  if (hadPos) oldPos.remove()
+  if (posTr) tr.after(posTr)
+
+  return true
+}
+
+/**
  * Основная функция рендера таблицы заказов.
  * Получает отфильтрованные данные, сортирует, разбивает на страницы
  * и отрисовывает строки в #tableBody.
@@ -1826,6 +2151,10 @@ function renderTable() {
   if (!tbody) return
   tbody.innerHTML = ''
 
+  // Пересчитываем дубли отправлений Ozon перед рендером строк
+  computeOzonDuplicates()
+
+  normalizeStatusTarget()
   const filtered = getFilteredData()
   const sorted = getSortedOrders(filtered)
   console.log('Rendering table, orders count:', sorted.length, '(filtered from', filtered.length, ')')
@@ -1839,140 +2168,11 @@ function renderTable() {
     return
   }
 
-  pageOrders.forEach((order, i) => {
-    const tr = document.createElement('tr')
-    tr.dataset.shipment = order.shipmentNum
-    // Используем индекс внутри всей таблицы
+  pageOrders.forEach((order) => {
     const actualIndex = ordersData.findIndex((o) => o.shipmentNum === order.shipmentNum)
-
-    // Номера документов и суммы
-    const demandDisplay = order.demandName
-      ? `<span class="doc-number">${order.demandName}</span>`
-      : '<span class="status-no">—</span>'
-    const paymentDisplay = order.paid
-      ? `<span class="payment-sum">${order.paid} ₽</span>`
-      : '<span class="status-no">—</span>'
-    // Return column: MS return status (top) + Ozon return sum (bottom, smaller)
-    let returnDisplay = ''
-    if (order.hasReturn) {
-      returnDisplay += `<span class="payment-sum">${order.returnSum} ₽</span>`
-    } else {
-      returnDisplay += '<span class="status-no">—</span>'
-    }
-    if (order.ozonReturnInfo && order.returnSum) {
-      returnDisplay += `<br><span class="payment-sum" style="font-size:0.85em">${order.returnSum} ₽ (Ozon)</span>`
-    }
-    if (order.wbReturnInfo && order.returnSum) {
-      returnDisplay += `<br><span class="payment-sum" style="font-size:0.85em">${order.returnSum} ₽ (WB)</span>`
-    }
-
-    // Статус документа - показываем directly из API statusName
-    let statusDisplay = ''
-    const statusName = order.statusName || ''
-    const status = order.status || ''
-
-    // Просто показываем статус из API
-    let cssClass = getOrderStatusClass(order)
-
-    // Подсвечивать строку красным при ошибке
-    if (order.lastAction && order.lastAction.includes('_error')) {
-      cssClass = 'status-error'
-      tr.classList.add('row-error')
-    }
-
-    // Визуальное отличие для заказов найденных по точному номеру заказа МС
-    if (order.foundBy === 'name') {
-      tr.classList.add('row-by-name')
-    }
-
-    const displayText = statusName || 'Новый'
-    statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>'
-    const ozonReturnLine = order.ozonReturnInfo
-      ? `<br><span class="status-return" style="font-size:0.85em">${order.ozonReturnInfo}</span>`
-      : ''
-    const ozonStatusLine = order.ozonStatus
-      ? `<br><span style="font-size:0.85em;${(order.ozonStatus === 'Доставлен' || order.ozonStatus === 'Доставляется') ? 'color:var(--success)' : order.ozonStatus === 'Доставлен → Возврат' ? 'color:var(--warning)' : 'color:var(--text-muted)'}">${order.ozonStatus} (Ozon)</span>`
-      : ''
-    const wbLine = order.wbReturnInfo
-      ? `<br><span class="status-return" style="font-size:0.85em">${order.wbReturnInfo}</span>`
-      : ''
-    const wbStatusLine = order.wbStatus && order.marketplace === 'wb'
-      ? `<br><span style="font-size:0.85em;${
-          order.wbStatus === 'delivered' || order.wbStatus === 'sale'
-            ? 'color:var(--success)'
-            : order.wbStatus === 'cancelled' || order.wbStatus === 'cancel'
-              ? 'color:var(--error)'
-              : 'color:var(--text-muted)'
-        }">${WB_STATUS_MAP[order.wbStatus] || order.wbStatus} (WB)</span>`
-      : ''
-
-    const storeDisplay = order.storeName
-      ? `<span>${esc(order.storeName)}</span>`
-      : '<span class="status-no">—</span>'
-
-    // Sub-elements for № column
-    let numSub = ''
-    if (order.barcode) {
-      numSub = `<br><span style="font-size:0.85em">Ozon: ${esc(order.barcode)}</span>`
-    } else if (order.wbStickerId) {
-      numSub = `<br><span style="font-size:0.85em">Стикер: ${esc(order.wbStickerId)}</span>`
-    }
-
-    tr.innerHTML = `
-        <td><input type="checkbox" ${order.enabled ? 'checked' : ''} onchange="toggleEnabled(${actualIndex}, this)"></td>
-        <td class="order-num">${esc(order.extractedShipmentNum || order.shipmentNum)}${numSub}</td>
-        <td class="order-name-cell">${esc(order.orderName || '—')}</td>
-            <td>${esc(order.sum)} ₽${order.wbForPay > 0 ? `<br><span class="price-wb">К выплате: ${esc(Number(order.wbForPay).toLocaleString('ru-RU'))} ₽</span>` : ''}</td>
-            <td>${demandDisplay}</td>
-            <td>${paymentDisplay}</td>
-            <td>${returnDisplay}</td>
-            <td>${statusDisplay}<button class="refresh-row-btn" data-shipment="${order.shipmentNum}" onclick="refreshOrderRow('${order.shipmentNum}')" title="Обновить">⟳</button>${ozonStatusLine}${ozonReturnLine}${wbStatusLine}${wbLine}</td>
-<td>${storeDisplay}</td>
-            <td class="date-cell">${formatDate(order.orderMoment)}</td>
-            <td class="action-cell">${getRowActions(order, actualIndex)}</td>
-        `
-    
-    // Сохраняем srid и lastChangeDate как data-атрибуты для отладки
-    if (order.srid) tr.dataset.srid = order.srid
-    if (order.lastChangeDate) tr.dataset.lastChangeDate = order.lastChangeDate
-
-    // Подсветка брака
-    if (order.returnType === 'Брак') {
-      tr.classList.add('row-defect')
-    }
-
+    const { tr, posTr } = buildOrderRowNodes(order, actualIndex)
     tbody.appendChild(tr)
-
-    // Дополнительная секция с деталями позиций заказа
-    const orderPos = order.orderPositions || []
-    const demandPos = order.demandPositions || []
-    const allPositions = [...orderPos, ...demandPos]
-
-    if (allPositions.length > 0) {
-      const posTr = document.createElement('tr')
-      posTr.className = 'positions-row'
-      const cells =
-      '<td colspan="11" class="positions-cell">' +
-        allPositions
-          .map((p) => {
-            const safeCode = esc(p.code || '')
-            const code = p.code
-              ? `<a href="#" onclick="searchProductByOEM('${(p.code || '').replace(/'/g, '\\\'')}');return false;" style="color:var(--accent);text-decoration:underline;cursor:pointer;">[${safeCode}]</a> `
-              : ''
-            const name = esc(p.name || 'Наименование')
-            const price = p.price != null ? p.price : 0
-            const qty = p.quantity != null ? p.quantity : 0
-            const sum = p.sum != null ? p.sum : price * qty
-            const printBtn = p.code
-              ? `<button class="print-btn" onclick="printSticker('${(p.code || '').replace(/'/g, '\\\'')}')" title="Печать стикера">🖨️</button>`
-              : ''
-            return `<div>${code}${name} — ${price} ₽ × ${qty} = ${sum} ₽ ${printBtn}</div>`
-          })
-          .join('') +
-        '</td>'
-      posTr.innerHTML = cells
-      tbody.appendChild(posTr)
-    }
+    if (posTr) tbody.appendChild(posTr)
   })
 
   renderPaginationInfo(sorted.length)
@@ -2020,6 +2220,22 @@ function appendOrderRow(order) {
   const statusName = order.statusName || ''
   let cssClass = getOrderStatusClass(order)
 
+  // Маркер «Требует проверки»
+  const appendReviewReason = getReviewReason(order)
+  if (appendReviewReason) tr.classList.add('row-review')
+  const appendReviewBadge = appendReviewReason
+    ? `<span class="review-badge" title="${esc(appendReviewReason)}">⚠</span>`
+    : ''
+
+  // Маркер дубля отправлений Ozon
+  const appendDupInfo = getDuplicateInfo(order)
+  if (appendDupInfo) tr.classList.add('row-duplicate')
+  const appendDupBadge = appendDupInfo
+    ? `<span class="duplicate-badge" title="${esc(
+        `Дубль: в заказе ${appendDupInfo.actual} ₽, должно быть ${appendDupInfo.expected} ₽. Исправить в МойСклад.`
+      )}">⧉</span>`
+    : ''
+
   const demandDisplay = order.demandName
     ? `<span class="demand-code">${order.demandName}</span>`
     : '<span class="status-no">—</span>'
@@ -2040,7 +2256,7 @@ function appendOrderRow(order) {
     returnDisplay += `<br><span class="payment-sum" style="font-size:0.85em">${order.returnSum} ₽ (WB)</span>`
   }
   const displayText = statusName || 'Новый'
-  const statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>'
+  const statusDisplay = '<span class="' + cssClass + '">' + displayText + '</span>' + appendReviewBadge + appendDupBadge
   const ozonReturnLine = order.ozonReturnInfo
     ? `<br><span class="status-return" style="font-size:0.85em">${order.ozonReturnInfo}</span>`
     : ''
@@ -2227,6 +2443,8 @@ function updateTotals(skipRender = false) {
  */
 function calculateStats(orderList) {
   const list = (orderList || ordersData).filter((o) => o && o.enabled)
+  // Актуализируем кэш дублей, если статистика считается до рендера таблицы
+  computeOzonDuplicates()
   // Не перерисовываем таблицу тут - только считаем статистику
   const stats = {
     total: list.length,
@@ -2234,6 +2452,18 @@ function calculateStats(orderList) {
     demandSum: 0,
     paymentCount: 0,
     paymentSum: 0,
+    // Ожидается к оплате: остаток по отгрузкам без отмены
+    pendingCount: 0,
+    pendingSum: 0,
+    // Возврат после полной оплаты: paid + returnSum > sum
+    overpaidCount: 0,
+    overpaidSum: 0,
+    // Требуют ручной проверки в МС
+    reviewCount: 0,
+    reviewSum: 0,
+    // Дубли отправлений Ozon (лишние суммы в МС)
+    duplicateCount: 0,
+    duplicateSum: 0,
     returnCount: 0,
     returnSum: 0,
     cancelledCount: 0,
@@ -2269,13 +2499,21 @@ function calculateStats(orderList) {
 
   list.forEach((o) => {
     const sum = Number(o.sum) || 0
-    if (o.hasDemand) {
-      stats.demandCount++
+    const paid = Number(o.paid) || 0
+    const returnSum = Number(o.returnSum) || 0
+
+    // В сумму «Отгрузки» включаем все заказы с движением: отгрузка, оплата,
+    // возврат или отмена. Иначе оплата без отгрузки даёт ложную переплату.
+    const hasMovement = !!(o.hasDemand || paid > 0 || returnSum > 0 || o.isCancelled)
+    if (hasMovement) {
       stats.demandSum += sum
     }
-    if (o.paid > 0) {
+    if (o.hasDemand) {
+      stats.demandCount++
+    }
+    if (paid > 0) {
       stats.paymentCount++
-      stats.paymentSum += o.paid || 0
+      stats.paymentSum += paid
     }
     if (o.hasReturn) {
       stats.returnCount++
@@ -2291,8 +2529,40 @@ function calculateStats(orderList) {
       stats.errorCount++
       stats.errorSum += sum
     }
+
+    // Будущие платежи: отгрузка есть, не отменён, остаток > 0.
+    // Включаем и заказы с ошибкой — платёж по ним ещё не создан,
+    // поэтому остаток реально ожидается к оплате.
+    if (o.hasDemand && !o.isCancelled) {
+      const remainder = sum - paid - returnSum
+      if (remainder > 0.01) {
+        stats.pendingCount++
+        stats.pendingSum += remainder
+      }
+    }
+
+    // Возврат после полной оплаты: покупатель заплатил и получил возврат,
+    // поэтому учитываем как вычет, чтобы формула сходилась.
+    const overpaid = paid + returnSum - sum
+    if (hasMovement && overpaid > 0.01) {
+      stats.overpaidCount++
+      stats.overpaidSum += overpaid
+    }
     if (o.status === 'not_found' || o.statusName === 'Не найден') {
       stats.notFoundCount++
+    }
+
+    // Требует ручной проверки (оплата без отгрузки, ошибки, противоречия)
+    if (getReviewReason(o)) {
+      stats.reviewCount++
+      stats.reviewSum += sum
+    }
+
+    // Дубли отправлений Ozon — считаем лишнюю сумму
+    const dup = getDuplicateInfo(o)
+    if (dup) {
+      stats.duplicateCount++
+      stats.duplicateSum += dup.excess
     }
 
     // WB: выплаты (продажи) и возвраты
@@ -2606,10 +2876,20 @@ function renderCurrentStats(force = false) {
     const cancelledSum = stats.cancelledSum || 0
     const paymentSum = stats.paymentSum || 0
     const errorSum = stats.errorSum || 0
+    const pendingSum = stats.pendingSum || 0
+    const pendingCount = stats.pendingCount || 0
+    const overpaidSum = stats.overpaidSum || 0
+    const overpaidCount = stats.overpaidCount || 0
+    const reviewCount = stats.reviewCount || 0
+    const reviewSum = stats.reviewSum || 0
+    const duplicateCount = stats.duplicateCount || 0
+    const duplicateSum = stats.duplicateSum || 0
     const wbPayoutSum = stats.wbPayoutSum || 0
     const wbReturnSum = stats.wbReturnSum || 0
 
-    const totalAccounted = paymentSum + returnSum + cancelledSum + errorSum
+    // Формула: Оплачено + Возвраты + Отмены + К оплате − Возврат после оплаты.
+    // Ошибки показываются справочно и в формулу не входят (они не движение денег).
+    const totalAccounted = paymentSum + returnSum + cancelledSum + pendingSum - overpaidSum
     const isMatch = Math.abs(demandSum - totalAccounted) < 1
     const matchIcon = isMatch ? '✓' : '✗'
     const matchClass = isMatch ? 'success' : 'error'
@@ -2617,6 +2897,10 @@ function renderCurrentStats(force = false) {
     container.innerHTML = `
             <div class="stat-row"><span class="stat-label">Отгрузок:</span><span class="stat-value success">${stats.demandCount || 0}</span><span class="stat-sum">${fmtSum(demandSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Оплачено:</span><span class="stat-value success">${stats.paymentCount || 0}</span><span class="stat-sum">${fmtSum(paymentSum)}</span></div>
+            ${pendingSum > 0 ? `<div class="stat-row"><span class="stat-label">К оплате:</span><span class="stat-value">${pendingCount}</span><span class="stat-sum">${fmtSum(pendingSum)}</span></div>` : ''}
+            ${overpaidSum > 0 ? `<div class="stat-row"><span class="stat-label">Возврат после оплаты:</span><span class="stat-value">${overpaidCount}</span><span class="stat-sum">${fmtSum(overpaidSum)}</span></div>` : ''}
+            ${reviewCount > 0 ? `<div class="stat-row"><span class="stat-label">⚠ Требует проверки:</span><span class="stat-value" style="color:var(--warning)">${reviewCount}</span><span class="stat-sum">${fmtSum(reviewSum)}</span></div>` : ''}
+            ${duplicateCount > 0 ? `<div class="stat-row"><span class="stat-label">⧉ Дубли в МС:</span><span class="stat-value" style="color:var(--error)">${duplicateCount}</span><span class="stat-sum">${fmtSum(duplicateSum)}</span></div>` : ''}
             <div class="stat-row"><span class="stat-label">Возвраты:</span><span class="stat-value">${stats.returnCount || 0}</span><span class="stat-sum">${fmtSum(returnSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Отмены:</span><span class="stat-value">${stats.cancelledCount || 0}</span><span class="stat-sum">${fmtSum(cancelledSum)}</span></div>
             <div class="stat-row"><span class="stat-label">Ошибок:</span><span class="stat-value error">${stats.errorCount || 0}</span><span class="stat-sum">${fmtSum(errorSum)}</span></div>
@@ -2632,8 +2916,12 @@ function renderCurrentStats(force = false) {
                     <span class="calc-sum">${fmtSum(returnSum)}</span>
                     <span class="calc-op"> + </span>
                     <span class="calc-sum">${fmtSum(cancelledSum)}</span>
+                    ${pendingSum > 0 ? `
                     <span class="calc-op"> + </span>
-                    <span class="calc-sum">${fmtSum(errorSum)}</span>
+                    <span class="calc-sum">${fmtSum(pendingSum)}</span>` : ''}
+                    ${overpaidSum > 0 ? `
+                    <span class="calc-op"> − </span>
+                    <span class="calc-sum">${fmtSum(overpaidSum)}</span>` : ''}
                 </div>
                 <div class="calc-formula">
                     <span class="calc-op">= </span>
@@ -2646,7 +2934,7 @@ function renderCurrentStats(force = false) {
   !isMatch
     ? `<div class="calc-formula">
                     <span class="calc-op">Разница: </span>
-                    <span class="calc-sum">${fmtSum(Math.abs(demandSum - totalAccounted))} ₽</span>
+                    <span class="calc-sum">${fmtSum(Math.abs(demandSum - totalAccounted))}</span>
                 </div>`
     : ''
 }
@@ -3327,14 +3615,51 @@ async function refreshOrderRow(shipmentNum) {
           delete refreshedOrder.lastResult
         }
       }
+      // Данные из МС пришли без ошибки, но lastAction хранит старый *_error.
+      // Снимаем устаревший флаг, иначе «Требует проверки» останется висеть
+      // даже когда в МС всё в порядке.
+      if (
+        refreshedOrder.lastAction?.endsWith('_error') &&
+        !String(refreshedOrder.statusName || '').includes('Ошибка')
+      ) {
+        refreshedOrder.lastAction = 'checked'
+        delete refreshedOrder.lastResult
+        await saveOrderAction(shipmentNum, 'checked', '', {
+          statusName: refreshedOrder.statusName,
+          sum: refreshedOrder.sum,
+          paid: refreshedOrder.paid,
+          hasPayment: refreshedOrder.hasPayment,
+          hasDemand: refreshedOrder.hasDemand,
+          hasReturn: refreshedOrder.hasReturn,
+          isCancelled: refreshedOrder.isCancelled,
+          returnSum: refreshedOrder.returnSum,
+        })
+      }
+
       ordersData[index] = refreshedOrder
       realtimeMode = false // снимаем SSE-блокировку для обновления статистики
 
-      // Полный render повторно сортирует и фильтрует строки; переводим страницу к заказу.
-      const sortedVisibleOrders = getSortedOrders(getFilteredData())
-      const visibleIndex = sortedVisibleOrders.findIndex(order => order.shipmentNum === shipmentNum)
-      if (visibleIndex !== -1) currentPage = Math.floor(visibleIndex / PAGE_SIZE)
-      updateTotals()
+      // Точечно заменяем строку без пересортировки: обновлённая строка
+      // остаётся на том же месте и подсвечивается (row-updated).
+      // Полный рендер нужен только если строка не видна (другая страница/фильтр).
+      computeOzonDuplicates()
+      const updatedInPlace = syncOrderRow(shipmentNum)
+      if (!updatedInPlace) {
+        renderTable()
+      }
+
+      // Если строка сменила статус и это был статус, поднятый наверх,
+      // цель сортировки исчезла — пересортировываем, чтобы заголовок не врал.
+      if (currentSort.column === 'statusName') {
+        const statuses = getStatusOrder()
+        if (currentSort.statusTarget && !statuses.includes(currentSort.statusTarget)) {
+          currentSort.statusTarget = statuses[0] ?? null
+          renderTable()
+          updateSortIndicators()
+        }
+      }
+
+      updateTotals(true)
       renderCurrentStats(true)
       renderFinalStats()
 
@@ -6826,9 +7151,22 @@ async function runComparison() {
  * @param {Object<string, {jTotal: number, jPos: number}>} reportMap - Map отчёта, построенный buildReportMap
  * @returns {{ summary: Object, details: Array<Object> }} Результат сравнения
  */
+/**
+ * Форматирует сумму для текстовых заметок сравнения.
+ *
+ * @param {number} value - Сумма в рублях
+ * @returns {string} Строка вида «1 234 ₽»
+ */
+function fmtMoney(value) {
+  return (Number(value) || 0).toLocaleString('ru-RU') + ' ₽'
+}
+
 function compareWithReport(reportMap) {
   // Допустимая погрешность для сравнения сумм (2 копейки — округление)
   const TOLERANCE = 0.02
+
+  // Дубли отправлений Ozon (сумма заказа включает чужие отправления группы)
+  const duplicateMap = computeOzonDuplicates()
 
   const details = []
   let totalD = 0
@@ -6838,11 +7176,20 @@ function compareWithReport(reportMap) {
   let mismatchCount = 0
   let missingCount = 0
   let partialCount = 0
+  let partialOkCount = 0
   let returnCount = 0
   let marketplaceReturnNoMsCount = 0
+  let duplicateCount = 0
+  let duplicateSum = 0
+
+  // Дубли отправлений Ozon — требуют исправления в МС
+  const duplicateDetails = []
 
   // Данные о частичных возвратах для детального анализа
   const partialDetails = []
+
+  // Заказы, требующие ручной проверки в МС
+  const reviewList = []
 
   // Полный возврат определяется не только суммой: API может вернуть неполную
   // или округлённую returnSum. Частичный возврат сохраняем, если есть сумма
@@ -6873,6 +7220,11 @@ function compareWithReport(reportMap) {
     const orderKey = cleanOrderKey(String(order.shipmentNum).split('\n')[0])
     const entry = reportMap[orderKey]
 
+    const reviewReason = getReviewReason(order)
+    if (reviewReason) {
+      reviewList.push({ orderKey, reason: reviewReason })
+    }
+
     const sumD = order.sum || 0
     totalD += sumD
 
@@ -6890,12 +7242,32 @@ function compareWithReport(reportMap) {
       entry && hasMarketplaceReturn && !order.hasReturn && jPos <= TOLERANCE
     )
 
+    // Дубль отправлений Ozon: в заказе МС сумма всей группы, а не своего отправления.
+    // Расхождением D−J+ не считается — выносим в отдельную категорию «исправить в МС».
+    const dupInfo = duplicateMap.get(order.shipmentNum)
+    const isDuplicate = !!dupInfo && !!entry && !fullReturn
+
     if (fullReturn) {
       // Полные отмены/возвраты уже обработаны и не являются расхождениями.
       status = 'return'
       returnCount++
       totalJPos += jPos
       note = order.isCancelled ? 'Отменён в МС' : 'Полный возврат'
+    } else if (isDuplicate) {
+      status = 'duplicate'
+      duplicateCount++
+      duplicateSum += dupInfo.excess
+      totalJPos += jPos
+      duplicateDetails.push({
+        orderKey,
+        actual: dupInfo.actual,
+        expected: dupInfo.expected,
+        excess: dupInfo.excess,
+        duplicatesOf: dupInfo.duplicatesOf,
+        jPos,
+        groupId: dupInfo.groupId
+      })
+      note = `Дубль: в МС ${fmtMoney(dupInfo.actual)}, по отправлению ${fmtMoney(dupInfo.expected)} — лишнее ${fmtMoney(dupInfo.excess)}`
     } else if (!entry) {
       // Заказ есть в МС, но не найден в отчёте
       status = 'missing-in-report'
@@ -6905,20 +7277,35 @@ function compareWithReport(reportMap) {
       note = 'Нет в отчёте ' + marketplaceName(window._reportMeta?.marketplace || 'ozon')
       diff = sumD
     } else if (order.hasReturn && !order.isCancelled && (order.returnSum || 0) > 0 && (order.returnSum || 0) < (order.sum || 0) - TOLERANCE) {
-      // Действительно частичный возврат: сумма возврата больше 0, но меньше суммы заказа
-      status = 'partial'
-      partialCount++
+      // Частичный возврат: часть заказа возвращена, часть оплачена — и на
+      // оплаченную часть уже создан платёж. Такой заказ закрыт по деньгам
+      // (оплата + возврат = сумма), поэтому расхождением не является:
+      // отчёт Ozon/WB показывает в J только проданные позиции, методика
+      // подсчёта различается — не засоряем таблицу частичных.
+      const retF = Number(order.returnSum) || 0
+      const paid = Number(order.paid) || 0
+      const settled = paid + retF >= sumD - TOLERANCE
+      const adjustedDiff = diff - retF
       totalJPos += jPos
-      totalDiff += diff
-      partialDetails.push({
-        orderKey,
-        sumD,
-        retF: order.returnSum || 0,
-        payG: order.paid || 0,
-        jPos,
-        diff
-      })
-      note = 'Частичный возврат: diff включает сумму возврата'
+
+      if (settled || Math.abs(adjustedDiff) <= TOLERANCE) {
+        status = 'partial-ok'
+        partialOkCount++
+        note = `Частичный возврат ${fmtMoney(retF)} учтён (закрыт по деньгам)`
+      } else {
+        status = 'partial'
+        partialCount++
+        totalDiff += adjustedDiff
+        partialDetails.push({
+          orderKey,
+          sumD,
+          retF,
+          payG: paid,
+          jPos,
+          diff: adjustedDiff
+        })
+        note = `Частичный возврат ${fmtMoney(retF)}; расхождение ${fmtMoney(adjustedDiff)}`
+      }
     } else if (!order.hasReturn && hasMarketplaceReturn) {
       // Возвращён на площадке (Ozon/WB), но в МС возврат не создан
       status = 'marketplace-return'
@@ -6977,12 +7364,16 @@ function compareWithReport(reportMap) {
     narrative += `Результат анализа расхождений:\n`
     narrative += `${totalD.toLocaleString('ru-RU')} = общая сумма D по всем ${details.length} заказам скана.\n\n`
     narrative += `${totalJPos.toLocaleString('ru-RU')} = J+ отчёта по заказам, совпавшим со сканом`
+
+    if (partialOkCount > 0) {
+      narrative += `\n\nЧастичные возвраты (${partialOkCount}) учтены: разница D − J равна сумме возврата,\n`
+      narrative += `поэтому в расхождения не включаются.`
+    }
     if (partialDetails.length > 0) {
       narrative += `\n\nРазница: ${totalDiff.toLocaleString('ru-RU')} ₽\n\n`
       narrative += `Откуда ${totalDiff.toLocaleString('ru-RU')}?\n`
-      narrative += `Это сумма по ${partialDetails.length} частичным возвратам, где отчёт Ozon показывает\n`
-      narrative += `в колонке J только сумму проданных позиций (не возвращённых),\n`
-      narrative += `а скан показывает полную сумму заказа D:\n\n`
+      narrative += `Это частичные возвраты (${partialDetails.length}), где разница D − J\n`
+      narrative += `не совпадает с суммой возврата (учтён возврат, но есть остаток):\n\n`
     }
   }
 
@@ -6994,11 +7385,16 @@ function compareWithReport(reportMap) {
     mismatchCount,
     missingCount,
     partialCount,
+    partialOkCount,
     returnCount,
     marketplaceReturnNoMsCount,
     total: details.length,
     narrative,
-    partialDetails
+    partialDetails,
+    reviewList,
+    duplicateCount,
+    duplicateSum,
+    duplicateDetails
   }
 
   return { summary, details }
@@ -7075,7 +7471,7 @@ function renderComparisonPanel(stats) {
   // Совпало: полные отмены и возвраты считаются обработанными.
   html += '<div class="comparison-summary-item">'
   html += '<div class="label"><span class="comparison-status-ok"></span> Совпало</div>'
-  html += '<div class="value ok">' + (summary.okCount + summary.returnCount) + '</div>'
+  html += '<div class="value ok">' + (summary.okCount + summary.returnCount + (summary.partialOkCount || 0)) + '</div>'
   html += '</div>'
 
   // Расхождения / Частичные
@@ -7104,6 +7500,24 @@ function renderComparisonPanel(stats) {
     html += '</div>'
   }
 
+  // Дубли отправлений Ozon — нужно исправить в МС
+  const duplicateDetails = summary.duplicateDetails || []
+  if (duplicateDetails.length > 0) {
+    html += '<div class="comparison-summary-item">'
+    html += '<div class="label" style="color:var(--error)">⧉ Дубли отправлений — исправить</div>'
+    html += '<div class="value missing">' + duplicateDetails.length + '</div>'
+    html += '</div>'
+  }
+
+  // Требует ручной проверки
+  const reviewList = summary.reviewList || []
+  if (reviewList.length > 0) {
+    html += '<div class="comparison-summary-item">'
+    html += '<div class="label" style="color:var(--warning)">⚠ Требует проверки</div>'
+    html += '<div class="value diff">' + reviewList.length + '</div>'
+    html += '</div>'
+  }
+
   // Всего заказов
   html += '<div class="comparison-summary-item">'
   html += '<div class="label">📦 Всего заказов в скане</div>'
@@ -7111,6 +7525,41 @@ function renderComparisonPanel(stats) {
   html += '</div>'
 
   html += '</div>' // .comparison-summary-grid
+
+  // ── Дубли отправлений Ozon: нужно исправить в МойСклад ──
+  if (duplicateDetails.length > 0) {
+    html += '<div class="cmp-block-diff cmp-block-duplicate">'
+    html += '<strong style="color:var(--error)">⧉ Дубли отправлений Ozon</strong> — заказов: <strong>' + duplicateDetails.length + '</strong>'
+    html += ' · лишнее в МС: <strong>' + fmtMoney(summary.duplicateSum) + '</strong><br>'
+    html += '<span class="comparison-diff-caption">В заказе МС записаны товары других отправлений той же группы Ozon. Нужно исправить в МойСклад: убрать лишние позиции или разбить заказ по отправлениям.</span>'
+    html += '<table class="comparison-table"><thead><tr>'
+    html += '<th>Отправление</th><th>В МС</th><th>Должно быть</th><th>Лишнее</th><th>Дублирует</th>'
+    html += '</tr></thead><tbody>'
+    for (const d of duplicateDetails) {
+      html += '<tr>'
+      html += '<td>' + esc(d.orderKey) + '</td>'
+      html += '<td>' + fmtMoney(d.actual) + '</td>'
+      html += '<td>' + fmtMoney(d.expected) + '</td>'
+      html += '<td class="value diff">' + fmtMoney(d.excess) + '</td>'
+      html += '<td>' + esc((d.duplicatesOf || []).join(', ') || '—') + '</td>'
+      html += '</tr>'
+    }
+    html += '</tbody></table>'
+    html += '</div>'
+  }
+
+  // ── Заказы, требующие ручной проверки в МС ──
+  if (reviewList.length > 0) {
+    html += '<div class="cmp-block-diff">'
+    html += '<strong style="color:var(--warning)">⚠ Требует проверки в МС</strong> — заказов: <strong>' + reviewList.length + '</strong><br>'
+    html += '<span class="comparison-diff-caption">Данные скана расходятся с состоянием МойСклад. Обновите строку ⟳ или проверьте вручную.</span>'
+    html += '<table class="comparison-table"><thead><tr><th>Заказ</th><th>Причина</th></tr></thead><tbody>'
+    for (const rv of reviewList) {
+      html += '<tr><td>' + esc(rv.orderKey) + '</td><td>' + esc(rv.reason) + '</td></tr>'
+    }
+    html += '</tbody></table>'
+    html += '</div>'
+  }
 
   // ── Реальные расхождения: mismatch / partial / missing / возврат на площадке ──
   // Единый источник списка проблемных заказов для таблицы Δ и детального разбора.

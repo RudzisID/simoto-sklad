@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SiMOTO — Склад (preview)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-100 min-h-screen p-8">
+
+  <div class="max-w-6xl mx-auto">
+    <h1 class="text-2xl font-bold mb-4 text-zinc-900">📊 Склад</h1>
+
+    <!-- Toolbar -->
+    <div class="flex items-center gap-3 mb-4 flex-wrap">
+      <button class="px-4 py-2 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700">🔄 Обновить</button>
+      <button class="px-3 py-2 rounded-md border border-zinc-300 text-sm bg-white hover:bg-zinc-50">📥 Экспорт XLSX</button>
+      <input type="text" placeholder="Поиск по OEM..." class="px-3 py-2 rounded-md border border-zinc-300 text-sm bg-white" />
+      <button class="px-3 py-2 rounded-md border border-zinc-300 text-sm bg-white hover:bg-zinc-50">⚠️ Малый остаток</button>
+    </div>
+
+    <!-- Таблица -->
+    <div class="border border-zinc-200 rounded-md overflow-hidden bg-white">
+      <table class="w-full text-sm">
+        <thead class="bg-zinc-50 border-b border-zinc-200">
+          <tr>
+            <th class="text-left px-3 py-2 font-medium">OEM</th>
+            <th class="text-left px-3 py-2 font-medium">Наименование</th>
+            <th class="text-left px-3 py-2 font-medium">Бренд</th>
+            <th class="text-right px-3 py-2 font-medium">Остаток</th>
+            <th class="text-right px-3 py-2 font-medium">Резерв</th>
+            <th class="text-right px-3 py-2 font-medium">В пути</th>
+            <th class="text-right px-3 py-2 font-medium">Цена</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="border-b border-zinc-100 hover:bg-zinc-50">
+            <td class="px-3 py-2 font-mono">OEM-001</td>
+            <td class="px-3 py-2">Подшипник 6205-2RS</td>
+            <td class="px-3 py-2 text-zinc-500">SKF</td>
+            <td class="px-3 py-2 text-right">24</td>
+            <td class="px-3 py-2 text-right">3</td>
+            <td class="px-3 py-2 text-right">0</td>
+            <td class="px-3 py-2 text-right">800 ₽</td>
+          </tr>
+          <tr class="border-b border-zinc-100 hover:bg-zinc-50">
+            <td class="px-3 py-2 font-mono">OEM-002</td>
+            <td class="px-3 py-2">Уплотнитель резиновый</td>
+            <td class="px-3 py-2 text-zinc-500">—</td>
+            <td class="px-3 py-2 text-right">156</td>
+            <td class="px-3 py-2 text-right">0</td>
+            <td class="px-3 py-2 text-right">50</td>
+            <td class="px-3 py-2 text-right">45 ₽</td>
+          </tr>
+          <tr class="border-b border-zinc-100 hover:bg-zinc-50">
+            <td class="px-3 py-2 font-mono">OEM-003</td>
+            <td class="px-3 py-2">Цепь 428-120</td>
+            <td class="px-3 py-2 text-zinc-500">DID</td>
+            <td class="px-3 py-2 text-right font-bold text-red-600 bg-red-50">0</td>
+            <td class="px-3 py-2 text-right">—</td>
+            <td class="px-3 py-2 text-right">10</td>
+            <td class="px-3 py-2 text-right">1,200 ₽</td>
+          </tr>
+          <tr class="border-b border-zinc-100 hover:bg-zinc-50">
+            <td class="px-3 py-2 font-mono">OEM-004</td>
+            <td class="px-3 py-2">Фильтр воздушный</td>
+            <td class="px-3 py-2 text-zinc-500">K&N</td>
+            <td class="px-3 py-2 text-right text-amber-600 bg-amber-50">3</td>
+            <td class="px-3 py-2 text-right">1</td>
+            <td class="px-3 py-2 text-right">0</td>
+            <td class="px-3 py-2 text-right">950 ₽</td>
+          </tr>
+          <tr class="border-b border-zinc-100 hover:bg-zinc-50">
+            <td class="px-3 py-2 font-mono">OEM-005</td>
+            <td class="px-3 py-2">Тормозные колодки</td>
+            <td class="px-3 py-2 text-zinc-500">Brembo</td>
+            <td class="px-3 py-2 text-right">42</td>
+            <td class="px-3 py-2 text-right">5</td>
+            <td class="px-3 py-2 text-right">20</td>
+            <td class="px-3 py-2 text-right">1,450 ₽</td>
+          </tr>
+          <tr class="border-b border-zinc-100 hover:bg-zinc-50">
+            <td class="px-3 py-2 font-mono">OEM-006</td>
+            <td class="px-3 py-2">Масляный фильтр</td>
+            <td class="px-3 py-2 text-zinc-500">Mahle</td>
+            <td class="px-3 py-2 text-right">87</td>
+            <td class="px-3 py-2 text-right">0</td>
+            <td class="px-3 py-2 text-right">0</td>
+            <td class="px-3 py-2 text-right">320 ₽</td>
+          </tr>
+          <tr class="border-b border-zinc-100 hover:bg-zinc-50">
+            <td class="px-3 py-2 font-mono">OEM-007</td>
+            <td class="px-3 py-2">Свеча зажигания</td>
+            <td class="px-3 py-2 text-zinc-500">NGK</td>
+            <td class="px-3 py-2 text-right">203</td>
+            <td class="px-3 py-2 text-right">0</td>
+            <td class="px-3 py-2 text-right">0</td>
+            <td class="px-3 py-2 text-right">180 ₽</td>
+          </tr>
+          <tr class="border-b border-zinc-100 hover:bg-zinc-50">
+            <td class="px-3 py-2 font-mono">OEM-008</td>
+            <td class="px-3 py-2">Ремень ГРМ</td>
+            <td class="px-3 py-2 text-zinc-500">Gates</td>
+            <td class="px-3 py-2 text-right font-bold text-red-600 bg-red-50">0</td>
+            <td class="px-3 py-2 text-right">—</td>
+            <td class="px-3 py-2 text-right">0</td>
+            <td class="px-3 py-2 text-right">2,100 ₽</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-4 text-sm text-zinc-500">
+      Всего товаров: 8 | С нулевым остатком: 2 | С малым остатком (<5): 1
+    </div>
+  </div>
+
+</body>
+</html>

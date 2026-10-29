@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SiMOTO — Детали заказа (preview)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-100 min-h-screen p-8">
+
+  <div class="max-w-2xl mx-auto">
+    <h1 class="text-2xl font-bold mb-4 text-zinc-900">👁️ Детали заказа</h1>
+
+    <!-- Order Detail Modal -->
+    <div class="bg-white rounded-lg shadow-xl border border-zinc-200 overflow-hidden">
+      <!-- Header -->
+      <div class="border-b border-zinc-200 px-6 py-4 flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Заказ WB-47291</h2>
+        <button class="p-1 rounded hover:bg-zinc-100 text-zinc-500">✕</button>
+      </div>
+
+      <!-- Body -->
+      <div class="px-6 py-4">
+        <!-- Основная информация -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
+          <div>
+            <div class="text-xs text-zinc-500 mb-0.5">Заказ МС</div>
+            <div class="text-sm">00047291</div>
+          </div>
+          <div>
+            <div class="text-xs text-zinc-500 mb-0.5">Сумма</div>
+            <div class="text-sm font-medium">2,400 ₽</div>
+          </div>
+          <div>
+            <div class="text-xs text-zinc-500 mb-0.5">Оплачено</div>
+            <div class="text-sm">0 ₽</div>
+          </div>
+          <div>
+            <div class="text-xs text-zinc-500 mb-0.5">Отгружено</div>
+            <div class="text-sm">0 ₽</div>
+          </div>
+          <div>
+            <div class="text-xs text-zinc-500 mb-0.5">Статус</div>
+            <div class="text-sm">К отгрузке</div>
+          </div>
+          <div>
+            <div class="text-xs text-zinc-500 mb-0.5">Площадка</div>
+            <span class="inline-flex items-center rounded border font-medium text-xs px-2 py-1 bg-violet-100 text-violet-800 border-violet-200">WB</span>
+          </div>
+          <div>
+            <div class="text-xs text-zinc-500 mb-0.5">Склад</div>
+            <div class="text-sm">Основной</div>
+          </div>
+          <div>
+            <div class="text-xs text-zinc-500 mb-0.5">Дата</div>
+            <div class="text-sm">28.10.2026 14:30</div>
+          </div>
+        </div>
+
+        <!-- Позиции -->
+        <h3 class="font-medium mb-2">Позиции</h3>
+        <div class="border border-zinc-200 rounded-md overflow-hidden mb-6">
+          <table class="w-full text-sm">
+            <thead class="bg-zinc-50 border-b border-zinc-200">
+              <tr>
+                <th class="text-left px-3 py-2">OEM</th>
+                <th class="text-left px-3 py-2">Наименование</th>
+                <th class="text-right px-3 py-2">Кол-во</th>
+                <th class="text-right px-3 py-2">Цена</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="border-b border-zinc-100">
+                <td class="px-3 py-2 font-mono">OEM-12345</td>
+                <td class="px-3 py-2">Подшипник 6205-2RS</td>
+                <td class="px-3 py-2 text-right">2</td>
+                <td class="px-3 py-2 text-right">800 ₽</td>
+              </tr>
+              <tr class="border-b border-zinc-100">
+                <td class="px-3 py-2 font-mono">OEM-67890</td>
+                <td class="px-3 py-2">Уплотнитель резиновый</td>
+                <td class="px-3 py-2 text-right">4</td>
+                <td class="px-3 py-2 text-right">200 ₽</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- История -->
+        <h3 class="font-medium mb-2">История</h3>
+        <div class="space-y-1 text-sm text-zinc-600 mb-6">
+          <div>28.10.2026 14:35 — Иван проверил заказ</div>
+          <div>28.10.2026 14:35 — Заказ найден в МС</div>
+          <div>28.10.2026 14:35 — Можно отгрузить</div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-2">
+          <button class="px-4 py-2 rounded-md bg-sky-600 text-white text-sm hover:bg-sky-700">📦 Отгрузить</button>
+          <button class="px-4 py-2 rounded-md border border-zinc-300 text-sm hover:bg-zinc-50">✕ Закрыть</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
